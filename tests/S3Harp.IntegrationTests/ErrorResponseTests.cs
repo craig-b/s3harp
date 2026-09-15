@@ -1,6 +1,5 @@
 using System.Net;
 using Amazon.S3;
-using Amazon.S3.Model;
 using Xunit;
 
 namespace S3Harp.IntegrationTests;
@@ -14,9 +13,8 @@ public sealed class ErrorResponseTests : IDisposable
     {
         using var s3 = factory.CreateS3Client();
 
-        var request = new PutBucketRequest { BucketName = "demo" };
         var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
-            () => s3.PutBucketAsync(request, TestContext.Current.CancellationToken));
+            () => s3.GetObjectAsync("demo", "object-key", TestContext.Current.CancellationToken));
 
         Assert.Equal("NotImplemented", exception.ErrorCode);
         Assert.Equal(HttpStatusCode.NotImplemented, exception.StatusCode);

@@ -14,6 +14,7 @@ S3Harp serves two uses, and the tension between them keeps the project honest:
 - **Core S3 essentials:** buckets, object PUT/GET/HEAD/DELETE, ListObjectsV2, multipart uploads — the whole current scope. The wider API surface (versioning, lifecycle, ACLs) becomes candidate work once the core is solid.
 - **AWS Signature Version 4 from the start.** SDKs sign every request; auth cuts deep into request parsing and is foundational. This includes the streaming form (`aws-chunked` / `STREAMING-AWS4-HMAC-SHA256-PAYLOAD`): the AWS CLI and SDKs send signed chunked bodies on PUT, so verifying both forms is what keeps real clients working.
 - **Single-node, by design.** S3Harp runs on one machine and one filesystem — a permanent scope decision the architecture is free to build on.
+- **Standard-region S3 semantics.** Where S3's behavior differs by region, S3Harp follows the standard regions: creating a bucket you already own returns 409 `BucketAlreadyOwnedByYou`.
 
 ## Architecture
 
@@ -78,6 +79,6 @@ Each step ends with the AWS SDK exercising it, so compatibility is proven contin
 Deliberately open — each awaits an explicit decision:
 
 - **Bucket addressing:** path-style only (`/bucket/key`) vs also virtual-hosted-style (`bucket.host/key`), which needs DNS/host handling.
-- **Configuration surface** beyond credentials: `S3HARP_ACCESS_KEY_ID` and `S3HARP_SECRET_ACCESS_KEY` are decided — a single root keypair, required at startup, with multiple accounts as later candidate work behind the same credential-store seam. Everything else (data directory, ports, defaults) awaits decision.
+- **Configuration surface** beyond the decided variables — `S3HARP_ACCESS_KEY_ID` and `S3HARP_SECRET_ACCESS_KEY` (a single root keypair, required at startup, with multiple accounts as later candidate work behind the same credential-store seam) and `S3HARP_DATA_DIR` (the storage location, required at startup). Ports and other defaults await decision.
 - **Presigned URLs:** query-string SigV4 joins the roadmap as its own step once objects exist to share.
 - **License.**

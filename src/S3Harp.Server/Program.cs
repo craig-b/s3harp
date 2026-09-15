@@ -1,3 +1,4 @@
+using S3Harp.Core;
 using S3Harp.Server;
 using S3Harp.Server.Authentication;
 
@@ -12,13 +13,26 @@ if (string.IsNullOrEmpty(accessKeyId) || string.IsNullOrEmpty(secretAccessKey))
         "S3Harp requires credentials to start: set S3HARP_ACCESS_KEY_ID and S3HARP_SECRET_ACCESS_KEY.");
 }
 
+var dataDirectory = builder.Configuration["DATA_DIR"];
+if (string.IsNullOrEmpty(dataDirectory))
+{
+    throw new InvalidOperationException(
+        "S3Harp requires a data directory to start: set S3HARP_DATA_DIR.");
+}
+
+Directory.CreateDirectory(dataDirectory);
+
 builder.Services.AddSingleton(new RootCredentials(accessKeyId, secretAccessKey));
 builder.Services.AddSingleton<ICredentialStore, RootCredentialStore>();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<IMetadataIndex>(
+    new SqliteMetadataIndex(Path.Combine(dataDirectory, "s3harp.db")));
+builder.Services.AddSingleton<S3RequestDispatcher>();
 
 var app = builder.Build();
 
 app.UseMiddleware<SigV4AuthenticationMiddleware>();
-app.MapFallback(() => new S3ErrorResult(S3Errors.NotImplemented));
+app.MapFallback((HttpContext context, S3RequestDispatcher dispatcher) =>
+    dispatcher.DispatchAsync(context));
 
 app.Run();

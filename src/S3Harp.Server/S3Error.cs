@@ -11,6 +11,21 @@ public static class S3Errors
         StatusCodes.Status403Forbidden,
         "Access Denied.");
 
+    public static S3Error BucketAlreadyOwnedByYou { get; } = new(
+        "BucketAlreadyOwnedByYou",
+        StatusCodes.Status409Conflict,
+        "Your previous request to create the named bucket succeeded and you already own it.");
+
+    public static S3Error InvalidBucketName { get; } = new(
+        "InvalidBucketName",
+        StatusCodes.Status400BadRequest,
+        "The specified bucket is not valid.");
+
+    public static S3Error NoSuchBucket { get; } = new(
+        "NoSuchBucket",
+        StatusCodes.Status404NotFound,
+        "The specified bucket does not exist.");
+
     public static S3Error AuthorizationHeaderMalformed { get; } = new(
         "AuthorizationHeaderMalformed",
         StatusCodes.Status400BadRequest,

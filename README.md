@@ -31,6 +31,7 @@ Configuration uses the `S3HARP_` prefix for environment variables. The server au
 |---|---|
 | `S3HARP_ACCESS_KEY_ID` | The access key id clients sign requests with |
 | `S3HARP_SECRET_ACCESS_KEY` | The matching secret key |
+| `S3HARP_DATA_DIR` | The directory holding all stored data, including the metadata index |
 
 ## Naming conventions
 
