@@ -1,0 +1,4 @@
+# Test-specific rule adjustments, layered on the repo-root .editorconfig.
+[*.cs]
+# Test method names use the xUnit Method_Scenario idiom.
+dotnet_diagnostic.CA1707.severity = none
