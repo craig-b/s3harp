@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/S3Harp.Core/S3Harp.Core.csproj" />
+    <Project Path="src/S3Harp.Server/S3Harp.Server.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/S3Harp.Core.Tests/S3Harp.Core.Tests.csproj" />
+    <Project Path="tests/S3Harp.IntegrationTests/S3Harp.IntegrationTests.csproj" />
+    <Project Path="tests/S3Harp.Server.Tests/S3Harp.Server.Tests.csproj" />
+  </Folder>
+</Solution>
