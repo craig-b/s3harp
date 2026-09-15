@@ -25,7 +25,12 @@ S3Harp itself is the storage backend: objects are stored as plain files on the l
 
 ## Configuration
 
-Configuration will use the `S3HARP_` prefix for environment variables.
+Configuration uses the `S3HARP_` prefix for environment variables. The server authenticates every request with AWS Signature Version 4 against its root keypair, which it requires at startup:
+
+| Variable | Purpose |
+|---|---|
+| `S3HARP_ACCESS_KEY_ID` | The access key id clients sign requests with |
+| `S3HARP_SECRET_ACCESS_KEY` | The matching secret key |
 
 ## Naming conventions
 

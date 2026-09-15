@@ -78,5 +78,6 @@ Each step ends with the AWS SDK exercising it, so compatibility is proven contin
 Deliberately open — each awaits an explicit decision:
 
 - **Bucket addressing:** path-style only (`/bucket/key`) vs also virtual-hosted-style (`bucket.host/key`), which needs DNS/host handling.
-- **Configuration surface:** which `S3HARP_` variables exist and what the defaults are.
+- **Configuration surface** beyond credentials: `S3HARP_ACCESS_KEY_ID` and `S3HARP_SECRET_ACCESS_KEY` are decided — a single root keypair, required at startup, with multiple accounts as later candidate work behind the same credential-store seam. Everything else (data directory, ports, defaults) awaits decision.
+- **Presigned URLs:** query-string SigV4 joins the roadmap as its own step once objects exist to share.
 - **License.**
