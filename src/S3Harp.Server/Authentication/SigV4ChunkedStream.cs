@@ -12,7 +12,8 @@ public sealed class SigV4ChunkedStream(
     byte[] signingKey,
     CredentialScope scope,
     string timestamp,
-    string seedSignature) : Stream
+    string seedSignature,
+    bool signedTrailer = false) : Stream
 {
     private const int MaxHeaderLength = 1024;
     private const long MaxChunkSize = 16 * 1024 * 1024;
@@ -99,12 +100,17 @@ public sealed class SigV4ChunkedStream(
         var expectedSignature = SigV4Signer.Sign(signingKey, stringToSign);
         if (!SigV4Signer.SignaturesEqual(expectedSignature, presentedSignature))
         {
-            throw new InvalidDataException("The chunk signature is invalid.");
+            throw new PayloadVerificationException(S3Errors.SignatureDoesNotMatch);
         }
 
         previousSignature = expectedSignature;
         if (size == 0)
         {
+            if (signedTrailer)
+            {
+                await VerifyTrailerAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             finished = true;
             return;
         }
@@ -112,6 +118,49 @@ public sealed class SigV4ChunkedStream(
         await ConsumeChunkDelimiterAsync(cancellationToken).ConfigureAwait(false);
         currentChunk = data;
         positionInChunk = 0;
+    }
+
+    private async Task VerifyTrailerAsync(CancellationToken cancellationToken)
+    {
+        var canonicalTrailer = new StringBuilder();
+        string? presentedSignature = null;
+        while (await ReadHeaderLineAsync(cancellationToken).ConfigureAwait(false) is
+            { Length: > 0 } line)
+        {
+            var separator = line.IndexOf(':', StringComparison.Ordinal);
+            if (separator <= 0)
+            {
+                throw new PayloadVerificationException(S3Errors.IncompleteBody);
+            }
+
+            var name = line[..separator];
+            var value = line[(separator + 1)..].Trim();
+            if (string.Equals(name, "x-amz-trailer-signature", StringComparison.Ordinal))
+            {
+                presentedSignature = value;
+            }
+            else
+            {
+                canonicalTrailer.Append(name).Append(':').Append(value).Append('\n');
+            }
+        }
+
+        if (presentedSignature is null)
+        {
+            throw new PayloadVerificationException(S3Errors.SignatureDoesNotMatch);
+        }
+
+        var stringToSign = string.Join('\n',
+            "AWS4-HMAC-SHA256-TRAILER",
+            timestamp,
+            scope.ToString(),
+            previousSignature,
+            SigV4Signer.Sha256Hex(Encoding.UTF8.GetBytes(canonicalTrailer.ToString())));
+        if (!SigV4Signer.SignaturesEqual(
+                SigV4Signer.Sign(signingKey, stringToSign), presentedSignature))
+        {
+            throw new PayloadVerificationException(S3Errors.SignatureDoesNotMatch);
+        }
     }
 
     private async Task<string> ReadHeaderLineAsync(CancellationToken cancellationToken)

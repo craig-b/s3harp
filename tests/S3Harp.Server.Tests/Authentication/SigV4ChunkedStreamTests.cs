@@ -57,7 +57,7 @@ public sealed class SigV4ChunkedStreamTests
         using var stream = CreateStream(body);
         using var decoded = new MemoryStream();
 
-        await Assert.ThrowsAsync<InvalidDataException>(
+        await Assert.ThrowsAsync<PayloadVerificationException>(
             () => stream.CopyToAsync(decoded, TestContext.Current.CancellationToken));
     }
 
@@ -69,7 +69,7 @@ public sealed class SigV4ChunkedStreamTests
         using var stream = CreateStream(body);
         using var decoded = new MemoryStream();
 
-        await Assert.ThrowsAsync<InvalidDataException>(
+        await Assert.ThrowsAsync<PayloadVerificationException>(
             () => stream.CopyToAsync(decoded, TestContext.Current.CancellationToken));
     }
 
@@ -81,21 +81,56 @@ public sealed class SigV4ChunkedStreamTests
             seedSignature: "2222222222222222222222222222222222222222222222222222222222222222");
         using var decoded = new MemoryStream();
 
-        await Assert.ThrowsAsync<InvalidDataException>(
+        await Assert.ThrowsAsync<PayloadVerificationException>(
             () => stream.CopyToAsync(decoded, TestContext.Current.CancellationToken));
     }
+
+    [Fact]
+    public async Task SignedTrailerWire_DecodesTheOriginalPayload()
+    {
+        using var stream = CreateStream(TrailerWireBody(), signedTrailer: true);
+        using var decoded = new MemoryStream();
+
+        await stream.CopyToAsync(decoded, TestContext.Current.CancellationToken);
+
+        Assert.Equal("Hello, S3Harp!", Encoding.UTF8.GetString(decoded.ToArray()));
+    }
+
+    [Fact]
+    public async Task WrongTrailerSignature_IsRejected()
+    {
+        var body = TrailerWireBody().Replace(
+            TrailerSignature, FirstChunkSignature, StringComparison.Ordinal);
+        using var stream = CreateStream(body, signedTrailer: true);
+        using var decoded = new MemoryStream();
+
+        await Assert.ThrowsAsync<PayloadVerificationException>(
+            () => stream.CopyToAsync(decoded, TestContext.Current.CancellationToken));
+    }
+
+    private const string TrailerSignature =
+        "adf5dc3a91f8f7fc95b307653fb2ca0282c8cd842d652835653eddd8971a48d3";
 
     private static string WireBody() =>
         $"7;chunk-signature={FirstChunkSignature}\r\nHello, \r\n" +
         $"7;chunk-signature={SecondChunkSignature}\r\nS3Harp!\r\n" +
         $"0;chunk-signature={FinalChunkSignature}\r\n\r\n";
 
+    private static string TrailerWireBody() =>
+        $"7;chunk-signature={FirstChunkSignature}\r\nHello, \r\n" +
+        $"7;chunk-signature={SecondChunkSignature}\r\nS3Harp!\r\n" +
+        $"0;chunk-signature={FinalChunkSignature}\r\n" +
+        "x-amz-checksum-crc32:AAAAAA==\r\n" +
+        $"x-amz-trailer-signature:{TrailerSignature}\r\n" +
+        "\r\n";
+
     private static SigV4ChunkedStream CreateStream(
-        string wireBody, string seedSignature = SeedSignature) =>
+        string wireBody, string seedSignature = SeedSignature, bool signedTrailer = false) =>
         new(
             new MemoryStream(Encoding.UTF8.GetBytes(wireBody)),
             SigV4Signer.DeriveSigningKey(SecretAccessKey, Scope),
             Scope,
             Timestamp,
-            seedSignature);
+            seedSignature,
+            signedTrailer);
 }

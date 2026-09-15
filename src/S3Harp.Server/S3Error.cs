@@ -16,15 +16,35 @@ public static class S3Errors
         StatusCodes.Status409Conflict,
         "Your previous request to create the named bucket succeeded and you already own it.");
 
+    public static S3Error IncompleteBody { get; } = new(
+        "IncompleteBody",
+        StatusCodes.Status400BadRequest,
+        "The chunked request body ended before it was complete.");
+
     public static S3Error InvalidBucketName { get; } = new(
         "InvalidBucketName",
         StatusCodes.Status400BadRequest,
         "The specified bucket is not valid.");
 
+    public static S3Error BucketNotEmpty { get; } = new(
+        "BucketNotEmpty",
+        StatusCodes.Status409Conflict,
+        "The bucket you tried to delete is not empty.");
+
     public static S3Error NoSuchBucket { get; } = new(
         "NoSuchBucket",
         StatusCodes.Status404NotFound,
         "The specified bucket does not exist.");
+
+    public static S3Error NoSuchKey { get; } = new(
+        "NoSuchKey",
+        StatusCodes.Status404NotFound,
+        "The specified key does not exist.");
+
+    public static S3Error XAmzContentSHA256Mismatch { get; } = new(
+        "XAmzContentSHA256Mismatch",
+        StatusCodes.Status400BadRequest,
+        "The provided 'x-amz-content-sha256' header does not match what was computed.");
 
     public static S3Error AuthorizationHeaderMalformed { get; } = new(
         "AuthorizationHeaderMalformed",

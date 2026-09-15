@@ -27,12 +27,20 @@ builder.Services.AddSingleton<ICredentialStore, RootCredentialStore>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IMetadataIndex>(
     new SqliteMetadataIndex(Path.Combine(dataDirectory, "s3harp.db")));
+builder.Services.AddSingleton(new BlobStore(dataDirectory));
+builder.Services.AddSingleton<StorageEngine>();
 builder.Services.AddSingleton<S3RequestDispatcher>();
 
 var app = builder.Build();
 
 app.UseMiddleware<SigV4AuthenticationMiddleware>();
-app.MapFallback((HttpContext context, S3RequestDispatcher dispatcher) =>
-    dispatcher.DispatchAsync(context));
+
+// The dispatcher is the router: every authenticated request terminates here.
+var dispatcher = app.Services.GetRequiredService<S3RequestDispatcher>();
+app.Run(async context =>
+{
+    var result = await dispatcher.DispatchAsync(context);
+    await result.ExecuteAsync(context);
+});
 
 app.Run();

@@ -4,7 +4,14 @@ S3Harp is an S3-compatible object storage service written in C# on modern .NET. 
 
 ## Status
 
-**Pre-alpha.** The project is at the very beginning. This README describes intent, and will grow to record real capability as it lands.
+**Pre-alpha.** Early, but real: the AWS SDK talks to S3Harp today.
+
+Working now, each proven by integration tests driving the real AWS SDK:
+
+- AWS Signature Version 4 on every request — header verification plus chunked payload signing, including the trailer variants current SDKs send by default
+- Bucket create, list, head, and delete
+- Object PUT, GET, HEAD, and DELETE with ETags, content types, and `x-amz-meta-*` metadata, stored durably (temp file → fsync → rename)
+- S3 XML error responses that SDKs parse into their typed exceptions
 
 ## What it's for
 

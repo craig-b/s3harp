@@ -64,17 +64,97 @@ public abstract class MetadataIndexContractTests
     {
         await Create("alpha");
 
-        Assert.True(await Index.TryDeleteBucketAsync("alpha", Token));
+        Assert.Equal(DeleteBucketResult.Deleted, await Index.DeleteBucketAsync("alpha", Token));
         Assert.False(await Index.BucketExistsAsync("alpha", Token));
     }
 
     [Fact]
     public async Task DeletingAnUnknownBucket_ReportsItMissing()
     {
-        Assert.False(await Index.TryDeleteBucketAsync("missing", Token));
+        Assert.Equal(DeleteBucketResult.NotFound, await Index.DeleteBucketAsync("missing", Token));
+    }
+
+    [Fact]
+    public async Task DeletingABucketHoldingObjects_ReportsItNotEmpty()
+    {
+        await Create("alpha");
+        await Index.PutObjectAsync("alpha", Record("key", "blob-1"), Token);
+
+        Assert.Equal(DeleteBucketResult.NotEmpty, await Index.DeleteBucketAsync("alpha", Token));
+        Assert.True(await Index.BucketExistsAsync("alpha", Token));
+    }
+
+    [Fact]
+    public async Task PutObject_IntoAMissingBucket_IsRefused()
+    {
+        var result = await Index.PutObjectAsync("missing", Record("key", "blob-1"), Token);
+
+        Assert.False(result.BucketExists);
+    }
+
+    [Fact]
+    public async Task StoredObject_IsRetrievableByItsKey()
+    {
+        await Create("alpha");
+
+        await Index.PutObjectAsync("alpha", Record("key", "blob-1"), Token);
+        var found = await Index.FindObjectAsync("alpha", "key", Token);
+
+        Assert.NotNull(found);
+        Assert.Equal("key", found.Key);
+        Assert.Equal("blob-1", found.BlobId);
+        Assert.Equal(3, found.Size);
+        Assert.Equal("etag-hex", found.ETag);
+        Assert.Equal("text/plain", found.ContentType);
+        Assert.Equal("value-1", found.Metadata["meta-1"]);
+        Assert.Equal(CreationTime, found.LastModified);
+    }
+
+    [Fact]
+    public async Task PutObject_OverAnExistingKey_ReturnsTheReplacedBlobId()
+    {
+        await Create("alpha");
+        await Index.PutObjectAsync("alpha", Record("key", "blob-1"), Token);
+
+        var result = await Index.PutObjectAsync("alpha", Record("key", "blob-2"), Token);
+
+        Assert.True(result.BucketExists);
+        Assert.Equal("blob-1", result.ReplacedBlobId);
+        Assert.Equal("blob-2", (await Index.FindObjectAsync("alpha", "key", Token))?.BlobId);
+    }
+
+    [Fact]
+    public async Task FindingAnUnknownKey_ReturnsNothing()
+    {
+        await Create("alpha");
+
+        Assert.Null(await Index.FindObjectAsync("alpha", "missing", Token));
+    }
+
+    [Fact]
+    public async Task DeleteObject_ReturnsTheBlobIdAndRemovesTheRecord()
+    {
+        await Create("alpha");
+        await Index.PutObjectAsync("alpha", Record("key", "blob-1"), Token);
+
+        Assert.Equal("blob-1", await Index.DeleteObjectAsync("alpha", "key", Token));
+        Assert.Null(await Index.FindObjectAsync("alpha", "key", Token));
+    }
+
+    [Fact]
+    public async Task DeletingAnUnknownKey_ReturnsNothing()
+    {
+        await Create("alpha");
+
+        Assert.Null(await Index.DeleteObjectAsync("alpha", "missing", Token));
     }
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
+
+    private static ObjectRecord Record(string key, string blobId) => new(
+        key, blobId, Size: 3, ETag: "etag-hex", ContentType: "text/plain",
+        Metadata: new Dictionary<string, string> { ["meta-1"] = "value-1" },
+        LastModified: CreationTime);
 
     private async Task Create(string name)
     {
