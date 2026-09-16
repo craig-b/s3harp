@@ -121,7 +121,7 @@ public sealed class ObjectListingTests : IDisposable
             await engine.PutObjectAsync(
                 "alpha", key, content,
                 new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()),
-                null, Token);
+                ChecksumAlgorithm.Crc64Nvme, null, Token);
         }
     }
 

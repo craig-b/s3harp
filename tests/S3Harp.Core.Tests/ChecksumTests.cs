@@ -47,4 +47,23 @@ public sealed class ChecksumTests
 
         Assert.False(checksum.Matches(declared));
     }
+
+    [Theory]
+    [InlineData(ChecksumAlgorithm.Crc32, "CRC32")]
+    [InlineData(ChecksumAlgorithm.Crc32C, "CRC32C")]
+    [InlineData(ChecksumAlgorithm.Crc64Nvme, "CRC64NVME")]
+    [InlineData(ChecksumAlgorithm.Sha1, "SHA1")]
+    [InlineData(ChecksumAlgorithm.Sha256, "SHA256")]
+    public void NamesEachAlgorithmAsS3Does(ChecksumAlgorithm algorithm, string name)
+    {
+        Assert.Equal(name, ChecksumAlgorithms.Name(algorithm));
+        Assert.True(ChecksumAlgorithms.TryParseName(name.ToLowerInvariant(), out var parsed));
+        Assert.Equal(algorithm, parsed);
+    }
+
+    [Fact]
+    public void LeavesUnknownNamesUnparsed()
+    {
+        Assert.False(ChecksumAlgorithms.TryParseName("MD5", out _));
+    }
 }

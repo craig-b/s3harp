@@ -3,8 +3,11 @@ using System.Security.Cryptography;
 
 namespace S3Harp.Core;
 
-/// <summary>The outcome of writing a blob: its identity, size, and content MD5.</summary>
-public sealed record BlobWriteResult(string BlobId, long Size, string ContentMd5Hex);
+/// <summary>
+/// The outcome of writing a blob: its identity, size, content MD5, and the base64
+/// checksum of the algorithm requested, when one was.
+/// </summary>
+public sealed record BlobWriteResult(string BlobId, long Size, string ContentMd5Hex, string? Checksum);
 
 /// <summary>
 /// Stores object data as plain files under the data directory. Blob ids are opaque
@@ -25,7 +28,9 @@ public sealed class BlobStore
         Directory.CreateDirectory(uploadsDirectory);
     }
 
-    public async Task<BlobWriteResult> WriteAsync(Stream content, CancellationToken cancellationToken)
+    /// <summary>Writes the content as a new blob, computing the requested checksum as it streams.</summary>
+    public async Task<BlobWriteResult> WriteAsync(
+        Stream content, ChecksumAlgorithm? checksum, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(content);
 
@@ -37,10 +42,11 @@ public sealed class BlobStore
 #pragma warning disable CA5351
         using var md5 = IncrementalHash.CreateHash(HashAlgorithmName.MD5);
 #pragma warning restore CA5351
+        using var integrity = checksum is { } algorithm ? ChecksumAlgorithms.Create(algorithm) : null;
 
         try
         {
-            return await WriteCoreAsync(content, blobId, uploadPath, md5, cancellationToken)
+            return await WriteCoreAsync(content, blobId, uploadPath, md5, integrity, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch
@@ -55,6 +61,7 @@ public sealed class BlobStore
         string blobId,
         string uploadPath,
         IncrementalHash md5,
+        IncrementalChecksum? integrity,
         CancellationToken cancellationToken)
     {
         long size = 0;
@@ -71,6 +78,7 @@ public sealed class BlobStore
                     .ConfigureAwait(false)) > 0)
                 {
                     md5.AppendData(buffer, 0, read);
+                    integrity?.Append(buffer.AsSpan(0, read));
                     await file.WriteAsync(buffer.AsMemory(0, read), cancellationToken)
                         .ConfigureAwait(false);
                     size += read;
@@ -85,7 +93,35 @@ public sealed class BlobStore
         }
 
         Publish(blobId, uploadPath);
-        return new BlobWriteResult(blobId, size, Convert.ToHexStringLower(md5.GetHashAndReset()));
+        return new BlobWriteResult(
+            blobId, size, Convert.ToHexStringLower(md5.GetHashAndReset()),
+            integrity is null ? null : Convert.ToBase64String(integrity.Finish()));
+    }
+
+    /// <summary>The base64 checksum of a stored blob's content.</summary>
+    public async Task<string> ComputeChecksumAsync(
+        string blobId, ChecksumAlgorithm algorithm, CancellationToken cancellationToken)
+    {
+        using var integrity = ChecksumAlgorithms.Create(algorithm);
+        var file = OpenRead(blobId);
+        await using (file.ConfigureAwait(false))
+        {
+            var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
+            try
+            {
+                int read;
+                while ((read = await file.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+                {
+                    integrity.Append(buffer.AsSpan(0, read));
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        return Convert.ToBase64String(integrity.Finish());
     }
 
     private void Publish(string blobId, string uploadPath)

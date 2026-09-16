@@ -966,6 +966,83 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task PutObject_EchoesTheChecksumItStored()
+    {
+        await Dispatch("PUT", "/my-bucket");
+
+        var put = await Dispatch(
+            "PUT", "/my-bucket/key", body: "Hello, S3Harp!",
+            configure: request => request.Headers["x-amz-checksum-algorithm"] = "SHA256");
+
+        Assert.Equal(StatusCodes.Status200OK, put.Response.StatusCode);
+        Assert.Equal(
+            "Aj0Lx1vWnbGF+irlCT3Pa4HNGctHtn3/Q49ApNekoy8=", put.Response.Headers["x-amz-checksum-sha256"]);
+        Assert.Equal("FULL_OBJECT", put.Response.Headers["x-amz-checksum-type"]);
+    }
+
+    [Fact]
+    public async Task HeadObject_ReportsTheChecksumOnlyWhenChecksumModeIsEnabled()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/key", body: "Hello, S3Harp!");
+
+        var plain = await Dispatch("HEAD", "/my-bucket/key");
+        var enabled = await Dispatch(
+            "HEAD", "/my-bucket/key",
+            configure: request => request.Headers["x-amz-checksum-mode"] = "enabled");
+
+        Assert.False(plain.Response.Headers.ContainsKey("x-amz-checksum-crc64nvme"));
+        Assert.Equal("v+mfzPLqhcw=", enabled.Response.Headers["x-amz-checksum-crc64nvme"]);
+        Assert.Equal("FULL_OBJECT", enabled.Response.Headers["x-amz-checksum-type"]);
+    }
+
+    [Fact]
+    public async Task GetObject_OfARange_LeavesTheWholeObjectChecksumOut()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/key", body: "Hello, S3Harp!");
+
+        var context = await Dispatch(
+            "GET", "/my-bucket/key",
+            configure: request =>
+            {
+                request.Headers["x-amz-checksum-mode"] = "ENABLED";
+                request.Headers.Range = "bytes=0-4";
+            });
+
+        Assert.Equal(StatusCodes.Status206PartialContent, context.Response.StatusCode);
+        Assert.False(context.Response.Headers.ContainsKey("x-amz-checksum-crc64nvme"));
+    }
+
+    [Fact]
+    public async Task CopyObject_KeepsTheChecksumUnlessAnAlgorithmIsRequested()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch(
+            "PUT", "/my-bucket/src", body: "Hello, S3Harp!",
+            configure: request => request.Headers["x-amz-checksum-algorithm"] = "SHA1");
+
+        var kept = ReadBody(await Dispatch(
+            "PUT", "/my-bucket/kept",
+            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/src")).Root!;
+        var fresh = ReadBody(await Dispatch(
+            "PUT", "/my-bucket/fresh",
+            configure: request =>
+            {
+                request.Headers["x-amz-copy-source"] = "/my-bucket/src";
+                request.Headers["x-amz-checksum-algorithm"] = "CRC32";
+            })).Root!;
+
+        Assert.Equal("gLagvNJpcFuHJZa/U8arrgX+MoM=", kept.Element(S3Namespace + "ChecksumSHA1")?.Value);
+        Assert.Equal("FULL_OBJECT", kept.Element(S3Namespace + "ChecksumType")?.Value);
+        Assert.Equal("NadAdg==", fresh.Element(S3Namespace + "ChecksumCRC32")?.Value);
+        var head = await Dispatch(
+            "HEAD", "/my-bucket/fresh",
+            configure: request => request.Headers["x-amz-checksum-mode"] = "ENABLED");
+        Assert.Equal("NadAdg==", head.Response.Headers["x-amz-checksum-crc32"]);
+    }
+
+    [Fact]
     public async Task PutObject_StoresTheContentHeaders_AndHeadReplaysThem()
     {
         await Dispatch("PUT", "/my-bucket");

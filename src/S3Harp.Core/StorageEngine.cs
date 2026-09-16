@@ -13,8 +13,8 @@ public sealed record ObjectListing(
     bool IsTruncated,
     string? NextFromKey);
 
-/// <summary>The outcome of storing an object.</summary>
-public sealed record PutObjectOutcome(PutObjectStatus Status, string? ETag);
+/// <summary>The outcome of storing an object: on success, its ETag and stored checksum.</summary>
+public sealed record PutObjectOutcome(PutObjectStatus Status, string? ETag, Checksum? Checksum);
 
 /// <summary>The caller-supplied attributes of an object: content type, content headers, and user metadata.</summary>
 public sealed record ObjectAttributes(
@@ -27,7 +27,7 @@ public sealed record UploadPartOutcome(bool UploadExists, string? ETag);
 public sealed record CompleteUploadOutcome(CompleteUploadStatus Status, string? ETag);
 
 /// <summary>The outcome of a server-side object copy.</summary>
-public sealed record CopyObjectOutcome(string ETag, DateTimeOffset LastModified);
+public sealed record CopyObjectOutcome(string ETag, DateTimeOffset LastModified, Checksum? Checksum);
 
 /// <summary>The size limits the engine enforces, with S3's values as the default.</summary>
 public sealed record StorageLimits(long MinimumPartSize)
@@ -43,19 +43,23 @@ public sealed record StorageLimits(long MinimumPartSize)
 public sealed class StorageEngine(
     IMetadataIndex index, BlobStore blobs, TimeProvider timeProvider, StorageLimits limits)
 {
+    /// <summary>Stores the content as an object, with a full-object checksum of the given algorithm.</summary>
     public async Task<PutObjectOutcome> PutObjectAsync(
         string bucket,
         string key,
         Stream content,
         ObjectAttributes attributes,
+        ChecksumAlgorithm checksumAlgorithm,
         WriteCondition? condition,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(attributes);
 
-        var write = await blobs.WriteAsync(content, cancellationToken).ConfigureAwait(false);
+        var write = await blobs.WriteAsync(content, checksumAlgorithm, cancellationToken)
+            .ConfigureAwait(false);
+        var checksum = new Checksum(checksumAlgorithm, write.Checksum!, ChecksumType.FullObject);
         var record = new ObjectRecord(
-            key, write.BlobId, write.Size, write.ContentMd5Hex, PartSizes: [],
+            key, write.BlobId, write.Size, write.ContentMd5Hex, PartSizes: [], checksum,
             attributes.ContentType, attributes.ContentHeaders, attributes.Metadata,
             timeProvider.GetUtcNow());
         var stored = await index.PutObjectAsync(bucket, record, condition, cancellationToken)
@@ -63,7 +67,7 @@ public sealed class StorageEngine(
         if (stored.Status != PutObjectStatus.Stored)
         {
             blobs.Delete(write.BlobId);
-            return new PutObjectOutcome(stored.Status, null);
+            return new PutObjectOutcome(stored.Status, null, null);
         }
 
         if (stored.ReplacedBlobId is not null)
@@ -71,7 +75,7 @@ public sealed class StorageEngine(
             blobs.Delete(stored.ReplacedBlobId);
         }
 
-        return new PutObjectOutcome(PutObjectStatus.Stored, write.ContentMd5Hex);
+        return new PutObjectOutcome(PutObjectStatus.Stored, write.ContentMd5Hex, checksum);
     }
 
     public async Task<ObjectDownload?> GetObjectAsync(
@@ -224,7 +228,8 @@ public sealed class StorageEngine(
         Stream content,
         CancellationToken cancellationToken)
     {
-        var write = await blobs.WriteAsync(content, cancellationToken).ConfigureAwait(false);
+        var write = await blobs.WriteAsync(content, checksum: null, cancellationToken)
+            .ConfigureAwait(false);
         var stored = await index.PutPartAsync(
             bucket, key, uploadId,
             new PartRecord(
@@ -301,7 +306,7 @@ public sealed class StorageEngine(
             [.. assembled.Select(p => p.BlobId)], cancellationToken).ConfigureAwait(false);
         var record = new ObjectRecord(
             key, concatenated.BlobId, concatenated.Size, MultipartETag(assembled),
-            [.. assembled.Select(part => part.Size)],
+            [.. assembled.Select(part => part.Size)], Checksum: null,
             upload.ContentType, upload.ContentHeaders, upload.Metadata, timeProvider.GetUtcNow());
         var completed = await index
             .CompleteUploadAsync(bucket, uploadId, record, condition, cancellationToken)
@@ -343,12 +348,18 @@ public sealed class StorageEngine(
         return true;
     }
 
+    /// <summary>
+    /// Copies an object. The copy keeps the source's checksum, its bytes being the
+    /// same, unless a different algorithm is asked for, in which case a full-object
+    /// checksum of the copy is computed.
+    /// </summary>
     public async Task<CopyObjectOutcome?> CopyObjectAsync(
         string sourceBucket,
         string sourceKey,
         string destinationBucket,
         string destinationKey,
         ObjectAttributes? replacement,
+        ChecksumAlgorithm? checksumAlgorithm,
         CancellationToken cancellationToken)
     {
         var source = await index.FindObjectAsync(sourceBucket, sourceKey, cancellationToken)
@@ -359,10 +370,17 @@ public sealed class StorageEngine(
         }
 
         var blobId = await blobs.CopyAsync(source.BlobId, cancellationToken).ConfigureAwait(false);
+        var checksum = checksumAlgorithm is { } algorithm && algorithm != source.Checksum?.Algorithm
+            ? new Checksum(
+                algorithm,
+                await blobs.ComputeChecksumAsync(blobId, algorithm, cancellationToken).ConfigureAwait(false),
+                ChecksumType.FullObject)
+            : source.Checksum;
         var record = source with
         {
             Key = destinationKey,
             BlobId = blobId,
+            Checksum = checksum,
             ContentType = replacement is null ? source.ContentType : replacement.ContentType,
             ContentHeaders = replacement?.ContentHeaders ?? source.ContentHeaders,
             Metadata = replacement?.Metadata ?? source.Metadata,
@@ -381,7 +399,7 @@ public sealed class StorageEngine(
             blobs.Delete(stored.ReplacedBlobId);
         }
 
-        return new CopyObjectOutcome(record.ETag, record.LastModified);
+        return new CopyObjectOutcome(record.ETag, record.LastModified, record.Checksum);
     }
 
     /// <summary>

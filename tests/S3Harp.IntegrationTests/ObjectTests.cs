@@ -279,6 +279,47 @@ public sealed class ObjectTests : IDisposable
     }
 
     [Fact]
+    public async Task PutObject_StoresTheChecksumTheClientChose_AndHeadReportsItOnRequest()
+    {
+        using var s3 = await CreateClientWithBucket();
+
+        var put = await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "checked.txt",
+            ContentBody = "Hello, S3Harp!",
+            ChecksumAlgorithm = ChecksumAlgorithm.SHA256,
+        }, Token);
+        var silent = await s3.GetObjectMetadataAsync(Bucket, "checked.txt", Token);
+        var enabled = await s3.GetObjectMetadataAsync(new GetObjectMetadataRequest
+        {
+            BucketName = Bucket,
+            Key = "checked.txt",
+            ChecksumMode = ChecksumMode.ENABLED,
+        }, Token);
+
+        Assert.Equal("Aj0Lx1vWnbGF+irlCT3Pa4HNGctHtn3/Q49ApNekoy8=", put.ChecksumSHA256);
+        Assert.Null(silent.ChecksumSHA256);
+        Assert.Equal("Aj0Lx1vWnbGF+irlCT3Pa4HNGctHtn3/Q49ApNekoy8=", enabled.ChecksumSHA256);
+        Assert.Equal(ChecksumType.FULL_OBJECT, enabled.ChecksumType);
+    }
+
+    [Fact]
+    public async Task PutObject_WithTheSdksDefaultChecksum_ReturnsItsCrc32()
+    {
+        using var s3 = await CreateClientWithBucket();
+
+        var put = await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "default.txt",
+            ContentBody = "Hello, S3Harp!",
+        }, Token);
+
+        Assert.Equal("NadAdg==", put.ChecksumCRC32);
+    }
+
+    [Fact]
     public async Task PutObject_ReturnsTheMd5ETag()
     {
         using var s3 = await CreateClientWithBucket();

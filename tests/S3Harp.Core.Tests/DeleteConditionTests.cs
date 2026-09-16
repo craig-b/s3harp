@@ -5,7 +5,7 @@ namespace S3Harp.Core.Tests;
 public sealed class DeleteConditionTests
 {
     private static readonly ObjectRecord Existing = new(
-        "key", "blob", Size: 3, ETag: "etag-hex", PartSizes: [], ContentType: null,
+        "key", "blob", Size: 3, ETag: "etag-hex", PartSizes: [], Checksum: null, ContentType: null,
         ContentHeaders: ContentHeaders.None, Metadata: new Dictionary<string, string>(),
         LastModified: new DateTimeOffset(2026, 9, 16, 12, 0, 0, 450, TimeSpan.Zero));
 

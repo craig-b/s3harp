@@ -40,7 +40,7 @@ public sealed class ConcurrencyStressTests : IDisposable
             return await engine.PutObjectAsync(
                 "alpha", "contested", content,
                 new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()),
-                null, CancellationToken.None);
+                ChecksumAlgorithm.Crc64Nvme, null, CancellationToken.None);
         }, Token)));
 
         Assert.All(outcomes, outcome =>
@@ -128,7 +128,8 @@ public sealed class ConcurrencyStressTests : IDisposable
         using var content = new MemoryStream(Encoding.UTF8.GetBytes(body));
         var outcome = await engine.PutObjectAsync(
             "alpha", key, content,
-            new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()), null, Token);
+            new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()),
+            ChecksumAlgorithm.Crc64Nvme, null, Token);
         Assert.Equal(PutObjectStatus.Stored, outcome.Status);
     }
 

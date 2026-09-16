@@ -89,7 +89,7 @@ public sealed class BlobStoreTests : IDisposable
     public async Task FailedWrite_LeavesNoFilesBehind()
     {
         await Assert.ThrowsAsync<InvalidDataException>(
-            () => store.WriteAsync(new FailingStream(), Token));
+            () => store.WriteAsync(new FailingStream(), null, Token));
 
         Assert.Empty(Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories));
     }
@@ -128,11 +128,30 @@ public sealed class BlobStoreTests : IDisposable
             throw new NotSupportedException();
     }
 
+    [Fact]
+    public async Task Write_ReportsTheContentChecksumOfTheRequestedAlgorithm()
+    {
+        var written = await Write("Hello, S3Harp!"u8.ToArray(), ChecksumAlgorithm.Crc32);
+
+        Assert.Equal("NadAdg==", written.Checksum);
+    }
+
+    [Fact]
+    public async Task ComputeChecksum_HashesAStoredBlob()
+    {
+        var written = await Write("Hello, S3Harp!"u8.ToArray());
+
+        var sha256 = await store.ComputeChecksumAsync(written.BlobId, ChecksumAlgorithm.Sha256, Token);
+
+        Assert.Equal("Aj0Lx1vWnbGF+irlCT3Pa4HNGctHtn3/Q49ApNekoy8=", sha256);
+    }
+
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
-    private async Task<BlobWriteResult> Write(byte[] content)
+    private async Task<BlobWriteResult> Write(
+        byte[] content, ChecksumAlgorithm checksum = ChecksumAlgorithm.Crc64Nvme)
     {
         using var stream = new MemoryStream(content);
-        return await store.WriteAsync(stream, Token);
+        return await store.WriteAsync(stream, checksum, Token);
     }
 }

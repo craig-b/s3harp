@@ -37,6 +37,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 last_modified TEXT NOT NULL,
                 content_headers TEXT NOT NULL DEFAULT '{}',
                 part_sizes TEXT NOT NULL DEFAULT '[]',
+                checksum TEXT,
                 PRIMARY KEY (bucket, key)
             ) WITHOUT ROWID;
             CREATE TABLE IF NOT EXISTS uploads (
@@ -64,6 +65,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         EnsureColumn(connection, "objects", "content_headers", "TEXT NOT NULL DEFAULT '{}'");
         EnsureColumn(connection, "uploads", "content_headers", "TEXT NOT NULL DEFAULT '{}'");
         EnsureColumn(connection, "objects", "part_sizes", "TEXT NOT NULL DEFAULT '[]'");
+        EnsureColumn(connection, "objects", "checksum", "TEXT");
         EnsureColumn(
             connection, "parts", "uploaded_at",
             "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.0000000+00:00'");
@@ -251,7 +253,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         command.Transaction = transaction;
         command.CommandText = """
             SELECT key, blob_id, size, etag, content_type, metadata, last_modified,
-                   content_headers, part_sizes
+                   content_headers, part_sizes, checksum
             FROM objects WHERE bucket = $bucket AND key = $key
             """;
         command.Parameters.AddWithValue("$bucket", bucket);
@@ -277,7 +279,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT key, blob_id, size, etag, content_type, metadata, last_modified,
-                       content_headers, part_sizes
+                       content_headers, part_sizes, checksum
                 FROM objects
                 WHERE bucket = $bucket AND key >= $lower AND ($upper IS NULL OR key < $upper)
                 ORDER BY key
@@ -621,10 +623,10 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         upsert.CommandText = """
             INSERT INTO objects
                 (bucket, key, blob_id, size, etag, content_type, metadata, last_modified,
-                 content_headers, part_sizes)
+                 content_headers, part_sizes, checksum)
             VALUES
                 ($bucket, $key, $blob_id, $size, $etag, $content_type, $metadata, $last_modified,
-                 $content_headers, $part_sizes)
+                 $content_headers, $part_sizes, $checksum)
             ON CONFLICT (bucket, key) DO UPDATE SET
                 blob_id = excluded.blob_id,
                 size = excluded.size,
@@ -633,6 +635,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 metadata = excluded.metadata,
                 content_headers = excluded.content_headers,
                 part_sizes = excluded.part_sizes,
+                checksum = excluded.checksum,
                 last_modified = excluded.last_modified
             """;
         upsert.Parameters.AddWithValue("$bucket", bucket);
@@ -645,6 +648,11 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         upsert.Parameters.AddWithValue("$last_modified", FormatTimestamp(record.LastModified));
         upsert.Parameters.AddWithValue("$content_headers", WriteContentHeaders(record.ContentHeaders));
         upsert.Parameters.AddWithValue("$part_sizes", JsonSerializer.Serialize(record.PartSizes));
+        upsert.Parameters.AddWithValue(
+            "$checksum",
+            record.Checksum is null
+                ? DBNull.Value
+                : JsonSerializer.Serialize(record.Checksum, ChecksumJson));
         await upsert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -692,10 +700,16 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         reader.GetInt64(2),
         reader.GetString(3),
         JsonSerializer.Deserialize<long[]>(reader.GetString(8))!,
+        reader.IsDBNull(9) ? null : JsonSerializer.Deserialize<Checksum>(reader.GetString(9), ChecksumJson),
         reader.IsDBNull(4) ? null : reader.GetString(4),
         ReadContentHeaders(reader.GetString(7)),
         JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(5))!,
         ParseTimestamp(reader.GetString(6)));
+
+    private static readonly JsonSerializerOptions ChecksumJson = new()
+    {
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+    };
 
     private static readonly JsonSerializerOptions ContentHeadersJson = new()
     {

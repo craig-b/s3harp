@@ -12,9 +12,53 @@ public enum ChecksumAlgorithm
     Sha256,
 }
 
-/// <summary>Creates the incremental computation of each checksum algorithm.</summary>
+/// <summary>Whether a checksum covers the object's bytes or is composed from its parts' checksums.</summary>
+public enum ChecksumType
+{
+    FullObject,
+    Composite,
+}
+
+/// <summary>
+/// An object's stored checksum: the algorithm, the base64 value as S3 presents it
+/// (a composite value carries the "-N" part-count suffix), and its type.
+/// </summary>
+public sealed record Checksum(ChecksumAlgorithm Algorithm, string Value, ChecksumType Type);
+
+/// <summary>
+/// Names the checksum algorithms as S3 does and creates the incremental
+/// computation of each.
+/// </summary>
 public static class ChecksumAlgorithms
 {
+    private static readonly (ChecksumAlgorithm Algorithm, string Name)[] Names =
+    [
+        (ChecksumAlgorithm.Crc32, "CRC32"),
+        (ChecksumAlgorithm.Crc32C, "CRC32C"),
+        (ChecksumAlgorithm.Crc64Nvme, "CRC64NVME"),
+        (ChecksumAlgorithm.Sha1, "SHA1"),
+        (ChecksumAlgorithm.Sha256, "SHA256"),
+    ];
+
+    public static string Name(ChecksumAlgorithm algorithm) =>
+        Names.First(name => name.Algorithm == algorithm).Name;
+
+    public static bool TryParseName(string name, out ChecksumAlgorithm algorithm)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        foreach (var (candidate, candidateName) in Names)
+        {
+            if (string.Equals(name, candidateName, StringComparison.OrdinalIgnoreCase))
+            {
+                algorithm = candidate;
+                return true;
+            }
+        }
+
+        algorithm = default;
+        return false;
+    }
+
     public static IncrementalChecksum Create(ChecksumAlgorithm algorithm) => algorithm switch
     {
         ChecksumAlgorithm.Crc32 => new CrcChecksum(CrcChecksum.Crc32Table, width: 32),

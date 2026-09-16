@@ -7,7 +7,7 @@ namespace S3Harp.Server.Tests;
 public sealed class ResponseHeaderOverridesTests
 {
     private static readonly ObjectRecord Stored = new(
-        "key", "blob", Size: 3, ETag: "etag", PartSizes: [], ContentType: "text/plain",
+        "key", "blob", Size: 3, ETag: "etag", PartSizes: [], Checksum: null, ContentType: "text/plain",
         new ContentHeaders(CacheControl: "max-age=60", ContentLanguage: "en"),
         new Dictionary<string, string>(), DateTimeOffset.UnixEpoch);
 

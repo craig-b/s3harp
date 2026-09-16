@@ -86,6 +86,44 @@ public sealed class StorageEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task Put_StoresAFullObjectChecksumOfTheRequestedAlgorithm()
+    {
+        await CreateBucket("alpha");
+
+        var outcome = await Put("alpha", "key", "Hello, S3Harp!", checksum: ChecksumAlgorithm.Crc32);
+
+        var expected = new Checksum(ChecksumAlgorithm.Crc32, "NadAdg==", ChecksumType.FullObject);
+        Assert.Equal(expected, outcome.Checksum);
+        Assert.Equal(expected, (await index.FindObjectAsync("alpha", "key", Token))?.Checksum);
+    }
+
+    [Fact]
+    public async Task Copy_KeepsTheSourceChecksum()
+    {
+        await CreateBucket("alpha");
+        var source = await Put("alpha", "src", "Hello, S3Harp!", checksum: ChecksumAlgorithm.Sha1);
+
+        var copy = await engine.CopyObjectAsync("alpha", "src", "alpha", "dst", null, null, Token);
+
+        Assert.Equal(source.Checksum, copy?.Checksum);
+        Assert.Equal(source.Checksum, (await index.FindObjectAsync("alpha", "dst", Token))?.Checksum);
+    }
+
+    [Fact]
+    public async Task Copy_WithARequestedAlgorithm_ComputesTheCopysChecksumAfresh()
+    {
+        await CreateBucket("alpha");
+        await Put("alpha", "src", "Hello, S3Harp!", checksum: ChecksumAlgorithm.Sha1);
+
+        var copy = await engine.CopyObjectAsync(
+            "alpha", "src", "alpha", "dst", null, ChecksumAlgorithm.Crc32, Token);
+
+        Assert.Equal(
+            new Checksum(ChecksumAlgorithm.Crc32, "NadAdg==", ChecksumType.FullObject),
+            copy?.Checksum);
+    }
+
+    [Fact]
     public async Task Delete_RemovesTheRecordAndTheBlobFile()
     {
         await CreateBucket("alpha");
@@ -141,13 +179,14 @@ public sealed class StorageEngineTests : IDisposable
 
     private async Task<PutObjectOutcome> Put(
         string bucket, string key, string content, string? contentType = null,
-        IReadOnlyDictionary<string, string>? metadata = null, WriteCondition? condition = null)
+        IReadOnlyDictionary<string, string>? metadata = null, WriteCondition? condition = null,
+        ChecksumAlgorithm checksum = ChecksumAlgorithm.Crc64Nvme)
     {
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
         return await engine.PutObjectAsync(
             bucket, key, stream,
             new ObjectAttributes(contentType, ContentHeaders.None, metadata ?? new Dictionary<string, string>()),
-            condition, Token);
+            checksum, condition, Token);
     }
 
     private static async Task<string> ReadContent(ObjectDownload download)

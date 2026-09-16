@@ -440,6 +440,7 @@ public sealed class S3RequestDispatcher(
         {
             outcome = await engine.PutObjectAsync(
                 bucket, key, context.Request.Body, RequestAttributes.Read(context.Request),
+                ChecksumHeaders.UploadAlgorithm(context.Request.Headers),
                 WriteConditionHeaders.Parse(context.Request.Headers),
                 cancellationToken).ConfigureAwait(false);
         }
@@ -458,6 +459,7 @@ public sealed class S3RequestDispatcher(
                 return new S3ErrorResult(S3Errors.PreconditionFailed);
             default:
                 context.Response.Headers.ETag = $"\"{outcome.ETag}\"";
+                ChecksumHeaders.Write(context.Response.Headers, outcome.Checksum!);
                 return new S3StatusResult(StatusCodes.Status200OK);
         }
     }
@@ -497,13 +499,18 @@ public sealed class S3RequestDispatcher(
         }
 
         var served = ResponseHeaderOverrides.Apply(context.Request.Query, download.Record);
+        // A whole-object checksum describes the whole object, so a range response omits it.
+        var checksum = ChecksumHeaders.ModeEnabled(context.Request.Headers)
+            && range.Outcome == RangeOutcome.WholeObject
+            ? download.Record.Checksum
+            : null;
         if (includeContent)
         {
-            return new S3ObjectResult(served, download.Content, range, partsCount);
+            return new S3ObjectResult(served, download.Content, range, partsCount, checksum);
         }
 
         await download.Content.DisposeAsync().ConfigureAwait(false);
-        return new S3ObjectResult(served, content: null, range, partsCount);
+        return new S3ObjectResult(served, content: null, range, partsCount, checksum);
     }
 
     /// <summary>
@@ -908,6 +915,7 @@ public sealed class S3RequestDispatcher(
         var outcome = await engine.CopyObjectAsync(
             sourceBucket, sourceKey, bucket, key,
             replace ? RequestAttributes.Read(context.Request) : null,
+            ChecksumHeaders.RequestedAlgorithm(context.Request.Headers),
             cancellationToken).ConfigureAwait(false);
         if (outcome is null)
         {
@@ -920,8 +928,18 @@ public sealed class S3RequestDispatcher(
                 new XDeclaration("1.0", "UTF-8", standalone: null),
                 new XElement(S3Namespace + "CopyObjectResult",
                     new XElement(S3Namespace + "ETag", $"\"{outcome.ETag}\""),
-                    new XElement(S3Namespace + "LastModified", FormatTimestamp(outcome.LastModified)))));
+                    new XElement(S3Namespace + "LastModified", FormatTimestamp(outcome.LastModified)),
+                    ChecksumElements(outcome.Checksum))));
     }
+
+    /// <summary>A checksum's value and type elements; nothing for an object without one.</summary>
+    private static IEnumerable<XElement> ChecksumElements(Checksum? checksum) =>
+        checksum is null
+            ? []
+            : [
+                new XElement(S3Namespace + ChecksumHeaders.ElementName(checksum.Algorithm), checksum.Value),
+                new XElement(S3Namespace + "ChecksumType", ChecksumHeaders.TypeName(checksum.Type)),
+            ];
 
     /// <summary>
     /// Parses an XML request body. Whitespace is preserved because element text

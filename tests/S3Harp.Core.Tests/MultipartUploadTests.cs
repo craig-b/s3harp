@@ -89,7 +89,7 @@ public sealed class MultipartUploadTests : IDisposable
 
         await engine.PutObjectAsync("alpha", "key", content,
             new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()),
-            null, Token);
+            ChecksumAlgorithm.Crc64Nvme, null, Token);
 
         var record = await index.FindObjectAsync("alpha", "key", Token);
         Assert.Empty(record!.PartSizes);
@@ -104,7 +104,7 @@ public sealed class MultipartUploadTests : IDisposable
         await engine.CompleteUploadAsync(
             "alpha", "key", uploadId, [(1, FirstPartETag), (2, SecondPartETag)], null, Token);
 
-        await engine.CopyObjectAsync("alpha", "key", "alpha", "copy", null, Token);
+        await engine.CopyObjectAsync("alpha", "key", "alpha", "copy", null, null, Token);
 
         var record = await index.FindObjectAsync("alpha", "copy", Token);
         Assert.Equal(CombinedETag, record?.ETag);
@@ -240,7 +240,7 @@ public sealed class MultipartUploadTests : IDisposable
             await engine.PutObjectAsync(
                 "alpha", "key", content,
                 new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()),
-                null, Token);
+                ChecksumAlgorithm.Crc64Nvme, null, Token);
         }
 
         var outcome = await engine.CompleteUploadAsync(
@@ -299,10 +299,11 @@ public sealed class MultipartUploadTests : IDisposable
         {
             await engine.PutObjectAsync("alpha", "src", content,
                 new ObjectAttributes("text/plain", ContentHeaders.None,
-                    new Dictionary<string, string> { ["note"] = "kept" }), null, Token);
+                    new Dictionary<string, string> { ["note"] = "kept" }),
+                ChecksumAlgorithm.Crc64Nvme, null, Token);
         }
 
-        var copy = await engine.CopyObjectAsync("alpha", "src", "alpha", "dst", null, Token);
+        var copy = await engine.CopyObjectAsync("alpha", "src", "alpha", "dst", null, null, Token);
 
         Assert.NotNull(copy);
         Assert.Equal("5eb63bbbe01eeed093cb22bb8f5acdc3", copy.ETag);
@@ -321,13 +322,14 @@ public sealed class MultipartUploadTests : IDisposable
         {
             await engine.PutObjectAsync("alpha", "src", content,
                 new ObjectAttributes("audio/mpeg", ContentHeaders.None,
-                    new Dictionary<string, string> { ["note"] = "old" }), null, Token);
+                    new Dictionary<string, string> { ["note"] = "old" }),
+                ChecksumAlgorithm.Crc64Nvme, null, Token);
         }
 
         var replacement = new ObjectAttributes(
             "audio/ogg", new ContentHeaders(ContentLanguage: "eo"),
             new Dictionary<string, string> { ["note"] = "new" });
-        await engine.CopyObjectAsync("alpha", "src", "alpha", "dst", replacement, Token);
+        await engine.CopyObjectAsync("alpha", "src", "alpha", "dst", replacement, null, Token);
 
         var download = await engine.GetObjectAsync("alpha", "dst", Token);
         Assert.NotNull(download);
@@ -361,7 +363,7 @@ public sealed class MultipartUploadTests : IDisposable
     {
         await CreateBucket();
 
-        Assert.Null(await engine.CopyObjectAsync("alpha", "missing", "alpha", "dst", null, Token));
+        Assert.Null(await engine.CopyObjectAsync("alpha", "missing", "alpha", "dst", null, null, Token));
     }
 
     public void Dispose() => Directory.Delete(root, recursive: true);

@@ -118,6 +118,20 @@ public abstract class MetadataIndexContractTests
     }
 
     [Fact]
+    public async Task StoredObject_KeepsItsChecksum()
+    {
+        await Create("alpha");
+        var checksum = new Checksum(ChecksumAlgorithm.Sha256, "abc=-2", ChecksumType.Composite);
+
+        await Index.PutObjectAsync(
+            "alpha", Record("key", "blob-1") with { Checksum = checksum }, null, Token);
+        await Index.PutObjectAsync("alpha", Record("plain", "blob-2"), null, Token);
+
+        Assert.Equal(checksum, (await Index.FindObjectAsync("alpha", "key", Token))?.Checksum);
+        Assert.Null((await Index.FindObjectAsync("alpha", "plain", Token))?.Checksum);
+    }
+
+    [Fact]
     public async Task Upload_KeepsItsContentHeaders()
     {
         await Create("alpha");
@@ -517,7 +531,7 @@ public abstract class MetadataIndexContractTests
         new(number, blobId, Size: 3, ETag: "part-etag", LastModified: CreationTime);
 
     private static ObjectRecord Record(string key, string blobId) => new(
-        key, blobId, Size: 3, ETag: "etag-hex", PartSizes: [], ContentType: "text/plain",
+        key, blobId, Size: 3, ETag: "etag-hex", PartSizes: [], Checksum: null, ContentType: "text/plain",
         ContentHeaders: ContentHeaders.None,
         Metadata: new Dictionary<string, string> { ["meta-1"] = "value-1" },
         LastModified: CreationTime);
@@ -583,10 +597,12 @@ public sealed class SqliteMetadataIndexTests : MetadataIndexContractTests, IDisp
         var old = await upgraded.FindObjectAsync("alpha", "old", TestContext.Current.CancellationToken);
         Assert.Equal(ContentHeaders.None, old?.ContentHeaders);
         Assert.Empty(old!.PartSizes);
+        Assert.Null(old.Checksum);
         var stored = await upgraded.PutObjectAsync(
             "alpha",
             new ObjectRecord(
-                "new", "blob-2", Size: 3, ETag: "etag-hex", PartSizes: [], ContentType: null,
+                "new", "blob-2", Size: 3, ETag: "etag-hex", PartSizes: [], Checksum: null,
+                ContentType: null,
                 ContentHeaders: new ContentHeaders(ContentEncoding: "gzip"),
                 Metadata: new Dictionary<string, string>(), LastModified: DateTimeOffset.UnixEpoch),
             null, TestContext.Current.CancellationToken);
