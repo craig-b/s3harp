@@ -879,6 +879,33 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task GetObject_WithResponseOverrides_ServesTheRequestedHeadersForThatResponse()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch(
+            "PUT", "/my-bucket/key", body: "hello",
+            configure: request => request.ContentType = "text/plain");
+
+        var overridden = await Dispatch(
+            "GET", "/my-bucket/key",
+            query: "?response-content-type=foo/bar&response-cache-control=no-cache"
+                + "&response-content-disposition=bla&response-content-encoding=aaa"
+                + "&response-content-language=esperanto&response-expires=123");
+
+        Assert.Equal(StatusCodes.Status200OK, overridden.Response.StatusCode);
+        Assert.Equal("foo/bar", overridden.Response.ContentType);
+        Assert.Equal("no-cache", overridden.Response.Headers.CacheControl);
+        Assert.Equal("bla", overridden.Response.Headers.ContentDisposition);
+        Assert.Equal("aaa", overridden.Response.Headers.ContentEncoding);
+        Assert.Equal("esperanto", overridden.Response.Headers.ContentLanguage);
+        Assert.Equal("123", overridden.Response.Headers.Expires);
+        Assert.Equal("hello", ReadBodyText(overridden));
+        var plain = await Dispatch("HEAD", "/my-bucket/key");
+        Assert.Equal("text/plain", plain.Response.ContentType);
+        Assert.False(plain.Response.Headers.ContainsKey("Cache-Control"));
+    }
+
+    [Fact]
     public async Task PutObject_StoresTheContentHeaders_AndHeadReplaysThem()
     {
         await Dispatch("PUT", "/my-bucket");

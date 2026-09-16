@@ -229,6 +229,37 @@ public sealed class ObjectTests : IDisposable
     }
 
     [Fact]
+    public async Task GetObject_WithResponseHeaderOverrides_ServesThemInPlaceOfTheStoredOnes()
+    {
+        using var s3 = await CreateClientWithBucket();
+        await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "report.txt",
+            ContentBody = "content",
+            ContentType = "text/plain",
+        }, Token);
+
+        using var response = await s3.GetObjectAsync(new GetObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "report.txt",
+            ResponseHeaderOverrides =
+            {
+                ContentType = "application/x-report",
+                ContentDisposition = "attachment; filename=report.txt",
+                CacheControl = "no-cache",
+            },
+        }, Token);
+
+        Assert.Equal("application/x-report", response.Headers.ContentType);
+        Assert.Equal("attachment; filename=report.txt", response.Headers.ContentDisposition);
+        Assert.Equal("no-cache", response.Headers.CacheControl);
+        var head = await s3.GetObjectMetadataAsync(Bucket, "report.txt", Token);
+        Assert.Equal("text/plain", head.Headers.ContentType);
+    }
+
+    [Fact]
     public async Task PutObject_ReturnsTheMd5ETag()
     {
         using var s3 = await CreateClientWithBucket();

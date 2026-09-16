@@ -497,13 +497,14 @@ public sealed class S3RequestDispatcher(
             return new S3ErrorResult(refusal);
         }
 
+        var served = ResponseHeaderOverrides.Apply(context.Request.Query, download.Record);
         if (includeContent)
         {
-            return new S3ObjectResult(download.Record, download.Content, range, partsCount);
+            return new S3ObjectResult(served, download.Content, range, partsCount);
         }
 
         await download.Content.DisposeAsync().ConfigureAwait(false);
-        return new S3ObjectResult(download.Record, content: null, range, partsCount);
+        return new S3ObjectResult(served, content: null, range, partsCount);
     }
 
     /// <summary>
