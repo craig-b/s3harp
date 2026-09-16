@@ -55,8 +55,9 @@ public sealed class StorageEngine(
 
         var write = await blobs.WriteAsync(content, cancellationToken).ConfigureAwait(false);
         var record = new ObjectRecord(
-            key, write.BlobId, write.Size, write.ContentMd5Hex, attributes.ContentType,
-            attributes.ContentHeaders, attributes.Metadata, timeProvider.GetUtcNow());
+            key, write.BlobId, write.Size, write.ContentMd5Hex, PartSizes: [],
+            attributes.ContentType, attributes.ContentHeaders, attributes.Metadata,
+            timeProvider.GetUtcNow());
         var stored = await index.PutObjectAsync(bucket, record, condition, cancellationToken)
             .ConfigureAwait(false);
         if (stored.Status != PutObjectStatus.Stored)
@@ -296,6 +297,7 @@ public sealed class StorageEngine(
             [.. assembled.Select(p => p.BlobId)], cancellationToken).ConfigureAwait(false);
         var record = new ObjectRecord(
             key, concatenated.BlobId, concatenated.Size, MultipartETag(assembled),
+            [.. assembled.Select(part => part.Size)],
             upload.ContentType, upload.ContentHeaders, upload.Metadata, timeProvider.GetUtcNow());
         var completed = await index
             .CompleteUploadAsync(bucket, uploadId, record, condition, cancellationToken)

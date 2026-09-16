@@ -68,6 +68,50 @@ public sealed class MultipartUploadTests : IDisposable
     }
 
     [Fact]
+    public async Task CompletedUpload_RecordsTheSizeOfEachPartInOrder()
+    {
+        var uploadId = await StartUpload();
+        await UploadPart(uploadId, 1, "Hello, ");
+        await UploadPart(uploadId, 3, "S3Harp!");
+
+        await engine.CompleteUploadAsync(
+            "alpha", "key", uploadId, [(1, FirstPartETag), (3, SecondPartETag)], null, Token);
+
+        var record = await index.FindObjectAsync("alpha", "key", Token);
+        Assert.Equal([7, 7], record?.PartSizes);
+    }
+
+    [Fact]
+    public async Task PutObject_RecordsNoParts()
+    {
+        await CreateBucket();
+        using var content = new MemoryStream(Encoding.UTF8.GetBytes("hello"));
+
+        await engine.PutObjectAsync("alpha", "key", content,
+            new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()),
+            null, Token);
+
+        var record = await index.FindObjectAsync("alpha", "key", Token);
+        Assert.Empty(record!.PartSizes);
+    }
+
+    [Fact]
+    public async Task CopiedObject_KeepsThePartSizesWithTheMultipartETag()
+    {
+        var uploadId = await StartUpload();
+        await UploadPart(uploadId, 1, "Hello, ");
+        await UploadPart(uploadId, 2, "S3Harp!");
+        await engine.CompleteUploadAsync(
+            "alpha", "key", uploadId, [(1, FirstPartETag), (2, SecondPartETag)], null, Token);
+
+        await engine.CopyObjectAsync("alpha", "key", "alpha", "copy", null, Token);
+
+        var record = await index.FindObjectAsync("alpha", "copy", Token);
+        Assert.Equal(CombinedETag, record?.ETag);
+        Assert.Equal([7, 7], record?.PartSizes);
+    }
+
+    [Fact]
     public async Task Complete_LeavesOnlyTheAssembledBlobOnDisk()
     {
         var uploadId = await StartUpload();

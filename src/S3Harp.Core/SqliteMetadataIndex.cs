@@ -36,6 +36,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 metadata TEXT NOT NULL,
                 last_modified TEXT NOT NULL,
                 content_headers TEXT NOT NULL DEFAULT '{}',
+                part_sizes TEXT NOT NULL DEFAULT '[]',
                 PRIMARY KEY (bucket, key)
             ) WITHOUT ROWID;
             CREATE TABLE IF NOT EXISTS uploads (
@@ -58,9 +59,10 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             """;
         command.ExecuteNonQuery();
 
-        // Databases created before content headers existed gain the column in place.
+        // Databases created before these columns existed gain them in place.
         EnsureColumn(connection, "objects", "content_headers", "TEXT NOT NULL DEFAULT '{}'");
         EnsureColumn(connection, "uploads", "content_headers", "TEXT NOT NULL DEFAULT '{}'");
+        EnsureColumn(connection, "objects", "part_sizes", "TEXT NOT NULL DEFAULT '[]'");
     }
 
     private static void EnsureColumn(
@@ -244,7 +246,8 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT key, blob_id, size, etag, content_type, metadata, last_modified, content_headers
+            SELECT key, blob_id, size, etag, content_type, metadata, last_modified,
+                   content_headers, part_sizes
             FROM objects WHERE bucket = $bucket AND key = $key
             """;
         command.Parameters.AddWithValue("$bucket", bucket);
@@ -269,7 +272,8 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         {
             var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT key, blob_id, size, etag, content_type, metadata, last_modified, content_headers
+                SELECT key, blob_id, size, etag, content_type, metadata, last_modified,
+                       content_headers, part_sizes
                 FROM objects
                 WHERE bucket = $bucket AND key >= $lower AND ($upper IS NULL OR key < $upper)
                 ORDER BY key
@@ -594,10 +598,10 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         upsert.CommandText = """
             INSERT INTO objects
                 (bucket, key, blob_id, size, etag, content_type, metadata, last_modified,
-                 content_headers)
+                 content_headers, part_sizes)
             VALUES
                 ($bucket, $key, $blob_id, $size, $etag, $content_type, $metadata, $last_modified,
-                 $content_headers)
+                 $content_headers, $part_sizes)
             ON CONFLICT (bucket, key) DO UPDATE SET
                 blob_id = excluded.blob_id,
                 size = excluded.size,
@@ -605,6 +609,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 content_type = excluded.content_type,
                 metadata = excluded.metadata,
                 content_headers = excluded.content_headers,
+                part_sizes = excluded.part_sizes,
                 last_modified = excluded.last_modified
             """;
         upsert.Parameters.AddWithValue("$bucket", bucket);
@@ -616,6 +621,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         upsert.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(record.Metadata));
         upsert.Parameters.AddWithValue("$last_modified", FormatTimestamp(record.LastModified));
         upsert.Parameters.AddWithValue("$content_headers", WriteContentHeaders(record.ContentHeaders));
+        upsert.Parameters.AddWithValue("$part_sizes", JsonSerializer.Serialize(record.PartSizes));
         await upsert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -662,6 +668,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         reader.GetString(1),
         reader.GetInt64(2),
         reader.GetString(3),
+        JsonSerializer.Deserialize<long[]>(reader.GetString(8))!,
         reader.IsDBNull(4) ? null : reader.GetString(4),
         ReadContentHeaders(reader.GetString(7)),
         JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(5))!,

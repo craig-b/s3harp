@@ -58,6 +58,56 @@ public sealed class MultipartTests : IDisposable
     }
 
     [Fact]
+    public async Task GetObject_ByPartNumber_ServesThatPartWithThePartsCount()
+    {
+        using var s3 = await CreateClientWithBucket();
+        var firstPart = RandomNumberGenerator.GetBytes(5 * 1024 * 1024);
+        var secondPart = RandomNumberGenerator.GetBytes(64 * 1024);
+        var etag = await CompleteTwoPartUpload(s3, "parts.bin", firstPart, secondPart);
+
+        using var response = await s3.GetObjectAsync(new GetObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "parts.bin",
+            PartNumber = 2,
+        }, Token);
+        using var received = new MemoryStream();
+        await response.ResponseStream.CopyToAsync(received, Token);
+
+        Assert.Equal(HttpStatusCode.PartialContent, response.HttpStatusCode);
+        Assert.Equal(secondPart, received.ToArray());
+        Assert.Equal(2, response.PartsCount);
+        Assert.Equal(etag, response.ETag);
+        var head = await s3.GetObjectMetadataAsync(new GetObjectMetadataRequest
+        {
+            BucketName = Bucket,
+            Key = "parts.bin",
+            PartNumber = 1,
+        }, Token);
+        Assert.Equal(firstPart.Length, head.ContentLength);
+        Assert.Equal(2, head.PartsCount);
+    }
+
+    [Fact]
+    public async Task GetObject_ByAPartNumberBeyondTheLast_ThrowsInvalidPart()
+    {
+        using var s3 = await CreateClientWithBucket();
+        await CompleteTwoPartUpload(
+            s3, "parts.bin", new byte[5 * 1024 * 1024], new byte[1024]);
+
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
+            () => s3.GetObjectAsync(new GetObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "parts.bin",
+                PartNumber = 3,
+            }, Token));
+
+        Assert.Equal("InvalidPart", exception.ErrorCode);
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+    }
+
+    [Fact]
     public async Task CompletingWithANonFinalPartUnderFiveMiB_ThrowsEntityTooSmall()
     {
         using var s3 = await CreateClientWithBucket();
@@ -221,6 +271,35 @@ public sealed class MultipartTests : IDisposable
     public void Dispose() => factory.Dispose();
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
+
+    /// <summary>Uploads and completes the two parts, returning the object's ETag.</summary>
+    private static async Task<string> CompleteTwoPartUpload(
+        AmazonS3Client s3, string key, byte[] firstPart, byte[] secondPart)
+    {
+        var initiate = await s3.InitiateMultipartUploadAsync(Bucket, key, Token);
+        var uploaded = new List<PartETag>();
+        foreach (var (bytes, number) in new[] { (firstPart, 1), (secondPart, 2) })
+        {
+            var part = await s3.UploadPartAsync(new UploadPartRequest
+            {
+                BucketName = Bucket,
+                Key = key,
+                UploadId = initiate.UploadId,
+                PartNumber = number,
+                InputStream = new MemoryStream(bytes),
+            }, Token);
+            uploaded.Add(new PartETag(number, part.ETag));
+        }
+
+        var completed = await s3.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
+        {
+            BucketName = Bucket,
+            Key = key,
+            UploadId = initiate.UploadId,
+            PartETags = uploaded,
+        }, Token);
+        return completed.ETag;
+    }
 
     private async Task<AmazonS3Client> CreateClientWithBucket()
     {

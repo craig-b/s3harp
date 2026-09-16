@@ -113,6 +113,11 @@ public static class S3Errors
         + "without changing the object's metadata, storage class, website redirect location "
         + "or encryption attributes.");
 
+    public static S3Error RangeWithPartNumber { get; } = new(
+        "InvalidRequest",
+        StatusCodes.Status400BadRequest,
+        "Cannot specify both Range header and partNumber query parameter");
+
     public static S3Error MissingContentSha256 { get; } = new(
         "InvalidRequest",
         StatusCodes.Status400BadRequest,

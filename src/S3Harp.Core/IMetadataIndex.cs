@@ -3,12 +3,17 @@ namespace S3Harp.Core;
 /// <summary>A bucket known to the index.</summary>
 public sealed record BucketInfo(string Name, DateTimeOffset CreatedAt);
 
-/// <summary>An object's metadata: the key → blob mapping and everything served in headers.</summary>
+/// <summary>
+/// An object's metadata: the key → blob mapping and everything served in headers.
+/// <paramref name="PartSizes"/> lists the size of each part, in order, of an object
+/// assembled by a multipart upload; it is empty for an object stored in one piece.
+/// </summary>
 public sealed record ObjectRecord(
     string Key,
     string BlobId,
     long Size,
     string ETag,
+    IReadOnlyList<long> PartSizes,
     string? ContentType,
     ContentHeaders ContentHeaders,
     IReadOnlyDictionary<string, string> Metadata,

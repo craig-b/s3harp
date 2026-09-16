@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Globalization;
 using S3Harp.Core;
 
 namespace S3Harp.Server;
@@ -6,10 +7,12 @@ namespace S3Harp.Server;
 /// <summary>
 /// Serves an object's headers and, for GET, streams its content — the whole object,
 /// or a 206 slice when a range is given. A null content stream produces the HEAD
-/// shape: full headers, empty body.
+/// shape: full headers, empty body. A parts count is announced in
+/// <c>x-amz-mp-parts-count</c>, as S3 does when a part of a multipart object is requested.
 /// </summary>
 public sealed class S3ObjectResult(
-    ObjectRecord record, Stream? content, RangeEvaluation? range = null) : IResult
+    ObjectRecord record, Stream? content, RangeEvaluation? range = null, int? partsCount = null)
+    : IResult
 {
     private const int BufferSize = 64 * 1024;
 
@@ -33,6 +36,11 @@ public sealed class S3ObjectResult(
         {
             response.Headers.ContentRange =
                 $"bytes {contentRange.From}-{contentRange.To}/{record.Size}";
+        }
+
+        if (partsCount is { } count)
+        {
+            response.Headers["x-amz-mp-parts-count"] = count.ToString(CultureInfo.InvariantCulture);
         }
 
         WriteContentHeaders(response.Headers, record.ContentHeaders);

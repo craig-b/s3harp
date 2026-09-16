@@ -19,6 +19,9 @@ public sealed class S3RequestDispatcher(
     /// <summary>The version id S3 assigns to objects in unversioned buckets.</summary>
     private const string NullVersionId = "null";
 
+    /// <summary>S3 numbers the parts of a multipart upload 1 through 10,000.</summary>
+    private const int MaxPartNumber = 10_000;
+
     private static readonly XNamespace S3Namespace = "http://s3.amazonaws.com/doc/2006-03-01/";
 
     /// <summary>
@@ -486,21 +489,53 @@ public sealed class S3RequestDispatcher(
                 : new S3ErrorResult(S3Errors.PreconditionFailed);
         }
 
-        var range = RangeHeader.Evaluate(
-            context.Request.Headers.Range.ToString(), download.Record.Size);
-        if (range.Outcome == RangeOutcome.Unsatisfiable)
+        var (range, partsCount, refusal) = SelectContent(context.Request, download.Record);
+        if (refusal is not null)
         {
             await download.Content.DisposeAsync().ConfigureAwait(false);
-            return new S3ErrorResult(S3Errors.InvalidRange);
+            return new S3ErrorResult(refusal);
         }
 
         if (includeContent)
         {
-            return new S3ObjectResult(download.Record, download.Content, range);
+            return new S3ObjectResult(download.Record, download.Content, range, partsCount);
         }
 
         await download.Content.DisposeAsync().ConfigureAwait(false);
-        return new S3ObjectResult(download.Record, content: null, range);
+        return new S3ObjectResult(download.Record, content: null, range, partsCount);
+    }
+
+    /// <summary>
+    /// The slice of the object a GET or HEAD serves: the part named by
+    /// <c>partNumber</c>, else the <c>Range</c> header's bytes, else the whole object.
+    /// A refusal names the error to answer with instead.
+    /// </summary>
+    private static (RangeEvaluation Range, int? PartsCount, S3Error? Refusal) SelectContent(
+        HttpRequest request, ObjectRecord record)
+    {
+        var rangeHeader = request.Headers.Range.ToString();
+        if (!request.Query.TryGetValue("partNumber", out var partNumberValue))
+        {
+            var range = RangeHeader.Evaluate(rangeHeader, record.Size);
+            return (range, null,
+                range.Outcome == RangeOutcome.Unsatisfiable ? S3Errors.InvalidRange : null);
+        }
+
+        if (!int.TryParse(partNumberValue, NumberStyles.None, CultureInfo.InvariantCulture,
+                out var partNumber)
+            || partNumber is < 1 or > MaxPartNumber)
+        {
+            return (default, null, S3Errors.InvalidArgument);
+        }
+
+        if (rangeHeader.Length > 0)
+        {
+            return (default, null, S3Errors.RangeWithPartNumber);
+        }
+
+        return ObjectPart.Select(partNumber, record) is { } part
+            ? (part, record.PartSizes.Count > 0 ? record.PartSizes.Count : null, null)
+            : (default, null, S3Errors.InvalidPart);
     }
 
     private async Task<IResult> DeleteObjectAsync(
@@ -667,7 +702,7 @@ public sealed class S3RequestDispatcher(
         }
 
         if (!int.TryParse(context.Request.Query["partNumber"], out var partNumber)
-            || partNumber is < 1 or > 10_000)
+            || partNumber is < 1 or > MaxPartNumber)
         {
             return new S3ErrorResult(S3Errors.InvalidArgument);
         }

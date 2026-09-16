@@ -104,6 +104,20 @@ public abstract class MetadataIndexContractTests
     }
 
     [Fact]
+    public async Task StoredObject_KeepsItsPartSizes()
+    {
+        await Create("alpha");
+        long[] partSizes = [5, 3, 1];
+
+        await Index.PutObjectAsync(
+            "alpha", Record("key", "blob-1") with { PartSizes = partSizes }, null, Token);
+
+        Assert.Equal(partSizes, (await Index.FindObjectAsync("alpha", "key", Token))?.PartSizes);
+        Assert.Equal(
+            partSizes, Assert.Single(await Index.ScanObjectsAsync("alpha", "", "", 10, Token)).PartSizes);
+    }
+
+    [Fact]
     public async Task Upload_KeepsItsContentHeaders()
     {
         await Create("alpha");
@@ -450,7 +464,7 @@ public abstract class MetadataIndexContractTests
         new(number, blobId, Size: 3, ETag: "part-etag");
 
     private static ObjectRecord Record(string key, string blobId) => new(
-        key, blobId, Size: 3, ETag: "etag-hex", ContentType: "text/plain",
+        key, blobId, Size: 3, ETag: "etag-hex", PartSizes: [], ContentType: "text/plain",
         ContentHeaders: ContentHeaders.None,
         Metadata: new Dictionary<string, string> { ["meta-1"] = "value-1" },
         LastModified: CreationTime);
@@ -515,10 +529,11 @@ public sealed class SqliteMetadataIndexTests : MetadataIndexContractTests, IDisp
 
         var old = await upgraded.FindObjectAsync("alpha", "old", TestContext.Current.CancellationToken);
         Assert.Equal(ContentHeaders.None, old?.ContentHeaders);
+        Assert.Empty(old!.PartSizes);
         var stored = await upgraded.PutObjectAsync(
             "alpha",
             new ObjectRecord(
-                "new", "blob-2", Size: 3, ETag: "etag-hex", ContentType: null,
+                "new", "blob-2", Size: 3, ETag: "etag-hex", PartSizes: [], ContentType: null,
                 ContentHeaders: new ContentHeaders(ContentEncoding: "gzip"),
                 Metadata: new Dictionary<string, string>(), LastModified: DateTimeOffset.UnixEpoch),
             null, TestContext.Current.CancellationToken);

@@ -1000,6 +1000,104 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task GetObject_ByPartNumber_ServesThatPartWithThePartsCount()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var etag = await CompleteTwoPartUpload("/my-bucket/parts.txt");
+
+        var context = await Dispatch("GET", "/my-bucket/parts.txt", query: "?partNumber=2");
+
+        Assert.Equal(StatusCodes.Status206PartialContent, context.Response.StatusCode);
+        Assert.Equal("S3Harp!", ReadBodyText(context));
+        Assert.Equal("bytes 7-13/14", context.Response.Headers.ContentRange);
+        Assert.Equal("2", context.Response.Headers["x-amz-mp-parts-count"]);
+        Assert.Equal(etag, context.Response.Headers.ETag);
+    }
+
+    [Fact]
+    public async Task HeadObject_ByPartNumber_ReportsThePartsLengthAndThePartsCount()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await CompleteTwoPartUpload("/my-bucket/parts.txt");
+
+        var context = await Dispatch("HEAD", "/my-bucket/parts.txt", query: "?partNumber=1");
+
+        Assert.Equal(StatusCodes.Status206PartialContent, context.Response.StatusCode);
+        Assert.Equal(7, context.Response.ContentLength);
+        Assert.Equal("bytes 0-6/14", context.Response.Headers.ContentRange);
+        Assert.Equal("2", context.Response.Headers["x-amz-mp-parts-count"]);
+        Assert.Equal("", ReadBodyText(context));
+    }
+
+    [Fact]
+    public async Task GetObject_ByAPartNumberBeyondTheLast_ReportsInvalidPart()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await CompleteTwoPartUpload("/my-bucket/parts.txt");
+
+        var context = await Dispatch("GET", "/my-bucket/parts.txt", query: "?partNumber=3");
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("InvalidPart", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task GetObject_OfAnObjectStoredInOnePiece_ByPartNumberOne_ServesTheWholeObject()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/whole.txt", body: "hello world");
+
+        var context = await Dispatch("GET", "/my-bucket/whole.txt", query: "?partNumber=1");
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        Assert.Equal("hello world", ReadBodyText(context));
+        Assert.False(context.Response.Headers.ContainsKey("x-amz-mp-parts-count"));
+        var beyond = await Dispatch("GET", "/my-bucket/whole.txt", query: "?partNumber=2");
+        Assert.Equal("InvalidPart", ReadErrorCode(beyond));
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("10001")]
+    [InlineData("two")]
+    public async Task GetObject_WithAnUnusablePartNumber_ReportsInvalidArgument(string partNumber)
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/whole.txt", body: "hello world");
+
+        var context = await Dispatch(
+            "GET", "/my-bucket/whole.txt", query: $"?partNumber={partNumber}");
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("InvalidArgument", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task GetObject_WithBothARangeAndAPartNumber_ReportsInvalidRequest()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/whole.txt", body: "hello world");
+
+        var context = await Dispatch(
+            "GET", "/my-bucket/whole.txt", query: "?partNumber=1",
+            configure: request => request.Headers.Range = "bytes=0-1");
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("InvalidRequest", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task GetObject_ByPartNumber_OfAMissingKey_ReportsNoSuchKey()
+    {
+        await Dispatch("PUT", "/my-bucket");
+
+        var context = await Dispatch("GET", "/my-bucket/missing.txt", query: "?partNumber=1");
+
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        Assert.Equal("NoSuchKey", ReadErrorCode(context));
+    }
+
+    [Fact]
     public async Task PutObject_StoresTheObjectAndReturnsItsETag()
     {
         await Dispatch("PUT", "/my-bucket");
@@ -1164,6 +1262,26 @@ public sealed class S3RequestDispatcherTests : IDisposable
 
         Assert.Equal(StatusCodes.Status409Conflict, context.Response.StatusCode);
         Assert.Equal("BucketNotEmpty", ReadErrorCode(context));
+    }
+
+    /// <summary>Uploads and completes "Hello, " + "S3Harp!" as two parts, returning the object's ETag header.</summary>
+    private async Task<string> CompleteTwoPartUpload(string path)
+    {
+        var uploadId = await Initiate(path);
+        var first = await UploadPart(path, uploadId, 1, "Hello, ");
+        var second = await UploadPart(path, uploadId, 2, "S3Harp!");
+        var completed = await Dispatch(
+            "POST", path, query: $"?uploadId={uploadId}",
+            body: $"""
+                <CompleteMultipartUpload>
+                  <Part><PartNumber>1</PartNumber><ETag>{first}</ETag></Part>
+                  <Part><PartNumber>2</PartNumber><ETag>{second}</ETag></Part>
+                </CompleteMultipartUpload>
+                """);
+        Assert.Equal(StatusCodes.Status200OK, completed.Response.StatusCode);
+        var etag = ReadBody(completed).Root?.Element(S3Namespace + "ETag")?.Value;
+        Assert.False(string.IsNullOrEmpty(etag));
+        return etag;
     }
 
     private async Task<DefaultHttpContext> Dispatch(
