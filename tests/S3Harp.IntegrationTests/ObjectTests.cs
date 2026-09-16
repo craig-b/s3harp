@@ -90,6 +90,75 @@ public sealed class ObjectTests : IDisposable
     }
 
     [Fact]
+    public async Task GetObject_WithAMatchingIfNoneMatch_ReportsNotModified()
+    {
+        using var s3 = await CreateClientWithBucket();
+        var stored = await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "greeting.txt",
+            ContentBody = "Hello",
+        }, Token);
+
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() => s3.GetObjectAsync(
+            new GetObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "greeting.txt",
+                EtagToNotMatch = stored.ETag,
+            }, Token));
+
+        Assert.Equal(HttpStatusCode.NotModified, exception.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetObject_WithAMismatchedIfMatch_ReportsPreconditionFailed()
+    {
+        using var s3 = await CreateClientWithBucket();
+        await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "greeting.txt",
+            ContentBody = "Hello",
+        }, Token);
+
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() => s3.GetObjectAsync(
+            new GetObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "greeting.txt",
+                EtagToMatch = "\"ABCORZ\"",
+            }, Token));
+
+        Assert.Equal(HttpStatusCode.PreconditionFailed, exception.StatusCode);
+        Assert.Equal("PreconditionFailed", exception.ErrorCode);
+    }
+
+    [Fact]
+    public async Task CopyObject_WithAMismatchedSourceETag_ReportsPreconditionFailed()
+    {
+        using var s3 = await CreateClientWithBucket();
+        await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "song",
+            ContentBody = "content",
+        }, Token);
+
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() => s3.CopyObjectAsync(
+            new CopyObjectRequest
+            {
+                SourceBucket = Bucket,
+                SourceKey = "song",
+                DestinationBucket = Bucket,
+                DestinationKey = "copy",
+                ETagToMatch = "\"ABCORZ\"",
+            }, Token));
+
+        Assert.Equal("PreconditionFailed", exception.ErrorCode);
+    }
+
+    [Fact]
     public async Task PutObject_ReturnsTheMd5ETag()
     {
         using var s3 = await CreateClientWithBucket();

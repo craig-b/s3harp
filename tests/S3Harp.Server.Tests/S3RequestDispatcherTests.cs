@@ -706,6 +706,73 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task GetObject_WhenIfNoneMatchNamesTheETag_IsNotModifiedWithoutABody()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/key", body: "hello world");
+
+        var context = await Dispatch(
+            "GET", "/my-bucket/key",
+            configure: request => request.Headers.IfNoneMatch = "\"5eb63bbbe01eeed093cb22bb8f5acdc3\"");
+
+        Assert.Equal(StatusCodes.Status304NotModified, context.Response.StatusCode);
+        Assert.Equal("\"5eb63bbbe01eeed093cb22bb8f5acdc3\"", context.Response.Headers.ETag);
+        Assert.Equal("", ReadBodyText(context));
+    }
+
+    [Fact]
+    public async Task GetObject_WhenIfMatchMissesTheETag_FailsThePrecondition()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/key", body: "hello world");
+
+        var context = await Dispatch(
+            "GET", "/my-bucket/key",
+            configure: request => request.Headers.IfMatch = "\"ABCORZ\"");
+
+        Assert.Equal(StatusCodes.Status412PreconditionFailed, context.Response.StatusCode);
+        Assert.Equal("PreconditionFailed", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task HeadObject_WhenUnmodifiedSinceTheGivenDate_IsNotModified()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/key", body: "hello world");
+
+        var context = await Dispatch(
+            "HEAD", "/my-bucket/key",
+            configure: request => request.Headers.IfModifiedSince = "Wed, 16 Sep 2026 12:00:00 GMT");
+
+        Assert.Equal(StatusCodes.Status304NotModified, context.Response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("x-amz-copy-source-if-match", "\"ABCORZ\"")]
+    [InlineData("x-amz-copy-source-if-none-match", "\"5eb63bbbe01eeed093cb22bb8f5acdc3\"")]
+    [InlineData("x-amz-copy-source-if-modified-since", "Wed, 16 Sep 2026 12:00:00 GMT")]
+    [InlineData("x-amz-copy-source-if-unmodified-since", "Sat, 29 Oct 1994 19:43:31 GMT")]
+    public async Task CopyObject_WhenASourceConditionFails_FailsThePrecondition(
+        string header, string value)
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/src.txt", body: "hello world");
+
+        var context = await Dispatch(
+            "PUT", "/my-bucket/dst.txt",
+            configure: request =>
+            {
+                request.Headers["x-amz-copy-source"] = "/my-bucket/src.txt";
+                request.Headers[header] = value;
+            });
+
+        Assert.Equal(StatusCodes.Status412PreconditionFailed, context.Response.StatusCode);
+        Assert.Equal("PreconditionFailed", ReadErrorCode(context));
+        var probe = await Dispatch("HEAD", "/my-bucket/dst.txt");
+        Assert.Equal(StatusCodes.Status404NotFound, probe.Response.StatusCode);
+    }
+
+    [Fact]
     public async Task CopyingAMissingSource_ReportsNoSuchKey()
     {
         await Dispatch("PUT", "/my-bucket");

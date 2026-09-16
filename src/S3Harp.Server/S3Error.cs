@@ -91,6 +91,11 @@ public static class S3Errors
         StatusCodes.Status400BadRequest,
         "The XML you provided was not well-formed.");
 
+    public static S3Error PreconditionFailed { get; } = new(
+        "PreconditionFailed",
+        StatusCodes.Status412PreconditionFailed,
+        "At least one of the pre-conditions you specified did not hold");
+
     public static S3Error NoSuchUpload { get; } = new(
         "NoSuchUpload",
         StatusCodes.Status404NotFound,

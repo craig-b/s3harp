@@ -465,6 +465,17 @@ public sealed class S3RequestDispatcher(
             return new S3ErrorResult(S3Errors.NoSuchKey);
         }
 
+        var precondition = Preconditions.Evaluate(
+            ConditionalHeaders.FromRequest(context.Request.Headers),
+            download.Record.ETag, download.Record.LastModified);
+        if (precondition != PreconditionOutcome.Proceed)
+        {
+            await download.Content.DisposeAsync().ConfigureAwait(false);
+            return precondition == PreconditionOutcome.NotModified
+                ? new S3NotModifiedResult(download.Record)
+                : new S3ErrorResult(S3Errors.PreconditionFailed);
+        }
+
         var range = RangeHeader.Evaluate(
             context.Request.Headers.Range.ToString(), download.Record.Size);
         if (range.Outcome == RangeOutcome.Unsatisfiable)
@@ -760,6 +771,23 @@ public sealed class S3RequestDispatcher(
         if (!await index.BucketExistsAsync(sourceBucket, cancellationToken).ConfigureAwait(false))
         {
             return new S3ErrorResult(S3Errors.NoSuchBucket);
+        }
+
+        var sourceRecord = await index.FindObjectAsync(sourceBucket, sourceKey, cancellationToken)
+            .ConfigureAwait(false);
+        if (sourceRecord is null)
+        {
+            return new S3ErrorResult(S3Errors.NoSuchKey);
+        }
+
+        // Every failed source condition is a failed precondition on a copy:
+        // there is no cached copy for "not modified" to refer to.
+        var sourceCondition = Preconditions.Evaluate(
+            ConditionalHeaders.FromCopySource(context.Request.Headers),
+            sourceRecord.ETag, sourceRecord.LastModified);
+        if (sourceCondition != PreconditionOutcome.Proceed)
+        {
+            return new S3ErrorResult(S3Errors.PreconditionFailed);
         }
 
         var replace = string.Equals(

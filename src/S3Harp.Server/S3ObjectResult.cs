@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Globalization;
 using S3Harp.Core;
 
 namespace S3Harp.Server;
@@ -29,8 +28,7 @@ public sealed class S3ObjectResult(
         response.ContentLength = partial is { } p ? p.To - p.From + 1 : record.Size;
         response.Headers.AcceptRanges = "bytes";
         response.Headers.ETag = $"\"{record.ETag}\"";
-        response.Headers.LastModified =
-            record.LastModified.UtcDateTime.ToString("R", CultureInfo.InvariantCulture);
+        response.Headers.LastModified = HttpDate.Format(record.LastModified);
         if (partial is { } contentRange)
         {
             response.Headers.ContentRange =
