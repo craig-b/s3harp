@@ -86,6 +86,22 @@ public sealed class BlobStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task CopiedRange_ReadsBackAsThoseBytesWithTheirDigests()
+    {
+        var source = await Write("Hello, S3Harp!"u8.ToArray());
+
+        var copied = await store.CopyRangeAsync(
+            source.BlobId, new ByteRange(7, 13), ChecksumAlgorithm.Crc32, Token);
+
+        using var stream = store.OpenRead(copied.BlobId);
+        using var reader = new StreamReader(stream);
+        Assert.Equal("S3Harp!", await reader.ReadToEndAsync(Token));
+        Assert.Equal(7, copied.Size);
+        Assert.Equal(SecondPartMd5, copied.ContentMd5Hex);
+        Assert.Equal("0oUPLw==", copied.Checksum);
+    }
+
+    [Fact]
     public async Task FailedWrite_LeavesNoFilesBehind()
     {
         await Assert.ThrowsAsync<InvalidDataException>(
@@ -145,6 +161,9 @@ public sealed class BlobStoreTests : IDisposable
 
         Assert.Equal("Aj0Lx1vWnbGF+irlCT3Pa4HNGctHtn3/Q49ApNekoy8=", sha256);
     }
+
+    /// <summary>The MD5 of "S3Harp!".</summary>
+    private const string SecondPartMd5 = "76881423a29bf44fbb150195f6e671ea";
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 

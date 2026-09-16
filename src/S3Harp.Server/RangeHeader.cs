@@ -1,4 +1,5 @@
 using System.Globalization;
+using S3Harp.Core;
 
 namespace S3Harp.Server;
 
@@ -82,4 +83,41 @@ public static class RangeHeader
 
     private static bool TryParse(ReadOnlySpan<char> value, out long parsed) =>
         long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out parsed);
+}
+
+/// <summary>
+/// Reads the <c>x-amz-copy-source-range</c> header of a part copy, which S3 accepts
+/// only as one closed <c>bytes=first-last</c> range; an absent header means the
+/// whole source.
+/// </summary>
+public static class CopySourceRange
+{
+    private const string Prefix = "bytes=";
+
+    public static bool TryParse(string? header, out ByteRange? range)
+    {
+        range = null;
+        if (string.IsNullOrEmpty(header))
+        {
+            return true;
+        }
+
+        if (!header.StartsWith(Prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var bounds = header.AsSpan(Prefix.Length);
+        var separator = bounds.IndexOf('-');
+        if (separator < 0
+            || !long.TryParse(bounds[..separator], NumberStyles.None, CultureInfo.InvariantCulture, out var from)
+            || !long.TryParse(bounds[(separator + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out var to)
+            || to < from)
+        {
+            return false;
+        }
+
+        range = new ByteRange(from, to);
+        return true;
+    }
 }

@@ -23,6 +23,18 @@ public sealed record ObjectAttributes(
 /// <summary>The outcome of uploading a part: its ETag and its checksum in the upload's algorithm.</summary>
 public sealed record UploadPartOutcome(bool UploadExists, string? ETag, ChecksumValue? Checksum);
 
+public enum UploadPartCopyStatus
+{
+    Copied,
+    NoSuchUpload,
+    SourceMissing,
+    RangeBeyondSource,
+}
+
+/// <summary>The outcome of filling a part from another object: the part's ETag, checksum and time.</summary>
+public sealed record UploadPartCopyOutcome(
+    UploadPartCopyStatus Status, string? ETag, ChecksumValue? Checksum, DateTimeOffset LastModified);
+
 /// <summary>A part named in a completion request, with the checksum the client declares for it.</summary>
 public sealed record RequestedPart(int PartNumber, string ETag, ChecksumValue? Checksum = null);
 
@@ -263,6 +275,63 @@ public sealed class StorageEngine(
         return new UploadPartOutcome(
             UploadExists: true, write.ContentMd5Hex,
             new ChecksumValue(upload.ChecksumAlgorithm, write.Checksum!));
+    }
+
+    /// <summary>
+    /// Fills a part with a byte range of another object, or the whole of it when no
+    /// range is given. The range must lie within the source.
+    /// </summary>
+    public async Task<UploadPartCopyOutcome> UploadPartCopyAsync(
+        string bucket,
+        string key,
+        string uploadId,
+        int partNumber,
+        string sourceBucket,
+        string sourceKey,
+        ByteRange? range,
+        CancellationToken cancellationToken)
+    {
+        var now = timeProvider.GetUtcNow();
+        var upload = await index.FindUploadAsync(bucket, key, uploadId, cancellationToken)
+            .ConfigureAwait(false);
+        if (upload is null)
+        {
+            return new UploadPartCopyOutcome(UploadPartCopyStatus.NoSuchUpload, null, null, now);
+        }
+
+        var source = await index.FindObjectAsync(sourceBucket, sourceKey, cancellationToken)
+            .ConfigureAwait(false);
+        if (source is null)
+        {
+            return new UploadPartCopyOutcome(UploadPartCopyStatus.SourceMissing, null, null, now);
+        }
+
+        if (range is { } requested && requested.To >= source.Size)
+        {
+            return new UploadPartCopyOutcome(UploadPartCopyStatus.RangeBeyondSource, null, null, now);
+        }
+
+        var copy = await blobs.CopyRangeAsync(
+            source.BlobId, range ?? new ByteRange(0, source.Size - 1), upload.ChecksumAlgorithm,
+            cancellationToken).ConfigureAwait(false);
+        var stored = await index.PutPartAsync(
+            bucket, key, uploadId,
+            new PartRecord(partNumber, copy.BlobId, copy.Size, copy.ContentMd5Hex, copy.Checksum, now),
+            cancellationToken).ConfigureAwait(false);
+        if (!stored.UploadExists)
+        {
+            blobs.Delete(copy.BlobId);
+            return new UploadPartCopyOutcome(UploadPartCopyStatus.NoSuchUpload, null, null, now);
+        }
+
+        if (stored.ReplacedBlobId is not null)
+        {
+            blobs.Delete(stored.ReplacedBlobId);
+        }
+
+        return new UploadPartCopyOutcome(
+            UploadPartCopyStatus.Copied, copy.ContentMd5Hex,
+            new ChecksumValue(upload.ChecksumAlgorithm, copy.Checksum!), now);
     }
 
     /// <summary>

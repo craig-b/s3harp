@@ -3,6 +3,12 @@ using System.Security.Cryptography;
 
 namespace S3Harp.Core;
 
+/// <summary>An inclusive range of byte offsets within a blob.</summary>
+public readonly record struct ByteRange(long From, long To)
+{
+    public long Length => To - From + 1;
+}
+
 /// <summary>
 /// The outcome of writing a blob: its identity, size, content MD5, and the base64
 /// checksum of the algorithm requested, when one was.
@@ -102,7 +108,53 @@ public sealed class BlobStore
     public async Task<string> ComputeChecksumAsync(
         string blobId, ChecksumAlgorithm algorithm, CancellationToken cancellationToken)
     {
-        using var integrity = ChecksumAlgorithms.Create(algorithm);
+        var (_, checksum) = await DigestAsync(blobId, algorithm, cancellationToken).ConfigureAwait(false);
+        return checksum!;
+    }
+
+    /// <summary>
+    /// Copies a byte range of a blob into a new blob, sharing blocks where the
+    /// filesystem allows, and reports the copy's MD5 and requested checksum.
+    /// </summary>
+    public async Task<BlobWriteResult> CopyRangeAsync(
+        string sourceBlobId, ByteRange range, ChecksumAlgorithm? checksum,
+        CancellationToken cancellationToken)
+    {
+        var blobId = Guid.NewGuid().ToString("N");
+        var uploadPath = Path.Combine(uploadsDirectory, blobId);
+        try
+        {
+            await Task.Run(
+                () =>
+                {
+                    using var source = File.OpenHandle(PathFor(sourceBlobId), options: FileOptions.None);
+                    using var destination = File.OpenHandle(
+                        uploadPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+                    FileRange.Copy(source, range.From, destination, 0, range.Length);
+                    RandomAccess.FlushToDisk(destination);
+                },
+                cancellationToken).ConfigureAwait(false);
+            Publish(blobId, uploadPath);
+        }
+        catch
+        {
+            File.Delete(uploadPath);
+            throw;
+        }
+
+        var (md5Hex, value) = await DigestAsync(blobId, checksum, cancellationToken).ConfigureAwait(false);
+        return new BlobWriteResult(blobId, range.Length, md5Hex, value);
+    }
+
+    /// <summary>A stored blob's MD5 and, when an algorithm is given, its base64 checksum, in one pass.</summary>
+    private async Task<(string Md5Hex, string? Checksum)> DigestAsync(
+        string blobId, ChecksumAlgorithm? algorithm, CancellationToken cancellationToken)
+    {
+        // The MD5 is the part's ETag: a protocol artifact carrying no security claim.
+#pragma warning disable CA5351
+        using var md5 = IncrementalHash.CreateHash(HashAlgorithmName.MD5);
+#pragma warning restore CA5351
+        using var integrity = algorithm is { } named ? ChecksumAlgorithms.Create(named) : null;
         var file = OpenRead(blobId);
         await using (file.ConfigureAwait(false))
         {
@@ -112,7 +164,8 @@ public sealed class BlobStore
                 int read;
                 while ((read = await file.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
                 {
-                    integrity.Append(buffer.AsSpan(0, read));
+                    md5.AppendData(buffer, 0, read);
+                    integrity?.Append(buffer.AsSpan(0, read));
                 }
             }
             finally
@@ -121,7 +174,9 @@ public sealed class BlobStore
             }
         }
 
-        return Convert.ToBase64String(integrity.Finish());
+        return (
+            Convert.ToHexStringLower(md5.GetHashAndReset()),
+            integrity is null ? null : Convert.ToBase64String(integrity.Finish()));
     }
 
     private void Publish(string blobId, string uploadPath)

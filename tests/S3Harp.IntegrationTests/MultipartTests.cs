@@ -177,6 +177,49 @@ public sealed class MultipartTests : IDisposable
     }
 
     [Fact]
+    public async Task UploadPartCopy_AssemblesAnObjectFromRangesOfAnother()
+    {
+        using var s3 = await CreateClientWithBucket();
+        var source = RandomNumberGenerator.GetBytes(6 * 1024 * 1024);
+        await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "source.bin",
+            InputStream = new MemoryStream(source),
+        }, Token);
+        var initiate = await s3.InitiateMultipartUploadAsync(Bucket, "copied.bin", Token);
+        var uploaded = new List<PartETag>();
+        foreach (var (first, last, number) in new[] { (0L, 5L * 1024 * 1024 - 1, 1), (5L * 1024 * 1024, source.LongLength - 1, 2) })
+        {
+            var part = await s3.CopyPartAsync(new CopyPartRequest
+            {
+                SourceBucket = Bucket,
+                SourceKey = "source.bin",
+                DestinationBucket = Bucket,
+                DestinationKey = "copied.bin",
+                UploadId = initiate.UploadId,
+                PartNumber = number,
+                FirstByte = first,
+                LastByte = last,
+            }, Token);
+            uploaded.Add(new PartETag(number, part.ETag));
+        }
+
+        await s3.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
+        {
+            BucketName = Bucket,
+            Key = "copied.bin",
+            UploadId = initiate.UploadId,
+            PartETags = uploaded,
+        }, Token);
+
+        using var response = await s3.GetObjectAsync(Bucket, "copied.bin", Token);
+        using var received = new MemoryStream();
+        await response.ResponseStream.CopyToAsync(received, Token);
+        Assert.Equal(source, received.ToArray());
+    }
+
+    [Fact]
     public async Task CompletingWithANonFinalPartUnderFiveMiB_ThrowsEntityTooSmall()
     {
         using var s3 = await CreateClientWithBucket();

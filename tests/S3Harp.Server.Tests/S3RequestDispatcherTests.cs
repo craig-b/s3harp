@@ -9,6 +9,7 @@ namespace S3Harp.Server.Tests;
 public sealed class S3RequestDispatcherTests : IDisposable
 {
     private const string AccessKeyId = "S3HARPEXAMPLEKEY";
+    private const string SecondPartMd5 = "76881423a29bf44fbb150195f6e671ea";
     private static readonly XNamespace S3Namespace = "http://s3.amazonaws.com/doc/2006-03-01/";
     private static readonly DateTimeOffset Now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
 
@@ -977,6 +978,121 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task UploadPartCopy_FillsThePartFromTheSourceRange()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/src", body: "Hello, S3Harp!");
+        var uploadId = await Initiate(
+            "/my-bucket/key", request => request.Headers["x-amz-checksum-algorithm"] = "CRC32");
+
+        var ranged = await Dispatch(
+            "PUT", "/my-bucket/key", query: $"?partNumber=1&uploadId={uploadId}",
+            configure: request =>
+            {
+                request.Headers["x-amz-copy-source"] = "/my-bucket/src";
+                request.Headers["x-amz-copy-source-range"] = "bytes=7-13";
+            });
+        var whole = await Dispatch(
+            "PUT", "/my-bucket/key", query: $"?partNumber=2&uploadId={uploadId}",
+            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/src");
+
+        Assert.Equal(StatusCodes.Status200OK, ranged.Response.StatusCode);
+        var result = ReadBody(ranged).Root!;
+        Assert.Equal(S3Namespace + "CopyPartResult", result.Name);
+        Assert.Equal("\"" + SecondPartMd5 + "\"", result.Element(S3Namespace + "ETag")?.Value);
+        Assert.Equal("2026-09-16T12:00:00.000Z", result.Element(S3Namespace + "LastModified")?.Value);
+        Assert.Equal("0oUPLw==", result.Element(S3Namespace + "ChecksumCRC32")?.Value);
+        var parts = ReadBody(await Dispatch("GET", "/my-bucket/key", query: $"?uploadId={uploadId}")).Root!
+            .Elements(S3Namespace + "Part").Select(p => p.Element(S3Namespace + "Size")?.Value);
+        Assert.Equal(["7", "14"], parts);
+        Assert.Equal(StatusCodes.Status200OK, whole.Response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("0-2")]
+    [InlineData("bytes=0-2,3-5")]
+    public async Task UploadPartCopy_WithAMalformedRange_ReportsInvalidArgument(string range)
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/src", body: "Hello");
+        var uploadId = await Initiate("/my-bucket/key");
+
+        var context = await Dispatch(
+            "PUT", "/my-bucket/key", query: $"?partNumber=1&uploadId={uploadId}",
+            configure: request =>
+            {
+                request.Headers["x-amz-copy-source"] = "/my-bucket/src";
+                request.Headers["x-amz-copy-source-range"] = range;
+            });
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("InvalidArgument", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task UploadPartCopy_WithARangeBeyondTheSource_ReportsInvalidRange()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/src", body: "Hello");
+        var uploadId = await Initiate("/my-bucket/key");
+
+        var context = await Dispatch(
+            "PUT", "/my-bucket/key", query: $"?partNumber=1&uploadId={uploadId}",
+            configure: request =>
+            {
+                request.Headers["x-amz-copy-source"] = "/my-bucket/src";
+                request.Headers["x-amz-copy-source-range"] = "bytes=0-21";
+            });
+
+        Assert.Equal("InvalidRange", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task UploadPartCopy_FromAMissingSource_ReportsNoSuchKey()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate("/my-bucket/key");
+
+        var context = await Dispatch(
+            "PUT", "/my-bucket/key", query: $"?partNumber=1&uploadId={uploadId}",
+            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/missing");
+
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        Assert.Equal("NoSuchKey", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task UploadPartCopy_WhoseSourceConditionFails_ReportsPreconditionFailed()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/src", body: "Hello");
+        var uploadId = await Initiate("/my-bucket/key");
+
+        var context = await Dispatch(
+            "PUT", "/my-bucket/key", query: $"?partNumber=1&uploadId={uploadId}",
+            configure: request =>
+            {
+                request.Headers["x-amz-copy-source"] = "/my-bucket/src";
+                request.Headers["x-amz-copy-source-if-match"] = "\"badetag\"";
+            });
+
+        Assert.Equal(StatusCodes.Status412PreconditionFailed, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UploadPartCopy_IntoAnUnknownUpload_ReportsNoSuchUpload()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/src", body: "Hello");
+
+        var context = await Dispatch(
+            "PUT", "/my-bucket/key", query: "?partNumber=1&uploadId=missing",
+            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/src");
+
+        Assert.Equal("NoSuchUpload", ReadErrorCode(context));
+    }
+
+    [Fact]
     public async Task ListParts_OfAnUnknownUpload_ReportsNoSuchUpload()
     {
         await Dispatch("PUT", "/my-bucket");
@@ -1007,20 +1123,6 @@ public sealed class S3RequestDispatcherTests : IDisposable
         Assert.Equal(
             [first, second],
             uploads.Select(u => u.Element(S3Namespace + "UploadId")?.Value));
-    }
-
-    [Fact]
-    public async Task UploadPartCopy_ReportsNotImplemented()
-    {
-        await Dispatch("PUT", "/my-bucket");
-        var uploadId = await Initiate("/my-bucket/key");
-
-        var context = await Dispatch(
-            "PUT", "/my-bucket/key",
-            query: $"?partNumber=1&uploadId={uploadId}",
-            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/other");
-
-        Assert.Equal(StatusCodes.Status501NotImplemented, context.Response.StatusCode);
     }
 
     [Fact]

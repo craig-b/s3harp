@@ -232,6 +232,78 @@ public sealed class MultipartUploadTests : IDisposable
     }
 
     [Fact]
+    public async Task CopiedPart_TakesTheSourceRangeWithItsETagAndChecksum()
+    {
+        var uploadId = await StartUpload(ChecksumAlgorithm.Crc32, ChecksumType.Composite);
+        await PutSource("Hello, S3Harp!");
+
+        var outcome = await engine.UploadPartCopyAsync(
+            "alpha", "key", uploadId, 1, "alpha", "src", new ByteRange(7, 13), Token);
+
+        Assert.Equal(UploadPartCopyStatus.Copied, outcome.Status);
+        Assert.Equal(SecondPartETag, outcome.ETag);
+        Assert.Equal(new ChecksumValue(ChecksumAlgorithm.Crc32, "0oUPLw=="), outcome.Checksum);
+        Assert.Equal(Now, outcome.LastModified);
+        var part = Assert.Single(await index.ListPartsAsync("alpha", "key", uploadId, Token));
+        Assert.Equal(7, part.Size);
+    }
+
+    [Fact]
+    public async Task CopiedParts_AssembleIntoTheObject()
+    {
+        var uploadId = await StartUpload();
+        await PutSource("Hello, S3Harp!");
+
+        var first = await engine.UploadPartCopyAsync(
+            "alpha", "key", uploadId, 1, "alpha", "src", new ByteRange(0, 6), Token);
+        var second = await engine.UploadPartCopyAsync(
+            "alpha", "key", uploadId, 2, "alpha", "src", null, Token);
+        await engine.CompleteUploadAsync(
+            "alpha", "key", uploadId, [new(1, first.ETag!), new(2, second.ETag!)], null, null, Token);
+
+        var download = await engine.GetObjectAsync("alpha", "key", Token);
+        Assert.NotNull(download);
+        Assert.Equal("Hello, Hello, S3Harp!", await ReadContent(download));
+    }
+
+    [Fact]
+    public async Task CopyingAPart_OfAnUnknownUpload_ReportsIt()
+    {
+        await CreateBucket();
+        await PutSource("Hello, S3Harp!");
+
+        var outcome = await engine.UploadPartCopyAsync(
+            "alpha", "key", "missing", 1, "alpha", "src", null, Token);
+
+        Assert.Equal(UploadPartCopyStatus.NoSuchUpload, outcome.Status);
+        Assert.Equal(1, CountBlobFiles());
+    }
+
+    [Fact]
+    public async Task CopyingAPart_FromAMissingSource_ReportsIt()
+    {
+        var uploadId = await StartUpload();
+
+        var outcome = await engine.UploadPartCopyAsync(
+            "alpha", "key", uploadId, 1, "alpha", "missing", null, Token);
+
+        Assert.Equal(UploadPartCopyStatus.SourceMissing, outcome.Status);
+    }
+
+    [Fact]
+    public async Task CopyingAPart_FromARangeBeyondTheSource_ReportsIt()
+    {
+        var uploadId = await StartUpload();
+        await PutSource("Hello");
+
+        var outcome = await engine.UploadPartCopyAsync(
+            "alpha", "key", uploadId, 1, "alpha", "src", new ByteRange(0, 21), Token);
+
+        Assert.Equal(UploadPartCopyStatus.RangeBeyondSource, outcome.Status);
+        Assert.Empty(await index.ListPartsAsync("alpha", "key", uploadId, Token));
+    }
+
+    [Fact]
     public async Task Complete_LeavesOnlyTheAssembledBlobOnDisk()
     {
         var uploadId = await StartUpload();
@@ -495,6 +567,15 @@ public sealed class MultipartUploadTests : IDisposable
             algorithm, type, Token);
         Assert.NotNull(uploadId);
         return uploadId;
+    }
+
+    private async Task PutSource(string content)
+    {
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
+        var outcome = await engine.PutObjectAsync("alpha", "src", stream,
+            new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()),
+            ChecksumAlgorithm.Crc64Nvme, null, Token);
+        Assert.Equal(PutObjectStatus.Stored, outcome.Status);
     }
 
     private async Task<string?> UploadPart(string uploadId, int number, string content)

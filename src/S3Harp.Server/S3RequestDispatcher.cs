@@ -876,11 +876,6 @@ public sealed class S3RequestDispatcher(
     private async Task<IResult> UploadPartAsync(
         HttpContext context, string bucket, string key, CancellationToken cancellationToken)
     {
-        if (context.Request.Headers.ContainsKey("x-amz-copy-source"))
-        {
-            return new S3ErrorResult(S3Errors.NotImplemented);
-        }
-
         if (!int.TryParse(context.Request.Query["partNumber"], out var partNumber)
             || partNumber is < 1 or > MaxPartNumber)
         {
@@ -890,6 +885,12 @@ public sealed class S3RequestDispatcher(
         if (!await index.BucketExistsAsync(bucket, cancellationToken).ConfigureAwait(false))
         {
             return new S3ErrorResult(S3Errors.NoSuchBucket);
+        }
+
+        if (context.Request.Headers.ContainsKey("x-amz-copy-source"))
+        {
+            return await UploadPartCopyAsync(context, bucket, key, partNumber, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         UploadPartOutcome outcome;
@@ -916,6 +917,78 @@ public sealed class S3RequestDispatcher(
         }
 
         return new S3StatusResult(StatusCodes.Status200OK);
+    }
+
+    private async Task<IResult> UploadPartCopyAsync(
+        HttpContext context, string bucket, string key, int partNumber,
+        CancellationToken cancellationToken)
+    {
+        if (!TryReadCopySource(context.Request.Headers, out var sourceBucket, out var sourceKey))
+        {
+            return new S3ErrorResult(S3Errors.InvalidArgument);
+        }
+
+        if (!await index.BucketExistsAsync(sourceBucket, cancellationToken).ConfigureAwait(false))
+        {
+            return new S3ErrorResult(S3Errors.NoSuchBucket);
+        }
+
+        var source = await index.FindObjectAsync(sourceBucket, sourceKey, cancellationToken)
+            .ConfigureAwait(false);
+        if (source is null)
+        {
+            return new S3ErrorResult(S3Errors.NoSuchKey);
+        }
+
+        if (Preconditions.Evaluate(
+                ConditionalHeaders.FromCopySource(context.Request.Headers),
+                source.ETag, source.LastModified) != PreconditionOutcome.Proceed)
+        {
+            return new S3ErrorResult(S3Errors.PreconditionFailed);
+        }
+
+        if (!CopySourceRange.TryParse(context.Request.Headers["x-amz-copy-source-range"], out var range))
+        {
+            return new S3ErrorResult(S3Errors.InvalidArgument);
+        }
+
+        var outcome = await engine.UploadPartCopyAsync(
+            bucket, key, context.Request.Query["uploadId"].ToString(), partNumber,
+            sourceBucket, sourceKey, range, cancellationToken).ConfigureAwait(false);
+        return outcome.Status switch
+        {
+            UploadPartCopyStatus.NoSuchUpload => new S3ErrorResult(S3Errors.NoSuchUpload),
+            UploadPartCopyStatus.SourceMissing => new S3ErrorResult(S3Errors.NoSuchKey),
+            UploadPartCopyStatus.RangeBeyondSource => new S3ErrorResult(S3Errors.InvalidRange),
+            _ => new S3XmlResult(
+                StatusCodes.Status200OK,
+                new XDocument(
+                    new XDeclaration("1.0", "UTF-8", standalone: null),
+                    new XElement(S3Namespace + "CopyPartResult",
+                        new XElement(S3Namespace + "ETag", $"\"{outcome.ETag}\""),
+                        new XElement(S3Namespace + "LastModified", FormatTimestamp(outcome.LastModified)),
+                        outcome.Checksum is { } checksum
+                            ? new XElement(
+                                S3Namespace + ChecksumHeaders.ElementName(checksum.Algorithm), checksum.Value)
+                            : null))),
+        };
+    }
+
+    /// <summary>The bucket and key <c>x-amz-copy-source</c> names, percent-decoded.</summary>
+    private static bool TryReadCopySource(
+        IHeaderDictionary headers, out string sourceBucket, out string sourceKey)
+    {
+        var source = Uri.UnescapeDataString(headers["x-amz-copy-source"].ToString()).TrimStart('/');
+        var separator = source.IndexOf('/', StringComparison.Ordinal);
+        if (separator <= 0 || separator == source.Length - 1)
+        {
+            sourceBucket = sourceKey = "";
+            return false;
+        }
+
+        sourceBucket = source[..separator];
+        sourceKey = source[(separator + 1)..];
+        return true;
     }
 
     private async Task<IResult> CompleteUploadAsync(
@@ -1015,16 +1088,11 @@ public sealed class S3RequestDispatcher(
             return new S3ErrorResult(S3Errors.NoSuchBucket);
         }
 
-        var source = Uri.UnescapeDataString(
-            context.Request.Headers["x-amz-copy-source"].ToString()).TrimStart('/');
-        var separator = source.IndexOf('/', StringComparison.Ordinal);
-        if (separator <= 0 || separator == source.Length - 1)
+        if (!TryReadCopySource(context.Request.Headers, out var sourceBucket, out var sourceKey))
         {
             return new S3ErrorResult(S3Errors.InvalidArgument);
         }
 
-        var sourceBucket = source[..separator];
-        var sourceKey = source[(separator + 1)..];
         if (!await index.BucketExistsAsync(sourceBucket, cancellationToken).ConfigureAwait(false))
         {
             return new S3ErrorResult(S3Errors.NoSuchBucket);
