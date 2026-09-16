@@ -9,6 +9,9 @@ public sealed class SigV4AuthenticationMiddleware(
     private const string ContentSha256Header = "x-amz-content-sha256";
     private const string DateHeader = "x-amz-date";
     private const string TimestampFormat = "yyyyMMdd'T'HHmmss'Z'";
+
+    /// <summary>HTTP's RFC 1123 date, plus the RFC 2822 numeric-zone form some clients write.</summary>
+    private static readonly string[] HttpDateFormats = ["R", "ddd, dd MMM yyyy HH:mm:ss zzz"];
     private static readonly TimeSpan MaxClockSkew = TimeSpan.FromMinutes(15);
 
     public async Task InvokeAsync(HttpContext context)
@@ -42,10 +45,7 @@ public sealed class SigV4AuthenticationMiddleware(
             return;
         }
 
-        string? timestamp = request.Headers[DateHeader];
-        if (!DateTimeOffset.TryParseExact(
-                timestamp, TimestampFormat, CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var requestTime))
+        if (!TryReadRequestTime(request.Headers, out var requestTime, out var timestamp))
         {
             await Reject(context, S3Errors.AccessDenied).ConfigureAwait(false);
             return;
@@ -76,7 +76,7 @@ public sealed class SigV4AuthenticationMiddleware(
         var canonicalRequest = CanonicalRequest.Build(request, header.SignedHeaders, payloadHash);
         var signingKey = SigV4Signer.DeriveSigningKey(secretAccessKey, header.Scope);
         var expected = SigV4Signer.SignCanonicalRequest(
-            signingKey, header.Scope, timestamp!, canonicalRequest);
+            signingKey, header.Scope, timestamp, canonicalRequest);
         if (!SigV4Signer.SignaturesEqual(expected, header.Signature))
         {
             await Reject(context, S3Errors.SignatureDoesNotMatch).ConfigureAwait(false);
@@ -87,14 +87,43 @@ public sealed class SigV4AuthenticationMiddleware(
         {
             "UNSIGNED-PAYLOAD" => request.Body,
             "STREAMING-AWS4-HMAC-SHA256-PAYLOAD" => new SigV4ChunkedStream(
-                request.Body, signingKey, header.Scope, timestamp!, header.Signature),
+                request.Body, signingKey, header.Scope, timestamp, header.Signature),
             "STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER" => new SigV4ChunkedStream(
-                request.Body, signingKey, header.Scope, timestamp!, header.Signature,
+                request.Body, signingKey, header.Scope, timestamp, header.Signature,
                 signedTrailer: true),
             _ => new Sha256VerifyingStream(request.Body, payloadHash),
         };
 
         await next(context).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The request time SigV4 signs over: <c>x-amz-date</c> when present, else the
+    /// standard <c>Date</c> header. The timestamp is the ISO-basic form the
+    /// string to sign carries in either case.
+    /// </summary>
+    private static bool TryReadRequestTime(
+        IHeaderDictionary headers, out DateTimeOffset requestTime, out string timestamp)
+    {
+        string? amzDate = headers[DateHeader];
+        if (amzDate is not null)
+        {
+            timestamp = amzDate;
+            return DateTimeOffset.TryParseExact(
+                amzDate, TimestampFormat, CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out requestTime);
+        }
+
+        if (DateTimeOffset.TryParseExact(
+                headers.Date, HttpDateFormats, CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out requestTime))
+        {
+            timestamp = requestTime.ToString(TimestampFormat, CultureInfo.InvariantCulture);
+            return true;
+        }
+
+        timestamp = "";
+        return false;
     }
 
     private async Task AuthenticatePresignedAsync(HttpContext context)

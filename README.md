@@ -8,7 +8,7 @@ S3Harp is an S3-compatible object storage service written in C# on modern .NET. 
 
 Working now, each proven by integration tests driving the real AWS SDK:
 
-- AWS Signature Version 4 on every request — header verification plus chunked payload signing, including the trailer variants current SDKs send by default
+- AWS Signature Version 4 on every request — header verification plus chunked payload signing, including the trailer variants current SDKs send by default; the request time comes from `x-amz-date` or, when absent, the `Date` header
 - Bucket create, list, head, and delete
 - Object PUT, GET, HEAD, and DELETE with ETags, content types, the standard content headers (`Cache-Control`, `Content-Disposition`, `Content-Encoding`, `Content-Language`, `Expires`), and `x-amz-meta-*` metadata, stored durably (temp file → fsync → rename)
 - Range GETs (`206 Partial Content`), so parallel ranged downloads — the AWS CLI's default for large files — reassemble exactly

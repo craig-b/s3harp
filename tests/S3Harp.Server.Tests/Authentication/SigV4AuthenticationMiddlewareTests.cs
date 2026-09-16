@@ -53,6 +53,23 @@ public sealed class SigV4AuthenticationMiddlewareTests
         Assert.Equal("InvalidAccessKeyId", ReadErrorCode(context));
     }
 
+    [Theory]
+    [InlineData("R")]
+    [InlineData("ddd, dd MMM yyyy HH:mm:ss '-0000'")]
+    public async Task RequestDatedByTheDateHeaderAlone_IsAccepted(string dateFormat)
+    {
+        // SigV4 takes the request time from Date when x-amz-date is absent, as
+        // botocore does whenever a caller supplies a Date header; botocore itself
+        // writes the RFC 2822 numeric zone rather than GMT.
+        var context = CreateSignedContext(
+            AccessKeyId, SecretAccessKey, dateHeaderFormat: dateFormat);
+
+        (context, var nextCalled) = await RunMiddleware(context);
+
+        Assert.True(nextCalled());
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+    }
+
     [Fact]
     public async Task RequestSignedFarFromServerTime_IsRejectedAsTimeTooSkewed()
     {
@@ -285,16 +302,20 @@ public sealed class SigV4AuthenticationMiddlewareTests
         string accessKeyId,
         string secretAccessKey,
         DateTimeOffset? signedAt = null,
-        string payloadHash = UnsignedPayload)
+        string payloadHash = UnsignedPayload,
+        string? dateHeaderFormat = null)
     {
         var context = CreateContext();
         var timestamp = (signedAt ?? Now).ToString(
             "yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
         var scope = new CredentialScope(timestamp[..8], "us-east-1", "s3");
-        context.Request.Headers["x-amz-date"] = timestamp;
+        var dateHeader = dateHeaderFormat is null ? "x-amz-date" : "date";
+        context.Request.Headers[dateHeader] = dateHeaderFormat is null
+            ? timestamp
+            : (signedAt ?? Now).ToString(dateHeaderFormat, CultureInfo.InvariantCulture);
         context.Request.Headers["x-amz-content-sha256"] = payloadHash;
 
-        string[] signedHeaders = ["host", "x-amz-content-sha256", "x-amz-date"];
+        string[] signedHeaders = [dateHeader, "host", "x-amz-content-sha256"];
         var canonical = CanonicalRequest.Build(context.Request, signedHeaders, payloadHash);
         var signature = SigV4Signer.SignCanonicalRequest(
             SigV4Signer.DeriveSigningKey(secretAccessKey, scope), scope, timestamp, canonical);

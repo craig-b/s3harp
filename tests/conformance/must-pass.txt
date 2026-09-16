@@ -4,6 +4,7 @@ s3tests/functional/test_headers.py::test_bucket_create_bad_contentlength_none
 s3tests/functional/test_headers.py::test_bucket_create_bad_expect_empty
 s3tests/functional/test_headers.py::test_bucket_create_bad_expect_mismatch
 s3tests/functional/test_headers.py::test_bucket_create_contentlength_none
+s3tests/functional/test_headers.py::test_object_create_amz_date_and_no_date
 s3tests/functional/test_headers.py::test_object_create_bad_contentlength_empty
 s3tests/functional/test_headers.py::test_object_create_bad_contentlength_negative
 s3tests/functional/test_headers.py::test_object_create_bad_contenttype_empty
@@ -13,6 +14,7 @@ s3tests/functional/test_headers.py::test_object_create_bad_expect_empty
 s3tests/functional/test_headers.py::test_object_create_bad_expect_mismatch
 s3tests/functional/test_headers.py::test_object_create_bad_expect_none
 s3tests/functional/test_headers.py::test_object_create_bad_md5_none
+s3tests/functional/test_headers.py::test_object_create_date_and_amz_date
 s3tests/functional/test_s3.py::test_abort_multipart_upload
 s3tests/functional/test_s3.py::test_abort_multipart_upload_not_found
 s3tests/functional/test_s3.py::test_atomic_conditional_write_1mb
