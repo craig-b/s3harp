@@ -46,6 +46,8 @@ public sealed class S3RequestDispatcher(
                 await ListObjectsV2Async(context, bucket, cancellationToken).ConfigureAwait(false),
             ("GET", not "", null) when query.ContainsKey("uploads") =>
                 await ListMultipartUploadsAsync(bucket, cancellationToken).ConfigureAwait(false),
+            ("GET", not "", null) =>
+                await ListObjectsAsync(context, bucket, cancellationToken).ConfigureAwait(false),
             ("GET", not "", not null) when query.ContainsKey("uploadId") =>
                 await ListPartsAsync(bucket, key, query["uploadId"].ToString(), cancellationToken)
                     .ConfigureAwait(false),
@@ -146,6 +148,43 @@ public sealed class S3RequestDispatcher(
             _ => new S3ErrorResult(S3Errors.NoSuchBucket),
         };
 
+    private async Task<IResult> ListObjectsAsync(
+        HttpContext context, string bucket, CancellationToken cancellationToken)
+    {
+        if (!await index.BucketExistsAsync(bucket, cancellationToken).ConfigureAwait(false))
+        {
+            return new S3ErrorResult(S3Errors.NoSuchBucket);
+        }
+
+        var query = context.Request.Query;
+        if (ListingQuery.TryParse(query) is not { } listingQuery)
+        {
+            return new S3ErrorResult(S3Errors.InvalidArgument);
+        }
+
+        var marker = query["marker"].ToString();
+        var listing = await ListAsync(
+            bucket, listingQuery, ResumeAfterMarker(marker, listingQuery.Delimiter), cancellationToken)
+            .ConfigureAwait(false);
+        var root = new XElement(S3Namespace + "ListBucketResult",
+            new XElement(S3Namespace + "Name", bucket),
+            new XElement(S3Namespace + "Prefix", listingQuery.Encode(listingQuery.Prefix)),
+            new XElement(S3Namespace + "Marker", listingQuery.Encode(marker)));
+        if (listing.IsTruncated && listingQuery.Delimiter is not null)
+        {
+            root.Add(new XElement(S3Namespace + "NextMarker",
+                listingQuery.Encode(LastEntry(listing))));
+        }
+
+        root.Add(
+            new XElement(S3Namespace + "MaxKeys", listingQuery.MaxKeys),
+            new XElement(S3Namespace + "IsTruncated", listing.IsTruncated ? "true" : "false"));
+        AppendListing(root, listingQuery, listing);
+        return new S3XmlResult(
+            StatusCodes.Status200OK,
+            new XDocument(new XDeclaration("1.0", "UTF-8", standalone: null), root));
+    }
+
     private async Task<IResult> ListObjectsV2Async(
         HttpContext context, string bucket, CancellationToken cancellationToken)
     {
@@ -155,28 +194,13 @@ public sealed class S3RequestDispatcher(
         }
 
         var query = context.Request.Query;
-        var encodingType = query["encoding-type"].ToString();
-        if (encodingType is not ("" or "url"))
+        if (ListingQuery.TryParse(query) is not { } listingQuery)
         {
             return new S3ErrorResult(S3Errors.InvalidArgument);
         }
 
-        var encode = encodingType.Length > 0
-            ? UrlEncodeKey
-            : (Func<string, string>)(value => value);
-        var prefix = query["prefix"].ToString();
-        var delimiter = query["delimiter"].ToString() is { Length: > 0 } value ? value : null;
         var startAfter = query["start-after"].ToString();
         var continuationToken = query["continuation-token"].ToString();
-
-        var maxKeys = 1000;
-        if (query.ContainsKey("max-keys")
-            && (!int.TryParse(query["max-keys"], out maxKeys) || maxKeys < 0))
-        {
-            return new S3ErrorResult(S3Errors.InvalidArgument);
-        }
-
-        maxKeys = Math.Min(maxKeys, 1000);
 
         var fromKey = "";
         if (continuationToken.Length > 0)
@@ -196,33 +220,19 @@ public sealed class S3RequestDispatcher(
             fromKey = startAfter + "\0";
         }
 
-        var listing = maxKeys == 0
-            ? new ObjectListing([], [], IsTruncated: false, null)
-            : await engine.ListObjectsAsync(
-                bucket, prefix, delimiter, fromKey, maxKeys, cancellationToken)
-                .ConfigureAwait(false);
-
+        var listing = await ListAsync(bucket, listingQuery, fromKey, cancellationToken)
+            .ConfigureAwait(false);
         var root = new XElement(S3Namespace + "ListBucketResult",
             new XElement(S3Namespace + "Name", bucket),
-            new XElement(S3Namespace + "Prefix", encode(prefix)),
-            new XElement(S3Namespace + "MaxKeys", maxKeys),
+            new XElement(S3Namespace + "Prefix", listingQuery.Encode(listingQuery.Prefix)),
+            new XElement(S3Namespace + "MaxKeys", listingQuery.MaxKeys),
             new XElement(S3Namespace + "KeyCount",
                 listing.Objects.Count + listing.CommonPrefixes.Count),
             new XElement(S3Namespace + "IsTruncated",
                 listing.IsTruncated ? "true" : "false"));
-        if (encodingType.Length > 0)
-        {
-            root.Add(new XElement(S3Namespace + "EncodingType", encodingType));
-        }
-
-        if (delimiter is not null)
-        {
-            root.Add(new XElement(S3Namespace + "Delimiter", encode(delimiter)));
-        }
-
         if (startAfter.Length > 0)
         {
-            root.Add(new XElement(S3Namespace + "StartAfter", encode(startAfter)));
+            root.Add(new XElement(S3Namespace + "StartAfter", listingQuery.Encode(startAfter)));
         }
 
         if (continuationToken.Length > 0)
@@ -236,19 +246,102 @@ public sealed class S3RequestDispatcher(
                 Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(listing.NextFromKey))));
         }
 
+        AppendListing(root, listingQuery, listing);
+        return new S3XmlResult(
+            StatusCodes.Status200OK,
+            new XDocument(new XDeclaration("1.0", "UTF-8", standalone: null), root));
+    }
+
+    private Task<ObjectListing> ListAsync(
+        string bucket, ListingQuery query, string fromKey, CancellationToken cancellationToken) =>
+        query.MaxKeys == 0
+            ? Task.FromResult(new ObjectListing([], [], IsTruncated: false, null))
+            : engine.ListObjectsAsync(
+                bucket, query.Prefix, query.Delimiter, fromKey, query.MaxKeys, cancellationToken);
+
+    /// <summary>
+    /// The scan position a V1 marker resumes from. A marker naming a delimiter
+    /// group resumes beyond the whole group, since the group was already
+    /// reported as a common prefix.
+    /// </summary>
+    private static string ResumeAfterMarker(string marker, string? delimiter)
+    {
+        if (marker.Length == 0)
+        {
+            return "";
+        }
+
+        var afterMarker = marker + "\0";
+        return delimiter is not null && marker.EndsWith(delimiter, StringComparison.Ordinal)
+            ? KeyRange.PrefixSuccessor(marker) ?? afterMarker
+            : afterMarker;
+    }
+
+    /// <summary>The last entry a listing reported, in key order, across contents and common prefixes.</summary>
+    private static string LastEntry(ObjectListing listing)
+    {
+        var lastKey = listing.Objects.Count > 0 ? listing.Objects[^1].Key : null;
+        var lastPrefix = listing.CommonPrefixes.Count > 0 ? listing.CommonPrefixes[^1] : null;
+        return lastKey is null ? lastPrefix ?? ""
+            : lastPrefix is null ? lastKey
+            : string.CompareOrdinal(lastKey, lastPrefix) > 0 ? lastKey : lastPrefix;
+    }
+
+    private static void AppendListing(XElement root, ListingQuery query, ObjectListing listing)
+    {
+        if (query.EncodingType.Length > 0)
+        {
+            root.Add(new XElement(S3Namespace + "EncodingType", query.EncodingType));
+        }
+
+        if (query.Delimiter is not null)
+        {
+            root.Add(new XElement(S3Namespace + "Delimiter", query.Encode(query.Delimiter)));
+        }
+
         root.Add(listing.Objects.Select(record => new XElement(S3Namespace + "Contents",
-            new XElement(S3Namespace + "Key", encode(record.Key)),
+            new XElement(S3Namespace + "Key", query.Encode(record.Key)),
             new XElement(S3Namespace + "LastModified", FormatTimestamp(record.LastModified)),
             new XElement(S3Namespace + "ETag", $"\"{record.ETag}\""),
             new XElement(S3Namespace + "Size", record.Size),
             new XElement(S3Namespace + "StorageClass", "STANDARD"))));
         root.Add(listing.CommonPrefixes.Select(commonPrefix =>
             new XElement(S3Namespace + "CommonPrefixes",
-                new XElement(S3Namespace + "Prefix", encode(commonPrefix)))));
+                new XElement(S3Namespace + "Prefix", query.Encode(commonPrefix)))));
+    }
 
-        return new S3XmlResult(
-            StatusCodes.Status200OK,
-            new XDocument(new XDeclaration("1.0", "UTF-8", standalone: null), root));
+    /// <summary>The listing parameters both ListObjects versions share.</summary>
+    private sealed record ListingQuery(
+        string Prefix, string? Delimiter, int MaxKeys, string EncodingType)
+    {
+        private const int MaxKeysCeiling = 1000;
+
+        public Func<string, string> Encode { get; } =
+            EncodingType.Length > 0 ? UrlEncodeKey : value => value;
+
+        /// <summary>Parses the shared parameters, or returns null when one is invalid.</summary>
+        public static ListingQuery? TryParse(IQueryCollection query)
+        {
+            var encodingType = query["encoding-type"].ToString();
+            if (encodingType is not ("" or "url"))
+            {
+                return null;
+            }
+
+            var maxKeys = MaxKeysCeiling;
+            if (query.ContainsKey("max-keys")
+                && (!int.TryParse(query["max-keys"], out maxKeys) || maxKeys < 0))
+            {
+                return null;
+            }
+
+            var delimiter = query["delimiter"].ToString();
+            return new ListingQuery(
+                query["prefix"].ToString(),
+                delimiter.Length > 0 ? delimiter : null,
+                Math.Min(maxKeys, MaxKeysCeiling),
+                encodingType);
+        }
     }
 
     private async Task<IResult> PutObjectAsync(

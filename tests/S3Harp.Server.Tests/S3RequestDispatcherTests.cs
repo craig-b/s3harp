@@ -238,14 +238,86 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
-    public async Task GetBucketWithoutListType_ReportsNotImplemented()
+    public async Task ListObjects_ReturnsContentsCommonPrefixesAndTheMarkerShape()
     {
         await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/a.txt", body: "hello world");
+        await Dispatch("PUT", "/my-bucket/docs/one.txt", body: "one");
 
+        var context = await Dispatch("GET", "/my-bucket", query: "?delimiter=%2F");
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        var root = ReadBody(context).Root;
+        Assert.NotNull(root);
+        Assert.Equal(S3Namespace + "ListBucketResult", root.Name);
+        Assert.Equal("my-bucket", root.Element(S3Namespace + "Name")?.Value);
+        Assert.Equal("", root.Element(S3Namespace + "Marker")?.Value);
+        Assert.Equal("1000", root.Element(S3Namespace + "MaxKeys")?.Value);
+        Assert.Equal("false", root.Element(S3Namespace + "IsTruncated")?.Value);
+        Assert.Null(root.Element(S3Namespace + "KeyCount"));
+        var contents = Assert.Single(root.Elements(S3Namespace + "Contents"));
+        Assert.Equal("a.txt", contents.Element(S3Namespace + "Key")?.Value);
+        var commonPrefix = Assert.Single(root.Elements(S3Namespace + "CommonPrefixes"));
+        Assert.Equal("docs/", commonPrefix.Element(S3Namespace + "Prefix")?.Value);
+    }
+
+    [Fact]
+    public async Task ListObjects_PaginatesWithMarkers()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        foreach (var key in new[] { "a", "b", "c" })
+        {
+            await Dispatch("PUT", $"/my-bucket/{key}", body: key);
+        }
+
+        var first = ReadBody(await Dispatch("GET", "/my-bucket", query: "?max-keys=2")).Root;
+        Assert.NotNull(first);
+        Assert.Equal("true", first.Element(S3Namespace + "IsTruncated")?.Value);
+        Assert.Null(first.Element(S3Namespace + "NextMarker"));
+
+        var second = ReadBody(await Dispatch(
+            "GET", "/my-bucket", query: "?max-keys=2&marker=b")).Root;
+        Assert.NotNull(second);
+        Assert.Equal("b", second.Element(S3Namespace + "Marker")?.Value);
+        Assert.Equal("false", second.Element(S3Namespace + "IsTruncated")?.Value);
+        Assert.Equal(
+            ["c"],
+            second.Elements(S3Namespace + "Contents")
+                .Select(c => c.Element(S3Namespace + "Key")?.Value));
+    }
+
+    [Fact]
+    public async Task ListObjects_WithADelimiter_ReturnsNextMarkerAndResumesPastTheGroup()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        foreach (var key in new[] { "a", "docs/one", "docs/two", "z" })
+        {
+            await Dispatch("PUT", $"/my-bucket/{key}", body: key);
+        }
+
+        var first = ReadBody(await Dispatch(
+            "GET", "/my-bucket", query: "?max-keys=2&delimiter=%2F")).Root;
+        Assert.NotNull(first);
+        Assert.Equal("true", first.Element(S3Namespace + "IsTruncated")?.Value);
+        Assert.Equal("docs/", first.Element(S3Namespace + "NextMarker")?.Value);
+
+        var second = ReadBody(await Dispatch(
+            "GET", "/my-bucket", query: "?max-keys=2&delimiter=%2F&marker=docs%2F")).Root;
+        Assert.NotNull(second);
+        Assert.Empty(second.Elements(S3Namespace + "CommonPrefixes"));
+        Assert.Equal(
+            ["z"],
+            second.Elements(S3Namespace + "Contents")
+                .Select(c => c.Element(S3Namespace + "Key")?.Value));
+    }
+
+    [Fact]
+    public async Task ListObjects_OnAnUnknownBucket_ReportsNoSuchBucket()
+    {
         var context = await Dispatch("GET", "/my-bucket");
 
-        Assert.Equal(StatusCodes.Status501NotImplemented, context.Response.StatusCode);
-        Assert.Equal("NotImplemented", ReadErrorCode(context));
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        Assert.Equal("NoSuchBucket", ReadErrorCode(context));
     }
 
     [Fact]

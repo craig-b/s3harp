@@ -100,6 +100,32 @@ public sealed class ListObjectsTests : IDisposable
         Assert.Equal(["b", "c"], (response.S3Objects ?? []).Select(o => o.Key));
     }
 
+    [Fact]
+    public async Task ListObjects_PaginatesWithMarkersThroughEveryEntry()
+    {
+        using var s3 = await CreateClientWithKeys("a", "b", "c", "d", "e");
+        var collected = new List<string>();
+        string? marker = null;
+        bool truncated;
+
+        do
+        {
+            var response = await s3.ListObjectsAsync(new ListObjectsRequest
+            {
+                BucketName = Bucket,
+                MaxKeys = 2,
+                Marker = marker,
+            }, Token);
+            var keys = (response.S3Objects ?? []).Select(o => o.Key).ToList();
+            collected.AddRange(keys);
+            truncated = response.IsTruncated ?? false;
+            marker = response.NextMarker ?? keys.LastOrDefault();
+        }
+        while (truncated);
+
+        Assert.Equal(["a", "b", "c", "d", "e"], collected);
+    }
+
     public void Dispose() => factory.Dispose();
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
