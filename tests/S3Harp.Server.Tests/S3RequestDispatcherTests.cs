@@ -888,6 +888,40 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task CopyingAnObjectOntoItself_WithoutReplacingAttributes_IsInvalid()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/same.txt", body: "hello");
+
+        var context = await Dispatch(
+            "PUT", "/my-bucket/same.txt",
+            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/same.txt");
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("InvalidRequest", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task CopyingAnObjectOntoItself_WithReplacedAttributes_Succeeds()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/same.txt", body: "hello");
+
+        var context = await Dispatch(
+            "PUT", "/my-bucket/same.txt",
+            configure: request =>
+            {
+                request.Headers["x-amz-copy-source"] = "/my-bucket/same.txt";
+                request.Headers["x-amz-metadata-directive"] = "REPLACE";
+                request.Headers["x-amz-meta-note"] = "replaced";
+            });
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        var head = await Dispatch("HEAD", "/my-bucket/same.txt");
+        Assert.Equal("replaced", head.Response.Headers["x-amz-meta-note"]);
+    }
+
+    [Fact]
     public async Task CopyingAMissingSource_ReportsNoSuchKey()
     {
         await Dispatch("PUT", "/my-bucket");

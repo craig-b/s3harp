@@ -106,6 +106,13 @@ public static class S3Errors
         StatusCodes.Status404NotFound,
         "The specified multipart upload does not exist.");
 
+    public static S3Error CopyToSelf { get; } = new(
+        "InvalidRequest",
+        StatusCodes.Status400BadRequest,
+        "This copy request is illegal because it is trying to copy an object to itself "
+        + "without changing the object's metadata, storage class, website redirect location "
+        + "or encryption attributes.");
+
     public static S3Error MissingContentSha256 { get; } = new(
         "InvalidRequest",
         StatusCodes.Status400BadRequest,

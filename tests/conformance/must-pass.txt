@@ -186,6 +186,7 @@ s3tests/functional/test_s3.py::test_object_copy_key_not_found
 s3tests/functional/test_s3.py::test_object_copy_replacing_metadata
 s3tests/functional/test_s3.py::test_object_copy_retaining_metadata
 s3tests/functional/test_s3.py::test_object_copy_same_bucket
+s3tests/functional/test_s3.py::test_object_copy_to_itself
 s3tests/functional/test_s3.py::test_object_copy_to_itself_with_metadata
 s3tests/functional/test_s3.py::test_object_copy_verify_contenttype
 s3tests/functional/test_s3.py::test_object_copy_zero_size

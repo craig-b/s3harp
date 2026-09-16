@@ -153,6 +153,24 @@ public sealed class MultipartTests : IDisposable
     }
 
     [Fact]
+    public async Task CopyingAnObjectOntoItself_ThrowsInvalidRequest()
+    {
+        using var s3 = await CreateClientWithBucket();
+        await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "same.txt",
+            ContentBody = "hello",
+        }, Token);
+
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
+            () => s3.CopyObjectAsync(Bucket, "same.txt", Bucket, "same.txt", Token));
+
+        Assert.Equal("InvalidRequest", exception.ErrorCode);
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+    }
+
+    [Fact]
     public async Task CopiedObject_MatchesTheSourceContentAndETag()
     {
         using var s3 = await CreateClientWithBucket();

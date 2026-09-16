@@ -801,6 +801,15 @@ public sealed class S3RequestDispatcher(
         var replace = string.Equals(
             context.Request.Headers["x-amz-metadata-directive"], "REPLACE",
             StringComparison.OrdinalIgnoreCase);
+
+        // A copy onto itself only makes sense as a way to rewrite the object's attributes.
+        if (!replace
+            && string.Equals(sourceBucket, bucket, StringComparison.Ordinal)
+            && string.Equals(sourceKey, key, StringComparison.Ordinal))
+        {
+            return new S3ErrorResult(S3Errors.CopyToSelf);
+        }
+
         var outcome = await engine.CopyObjectAsync(
             sourceBucket, sourceKey, bucket, key,
             replace ? RequestAttributes.Read(context.Request) : null,
