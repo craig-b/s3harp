@@ -46,6 +46,7 @@ public static class S3HarpApplication
         builder.Services.AddSingleton<IMetadataIndex>(
             new SqliteMetadataIndex(Path.Combine(dataDirectory, "s3harp.db")));
         builder.Services.AddSingleton(new BlobStore(dataDirectory));
+        builder.Services.AddSingleton(StorageLimits.S3);
         builder.Services.AddSingleton<StorageEngine>();
         builder.Services.AddSingleton<S3RequestDispatcher>();
 

@@ -22,7 +22,9 @@ public sealed class S3RequestDispatcherTests : IDisposable
     {
         dispatcher = new S3RequestDispatcher(
             index,
-            new StorageEngine(index, new BlobStore(root), new FixedTimeProvider(Now)),
+            new StorageEngine(
+                index, new BlobStore(root), new FixedTimeProvider(Now),
+                new StorageLimits(MinimumPartSize: 5)),
             new RootCredentials(AccessKeyId, "secret"),
             new FixedTimeProvider(Now));
     }
@@ -866,6 +868,23 @@ public sealed class S3RequestDispatcherTests : IDisposable
         var head = await Dispatch("HEAD", "/my-bucket/key");
 
         Assert.False(head.Response.Headers.ContainsKey("Content-Encoding"));
+    }
+
+    [Fact]
+    public async Task CompleteUpload_WithAShortNonFinalPart_ReportsEntityTooSmall()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate("/my-bucket/key");
+        var tiny = await UploadPart("/my-bucket/key", uploadId, 1, "tiny");
+        var second = await UploadPart("/my-bucket/key", uploadId, 2, "S3Harp!");
+
+        var context = await Dispatch(
+            "POST", "/my-bucket/key", query: $"?uploadId={uploadId}",
+            body: $"<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>{tiny}</ETag></Part>"
+                + $"<Part><PartNumber>2</PartNumber><ETag>{second}</ETag></Part></CompleteMultipartUpload>");
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("EntityTooSmall", ReadErrorCode(context));
     }
 
     [Fact]

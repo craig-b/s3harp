@@ -18,7 +18,7 @@ Working now, each proven by integration tests driving the real AWS SDK:
 - Presigned URLs — SDK-generated time-limited GET/PUT links work from any plain HTTP client, with expiry enforced
 - ListObjectsV2 with prefixes, delimiter grouping into common prefixes, `start-after`, and continuation-token pagination, plus the original marker-based ListObjects for clients that still use it
 - ListObjectVersions, reporting every object as its single current `null` version, so tooling written for versioned buckets can enumerate and clean up S3Harp buckets
-- Multipart uploads — initiate, upload parts, list parts and in-progress uploads, complete, abort — with S3's multipart ETag format; part assembly goes through `copy_file_range`, so reflink-capable filesystems share blocks instead of rewriting them
+- Multipart uploads — initiate, upload parts, list parts and in-progress uploads, complete, abort — with S3's multipart ETag format and its 5 MiB minimum for every part but the last (`EntityTooSmall`); part assembly goes through `copy_file_range`, so reflink-capable filesystems share blocks instead of rewriting them
 - Server-side CopyObject, with metadata copied or replaced per the metadata directive
 - S3 XML error responses that SDKs parse into their typed exceptions
 

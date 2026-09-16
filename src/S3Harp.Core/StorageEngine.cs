@@ -29,11 +29,19 @@ public sealed record CompleteUploadOutcome(CompleteUploadStatus Status, string? 
 /// <summary>The outcome of a server-side object copy.</summary>
 public sealed record CopyObjectOutcome(string ETag, DateTimeOffset LastModified);
 
+/// <summary>The size limits the engine enforces, with S3's values as the default.</summary>
+public sealed record StorageLimits(long MinimumPartSize)
+{
+    /// <summary>S3's limits: every part but the last must be at least 5 MiB.</summary>
+    public static StorageLimits S3 { get; } = new(MinimumPartSize: 5 * 1024 * 1024);
+}
+
 /// <summary>
 /// The storage engine: coordinates the blob store and the metadata index so the
 /// pair always agree, including reclaiming blob files their records release.
 /// </summary>
-public sealed class StorageEngine(IMetadataIndex index, BlobStore blobs, TimeProvider timeProvider)
+public sealed class StorageEngine(
+    IMetadataIndex index, BlobStore blobs, TimeProvider timeProvider, StorageLimits limits)
 {
     public async Task<PutObjectOutcome> PutObjectAsync(
         string bucket,
@@ -275,6 +283,12 @@ public sealed class StorageEngine(IMetadataIndex index, BlobStore blobs, TimePro
         if (assembled.Count == 0)
         {
             return new CompleteUploadOutcome(CompleteUploadStatus.InvalidPart, null);
+        }
+
+        // Only the final part may fall below the minimum part size.
+        if (assembled.Take(assembled.Count - 1).Any(part => part.Size < limits.MinimumPartSize))
+        {
+            return new CompleteUploadOutcome(CompleteUploadStatus.EntityTooSmall, null);
         }
 
         var concatenated = await blobs.ConcatenateAsync(

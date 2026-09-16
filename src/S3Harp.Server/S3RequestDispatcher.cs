@@ -729,6 +729,7 @@ public sealed class S3RequestDispatcher(
             CompleteUploadStatus.NoSuchUpload => new S3ErrorResult(S3Errors.NoSuchUpload),
             CompleteUploadStatus.InvalidPart => new S3ErrorResult(S3Errors.InvalidPart),
             CompleteUploadStatus.InvalidPartOrder => new S3ErrorResult(S3Errors.InvalidPartOrder),
+            CompleteUploadStatus.EntityTooSmall => new S3ErrorResult(S3Errors.EntityTooSmall),
             CompleteUploadStatus.ObjectMissing => new S3ErrorResult(S3Errors.NoSuchKey),
             CompleteUploadStatus.PreconditionFailed => new S3ErrorResult(S3Errors.PreconditionFailed),
             _ => new S3XmlResult(

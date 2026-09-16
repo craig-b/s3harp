@@ -71,6 +71,11 @@ public static class S3Errors
         StatusCodes.Status403Forbidden,
         "The AWS access key Id you provided does not exist in our records.");
 
+    public static S3Error EntityTooSmall { get; } = new(
+        "EntityTooSmall",
+        StatusCodes.Status400BadRequest,
+        "Your proposed upload is smaller than the minimum allowed object size");
+
     public static S3Error InvalidPart { get; } = new(
         "InvalidPart",
         StatusCodes.Status400BadRequest,

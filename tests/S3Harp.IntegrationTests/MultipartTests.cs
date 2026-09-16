@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Cryptography;
 using Amazon.S3;
 using Amazon.S3.Model;
@@ -54,6 +55,38 @@ public sealed class MultipartTests : IDisposable
         Assert.Equal([.. firstPart, .. secondPart], received.ToArray());
         Assert.Equal("application/x-s3harp", response.Headers.ContentType);
         Assert.Equal("multipart", response.Metadata["note"]);
+    }
+
+    [Fact]
+    public async Task CompletingWithANonFinalPartUnderFiveMiB_ThrowsEntityTooSmall()
+    {
+        using var s3 = await CreateClientWithBucket();
+        var upload = await s3.InitiateMultipartUploadAsync(Bucket, "small-parts.bin", Token);
+        var parts = new List<PartETag>();
+        for (var number = 1; number <= 2; number++)
+        {
+            var part = await s3.UploadPartAsync(new UploadPartRequest
+            {
+                BucketName = Bucket,
+                Key = "small-parts.bin",
+                UploadId = upload.UploadId,
+                PartNumber = number,
+                InputStream = new MemoryStream(new byte[1024]),
+            }, Token);
+            parts.Add(new PartETag(number, part.ETag));
+        }
+
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
+            () => s3.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
+            {
+                BucketName = Bucket,
+                Key = "small-parts.bin",
+                UploadId = upload.UploadId,
+                PartETags = parts,
+            }, Token));
+
+        Assert.Equal("EntityTooSmall", exception.ErrorCode);
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
     }
 
     [Fact]

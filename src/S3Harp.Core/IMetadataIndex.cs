@@ -136,6 +136,7 @@ public enum CompleteUploadStatus
     NoSuchUpload,
     InvalidPart,
     InvalidPartOrder,
+    EntityTooSmall,
     ObjectMissing,
     PreconditionFailed,
 }

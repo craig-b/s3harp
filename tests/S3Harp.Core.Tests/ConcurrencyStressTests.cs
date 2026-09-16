@@ -22,7 +22,8 @@ public sealed class ConcurrencyStressTests : IDisposable
     {
         Directory.CreateDirectory(root);
         index = new SqliteMetadataIndex(Path.Combine(root, "index.db"));
-        engine = new StorageEngine(index, new BlobStore(root), TimeProvider.System);
+        engine = new StorageEngine(
+            index, new BlobStore(root), TimeProvider.System, new StorageLimits(MinimumPartSize: 1));
     }
 
     [Fact]

@@ -15,7 +15,8 @@ public sealed class ObjectListingTests : IDisposable
 
     public ObjectListingTests()
     {
-        engine = new StorageEngine(index, new BlobStore(root), new FixedTimeProvider(Now));
+        engine = new StorageEngine(
+            index, new BlobStore(root), new FixedTimeProvider(Now), StorageLimits.S3);
     }
 
     [Fact]

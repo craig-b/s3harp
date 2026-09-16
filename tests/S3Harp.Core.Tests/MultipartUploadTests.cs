@@ -19,7 +19,9 @@ public sealed class MultipartUploadTests : IDisposable
 
     public MultipartUploadTests()
     {
-        engine = new StorageEngine(index, new BlobStore(root), new FixedTimeProvider(Now));
+        engine = new StorageEngine(
+            index, new BlobStore(root), new FixedTimeProvider(Now),
+            new StorageLimits(MinimumPartSize: 5));
     }
 
     [Fact]
@@ -101,6 +103,33 @@ public sealed class MultipartUploadTests : IDisposable
             "alpha", "key", uploadId, [(2, SecondPartETag), (1, FirstPartETag)], null, Token);
 
         Assert.Equal(CompleteUploadStatus.InvalidPartOrder, outcome.Status);
+    }
+
+    [Fact]
+    public async Task CompletingWithAShortNonFinalPart_ReportsEntityTooSmall()
+    {
+        var uploadId = await StartUpload();
+        var tiny = await UploadPart(uploadId, 1, "tiny");
+        var second = await UploadPart(uploadId, 2, "S3Harp!");
+
+        var outcome = await engine.CompleteUploadAsync(
+            "alpha", "key", uploadId, [(1, tiny!), (2, second!)], null, Token);
+
+        Assert.Equal(CompleteUploadStatus.EntityTooSmall, outcome.Status);
+        Assert.NotNull(await index.FindUploadAsync("alpha", "key", uploadId, Token));
+    }
+
+    [Fact]
+    public async Task CompletingWithOnlyTheFinalPartShort_Succeeds()
+    {
+        var uploadId = await StartUpload();
+        var first = await UploadPart(uploadId, 1, "Hello, ");
+        var tiny = await UploadPart(uploadId, 2, "tiny");
+
+        var outcome = await engine.CompleteUploadAsync(
+            "alpha", "key", uploadId, [(1, first!), (2, tiny!)], null, Token);
+
+        Assert.Equal(CompleteUploadStatus.Completed, outcome.Status);
     }
 
     [Fact]
