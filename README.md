@@ -57,4 +57,4 @@ The project name is styled differently depending on context — please keep thes
 
 ## License
 
-To be decided.
+S3Harp is licensed under the [Apache License 2.0](LICENSE).
