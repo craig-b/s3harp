@@ -15,6 +15,7 @@ S3Harp serves two uses, and the tension between them keeps the project honest:
 - **AWS Signature Version 4 from the start.** SDKs sign every request; auth cuts deep into request parsing and is foundational. This includes the streaming forms (`aws-chunked` / `STREAMING-AWS4-HMAC-SHA256-PAYLOAD`, and its `-TRAILER` variant carrying trailing checksum headers, which current SDKs send by default): the AWS CLI and SDKs send signed chunked bodies on PUT, so verifying these forms is what keeps real clients working.
 - **Single-node, by design.** S3Harp runs on one machine and one filesystem — a permanent scope decision the architecture is free to build on.
 - **Standard-region S3 semantics.** Where S3's behavior differs by region, S3Harp follows the standard regions: creating a bucket you already own returns 409 `BucketAlreadyOwnedByYou`.
+- **User metadata is UTF-8 on the wire, in both directions.** `x-amz-meta-*` values arrive as UTF-8 bytes and are returned as the same bytes, which is the only encoding that can carry every character a client may store.
 
 ## Architecture
 

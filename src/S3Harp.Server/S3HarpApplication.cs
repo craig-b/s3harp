@@ -1,3 +1,4 @@
+using System.Text;
 using S3Harp.Core;
 using S3Harp.Server.Authentication;
 
@@ -6,10 +7,21 @@ namespace S3Harp.Server;
 /// <summary>The composition root: builds a fully wired S3Harp server application.</summary>
 public static class S3HarpApplication
 {
+    private const string MetadataHeaderPrefix = "x-amz-meta-";
+
     public static WebApplication Build(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.Configuration.AddEnvironmentVariables("S3HARP_");
+        builder.WebHost.ConfigureKestrel(kestrel =>
+        {
+            // User metadata is UTF-8 on the wire, so those response headers
+            // carry the bytes back; every other header stays ASCII-only.
+            kestrel.ResponseHeaderEncodingSelector = name =>
+                name.StartsWith(MetadataHeaderPrefix, StringComparison.OrdinalIgnoreCase)
+                    ? Encoding.UTF8
+                    : null;
+        });
 
         var accessKeyId = builder.Configuration["ACCESS_KEY_ID"];
         var secretAccessKey = builder.Configuration["SECRET_ACCESS_KEY"];

@@ -35,6 +35,32 @@ public sealed class ObjectTests : IDisposable
     }
 
     [Fact]
+    public async Task PutThenGet_RoundtripsNonAsciiMetadataBytes()
+    {
+        // S3 metadata values are UTF-8 on the wire: clients such as boto3 send
+        // the UTF-8 bytes and expect the same bytes back.
+        using var s3 = await CreateClientWithBucket();
+        using var rawClient = new HttpClient(new SocketsHttpHandler
+        {
+            RequestHeaderEncodingSelector = (_, _) => Encoding.UTF8,
+            ResponseHeaderEncodingSelector = (_, _) => Encoding.UTF8,
+        });
+        var put = new HttpRequestMessage(HttpMethod.Put, await PresignedUrl(s3, HttpVerb.PUT))
+        {
+            Content = new StringContent("Hello"),
+        };
+        put.Headers.TryAddWithoutValidation("x-amz-meta-note", "Hello W\u00f6rld\u00e9");
+
+        var stored = await rawClient.SendAsync(put, Token);
+        Assert.Equal(HttpStatusCode.OK, stored.StatusCode);
+        var fetched = await rawClient.GetAsync(await PresignedUrl(s3, HttpVerb.GET), Token);
+
+        Assert.Equal(HttpStatusCode.OK, fetched.StatusCode);
+        Assert.Equal(
+            "Hello W\u00f6rld\u00e9", Assert.Single(fetched.Headers.GetValues("x-amz-meta-note")));
+    }
+
+    [Fact]
     public async Task PutObject_ReturnsTheMd5ETag()
     {
         using var s3 = await CreateClientWithBucket();
@@ -246,6 +272,16 @@ public sealed class ObjectTests : IDisposable
         Assert.Equal("BucketNotEmpty", exception.ErrorCode);
         Assert.Equal(HttpStatusCode.Conflict, exception.StatusCode);
     }
+
+    private static async Task<Uri> PresignedUrl(AmazonS3Client s3, HttpVerb verb) =>
+        new(await s3.GetPreSignedURLAsync(new GetPreSignedUrlRequest
+        {
+            BucketName = Bucket,
+            Key = "greeting.txt",
+            Verb = verb,
+            Protocol = Protocol.HTTP,
+            Expires = DateTime.UtcNow.AddMinutes(5),
+        }));
 
     public void Dispose() => factory.Dispose();
 
