@@ -183,16 +183,57 @@ public abstract class MetadataIndexContractTests
         await Create("alpha");
         await Index.PutObjectAsync("alpha", Record("key", "blob-1"), null, Token);
 
-        Assert.Equal("blob-1", await Index.DeleteObjectAsync("alpha", "key", Token));
+        var result = await Index.DeleteObjectAsync("alpha", "key", null, Token);
+
+        Assert.Equal(new DeleteObjectResult(DeleteObjectStatus.Deleted, "blob-1"), result);
         Assert.Null(await Index.FindObjectAsync("alpha", "key", Token));
     }
 
     [Fact]
-    public async Task DeletingAnUnknownKey_ReturnsNothing()
+    public async Task DeletingAnUnknownKey_ReportsNotFound()
     {
         await Create("alpha");
 
-        Assert.Null(await Index.DeleteObjectAsync("alpha", "missing", Token));
+        var result = await Index.DeleteObjectAsync("alpha", "missing", null, Token);
+
+        Assert.Equal(DeleteObjectResult.NotFound, result);
+    }
+
+    [Fact]
+    public async Task DeleteObject_WhoseConditionTheObjectMeets_RemovesIt()
+    {
+        await Create("alpha");
+        await Index.PutObjectAsync("alpha", Record("key", "blob-1"), null, Token);
+
+        var result = await Index.DeleteObjectAsync(
+            "alpha", "key", new DeleteCondition(ETag: "etag-hex", Size: 3), Token);
+
+        Assert.Equal(new DeleteObjectResult(DeleteObjectStatus.Deleted, "blob-1"), result);
+        Assert.Null(await Index.FindObjectAsync("alpha", "key", Token));
+    }
+
+    [Fact]
+    public async Task DeleteObject_WhoseConditionTheObjectFails_LeavesItUntouched()
+    {
+        await Create("alpha");
+        await Index.PutObjectAsync("alpha", Record("key", "blob-1"), null, Token);
+
+        var result = await Index.DeleteObjectAsync(
+            "alpha", "key", new DeleteCondition(ETag: "other"), Token);
+
+        Assert.Equal(DeleteObjectResult.PreconditionFailed, result);
+        Assert.NotNull(await Index.FindObjectAsync("alpha", "key", Token));
+    }
+
+    [Fact]
+    public async Task DeletingAnUnknownKey_UnderACondition_ReportsNotFound()
+    {
+        await Create("alpha");
+
+        var result = await Index.DeleteObjectAsync(
+            "alpha", "missing", new DeleteCondition(ETag: "other"), Token);
+
+        Assert.Equal(DeleteObjectResult.NotFound, result);
     }
 
     [Fact]

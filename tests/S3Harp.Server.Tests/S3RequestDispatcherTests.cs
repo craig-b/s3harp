@@ -1253,6 +1253,146 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task DeleteObject_WhoseIfMatchFails_ReportsPreconditionFailedAndKeepsTheObject()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/greeting.txt", body: "hello");
+
+        var context = await Dispatch(
+            "DELETE", "/my-bucket/greeting.txt",
+            configure: request => request.Headers.IfMatch = "\"badetag\"");
+
+        Assert.Equal(StatusCodes.Status412PreconditionFailed, context.Response.StatusCode);
+        Assert.Equal("PreconditionFailed", ReadErrorCode(context));
+        var after = await Dispatch("GET", "/my-bucket/greeting.txt");
+        Assert.Equal(StatusCodes.Status200OK, after.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteObject_WhoseSizeAndLastModifiedTimeMatch_RemovesTheObject()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/greeting.txt", body: "hello");
+
+        var context = await Dispatch(
+            "DELETE", "/my-bucket/greeting.txt",
+            configure: request =>
+            {
+                request.Headers["x-amz-if-match-size"] = "5";
+                request.Headers["x-amz-if-match-last-modified-time"] = "Wed, 16 Sep 2026 12:00:00 GMT";
+            });
+
+        Assert.Equal(StatusCodes.Status204NoContent, context.Response.StatusCode);
+        Assert.Equal("NoSuchKey", ReadErrorCode(await Dispatch("GET", "/my-bucket/greeting.txt")));
+    }
+
+    [Fact]
+    public async Task DeleteObject_WithIfMatchAnyObject_RemovesTheObject()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/greeting.txt", body: "hello");
+
+        var context = await Dispatch(
+            "DELETE", "/my-bucket/greeting.txt",
+            configure: request => request.Headers.IfMatch = "*");
+
+        Assert.Equal(StatusCodes.Status204NoContent, context.Response.StatusCode);
+        Assert.Equal("NoSuchKey", ReadErrorCode(await Dispatch("GET", "/my-bucket/greeting.txt")));
+    }
+
+    [Fact]
+    public async Task DeleteObject_OfAnUnknownKey_UnderAFailingCondition_StillSucceeds()
+    {
+        await Dispatch("PUT", "/my-bucket");
+
+        var context = await Dispatch(
+            "DELETE", "/my-bucket/missing.txt",
+            configure: request => request.Headers.IfMatch = "\"badetag\"");
+
+        Assert.Equal(StatusCodes.Status204NoContent, context.Response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("x-amz-if-match-size", "many")]
+    [InlineData("x-amz-if-match-last-modified-time", "yesterday")]
+    public async Task DeleteObject_WithAnUnusableConditionValue_ReportsInvalidArgument(
+        string header, string value)
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/greeting.txt", body: "hello");
+
+        var context = await Dispatch(
+            "DELETE", "/my-bucket/greeting.txt",
+            configure: request => request.Headers[header] = value);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("InvalidArgument", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task DeleteObjects_ChecksEachEntrysConditionAndReportsFailuresPerKey()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/one.txt", body: "1");
+        await Dispatch("PUT", "/my-bucket/two.txt", body: "22");
+        await Dispatch("PUT", "/my-bucket/three.txt", body: "333");
+
+        var context = await Dispatch("POST", "/my-bucket", query: "?delete", body: """
+            <Delete>
+              <Object><Key>one.txt</Key><ETag>"badetag"</ETag></Object>
+              <Object><Key>two.txt</Key><Size>2</Size></Object>
+              <Object><Key>three.txt</Key><LastModifiedTime>2026-09-16T12:00:00Z</LastModifiedTime></Object>
+              <Object><Key>never-existed.txt</Key><Size>9</Size></Object>
+            </Delete>
+            """);
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        var result = ReadBody(context).Root!;
+        Assert.Equal(
+            ["never-existed.txt", "three.txt", "two.txt"],
+            result.Elements(S3Namespace + "Deleted")
+                .Select(d => d.Element(S3Namespace + "Key")?.Value)
+                .Order(StringComparer.Ordinal));
+        var error = Assert.Single(result.Elements(S3Namespace + "Error"));
+        Assert.Equal("one.txt", error.Element(S3Namespace + "Key")?.Value);
+        Assert.Equal("PreconditionFailed", error.Element(S3Namespace + "Code")?.Value);
+        Assert.Equal(
+            StatusCodes.Status200OK, (await Dispatch("GET", "/my-bucket/one.txt")).Response.StatusCode);
+        Assert.Equal("NoSuchKey", ReadErrorCode(await Dispatch("GET", "/my-bucket/two.txt")));
+    }
+
+    [Fact]
+    public async Task DeleteObjects_InQuietMode_StillReportsFailedConditions()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/one.txt", body: "1");
+
+        var context = await Dispatch("POST", "/my-bucket", query: "?delete", body: """
+            <Delete>
+              <Quiet>true</Quiet>
+              <Object><Key>one.txt</Key><Size>9</Size></Object>
+            </Delete>
+            """);
+
+        var error = Assert.Single(ReadBody(context).Root!.Elements());
+        Assert.Equal(S3Namespace + "Error", error.Name);
+        Assert.Equal("PreconditionFailed", error.Element(S3Namespace + "Code")?.Value);
+    }
+
+    [Fact]
+    public async Task DeleteObjects_WithAnUnusableConditionValue_ReportsMalformedXml()
+    {
+        await Dispatch("PUT", "/my-bucket");
+
+        var context = await Dispatch("POST", "/my-bucket", query: "?delete", body: """
+            <Delete><Object><Key>one.txt</Key><Size>many</Size></Object></Delete>
+            """);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("MalformedXML", ReadErrorCode(context));
+    }
+
+    [Fact]
     public async Task DeleteBucket_HoldingObjects_ReportsBucketNotEmpty()
     {
         await Dispatch("PUT", "/my-bucket");

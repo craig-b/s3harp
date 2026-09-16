@@ -185,15 +185,18 @@ public sealed class StorageEngine(
         return outcome.Status;
     }
 
-    public async Task DeleteObjectAsync(
-        string bucket, string key, CancellationToken cancellationToken)
+    /// <summary>Deletes the object when the condition, if any, holds against it.</summary>
+    public async Task<DeleteObjectStatus> DeleteObjectAsync(
+        string bucket, string key, DeleteCondition? condition, CancellationToken cancellationToken)
     {
-        var blobId = await index.DeleteObjectAsync(bucket, key, cancellationToken)
+        var deleted = await index.DeleteObjectAsync(bucket, key, condition, cancellationToken)
             .ConfigureAwait(false);
-        if (blobId is not null)
+        if (deleted.BlobId is not null)
         {
-            blobs.Delete(blobId);
+            blobs.Delete(deleted.BlobId);
         }
+
+        return deleted.Status;
     }
 
     public async Task<string?> InitiateUploadAsync(

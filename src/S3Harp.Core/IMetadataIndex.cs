@@ -101,6 +101,39 @@ public sealed record PutObjectResult(PutObjectStatus Status, string? ReplacedBlo
     };
 }
 
+/// <summary>
+/// What must be true of the object at a key for a delete to remove it: each term
+/// given must match the object, its last-modified time to the second.
+/// </summary>
+public sealed record DeleteCondition(
+    string? ETag = null, long? Size = null, DateTimeOffset? LastModified = null)
+{
+    public bool Matches(ObjectRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        return (ETag is null || string.Equals(ETag, record.ETag, StringComparison.Ordinal))
+            && (Size is null || Size == record.Size)
+            && (LastModified is null
+                || LastModified.Value.ToUnixTimeSeconds() == record.LastModified.ToUnixTimeSeconds());
+    }
+}
+
+public enum DeleteObjectStatus
+{
+    Deleted,
+    NotFound,
+    PreconditionFailed,
+}
+
+/// <summary>The outcome of deleting an object record: on deletion, the blob id it released.</summary>
+public sealed record DeleteObjectResult(DeleteObjectStatus Status, string? BlobId)
+{
+    public static DeleteObjectResult NotFound { get; } = new(DeleteObjectStatus.NotFound, null);
+
+    public static DeleteObjectResult PreconditionFailed { get; } =
+        new(DeleteObjectStatus.PreconditionFailed, null);
+}
+
 public enum DeleteBucketResult
 {
     Deleted,
@@ -205,9 +238,12 @@ public interface IMetadataIndex
         string bucket, string prefix, string fromKey, int limit,
         CancellationToken cancellationToken);
 
-    /// <summary>Removes the record, returning its blob id; null when the key is unknown.</summary>
-    Task<string?> DeleteObjectAsync(
-        string bucket, string key, CancellationToken cancellationToken);
+    /// <summary>
+    /// Removes the record atomically when the condition, if any, holds against it,
+    /// returning its blob id so its file can be reclaimed.
+    /// </summary>
+    Task<DeleteObjectResult> DeleteObjectAsync(
+        string bucket, string key, DeleteCondition? condition, CancellationToken cancellationToken);
 
     /// <summary>Registers the upload; reports false when the bucket is unknown.</summary>
     Task<bool> TryCreateUploadAsync(

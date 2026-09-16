@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Xml.Linq;
 using Microsoft.Extensions.Primitives;
 using S3Harp.Core;
 
@@ -140,3 +141,71 @@ public static class WriteConditionHeaders
     }
 }
 
+/// <summary>
+/// Reads a delete's condition on the object it removes: the <c>If-Match</c>,
+/// <c>x-amz-if-match-size</c> and <c>x-amz-if-match-last-modified-time</c> headers
+/// of DeleteObject, or the <c>ETag</c>, <c>Size</c> and <c>LastModifiedTime</c>
+/// elements of a DeleteObjects entry. <c>*</c> names any object; a value that is
+/// not a size or a timestamp makes the request unusable.
+/// </summary>
+public static class DeleteConditions
+{
+    public static bool TryParse(IHeaderDictionary headers, out DeleteCondition? condition)
+    {
+        ArgumentNullException.ThrowIfNull(headers);
+        return TryBuild(
+            headers.IfMatch.ToString(),
+            headers["x-amz-if-match-size"].ToString(),
+            headers["x-amz-if-match-last-modified-time"].ToString(),
+            out condition);
+    }
+
+    public static bool TryParse(XElement entry, out DeleteCondition? condition)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        return TryBuild(
+            Child(entry, "ETag"), Child(entry, "Size"), Child(entry, "LastModifiedTime"),
+            out condition);
+    }
+
+    private static bool TryBuild(
+        string etag, string size, string lastModified, out DeleteCondition? condition)
+    {
+        condition = null;
+        long? sizeTerm = null;
+        DateTimeOffset? lastModifiedTerm = null;
+        if (size.Length > 0)
+        {
+            if (!long.TryParse(size, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed))
+            {
+                return false;
+            }
+
+            sizeTerm = parsed;
+        }
+
+        if (lastModified.Length > 0)
+        {
+            if (!DateTimeOffset.TryParse(
+                    lastModified, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal,
+                    out var parsed))
+            {
+                return false;
+            }
+
+            lastModifiedTerm = parsed;
+        }
+
+        var etagTerm = etag.Trim();
+        if (etagTerm.Length > 0 || sizeTerm is not null || lastModifiedTerm is not null)
+        {
+            condition = new DeleteCondition(
+                etagTerm is "" or "*" ? null : etagTerm.Trim('"'), sizeTerm, lastModifiedTerm);
+        }
+
+        return true;
+    }
+
+    private static string Child(XElement entry, string name) =>
+        entry.Elements().FirstOrDefault(e => e.Name.LocalName == name)?.Value ?? "";
+}

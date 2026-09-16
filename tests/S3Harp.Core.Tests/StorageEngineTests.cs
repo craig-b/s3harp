@@ -91,10 +91,37 @@ public sealed class StorageEngineTests : IDisposable
         await CreateBucket("alpha");
         await Put("alpha", "key", "content");
 
-        await engine.DeleteObjectAsync("alpha", "key", Token);
+        var status = await engine.DeleteObjectAsync("alpha", "key", null, Token);
 
+        Assert.Equal(DeleteObjectStatus.Deleted, status);
         Assert.Null(await engine.GetObjectAsync("alpha", "key", Token));
         Assert.Equal(0, CountBlobFiles());
+    }
+
+    [Fact]
+    public async Task Delete_WhoseConditionFails_KeepsTheRecordAndTheBlobFile()
+    {
+        await CreateBucket("alpha");
+        await Put("alpha", "key", "content");
+
+        var status = await engine.DeleteObjectAsync(
+            "alpha", "key", new DeleteCondition(Size: 1), Token);
+
+        Assert.Equal(DeleteObjectStatus.PreconditionFailed, status);
+        var download = await engine.GetObjectAsync("alpha", "key", Token);
+        Assert.NotNull(download);
+        await download.Content.DisposeAsync();
+        Assert.Equal(1, CountBlobFiles());
+    }
+
+    [Fact]
+    public async Task Delete_OfAnUnknownKey_ReportsNotFound()
+    {
+        await CreateBucket("alpha");
+
+        var status = await engine.DeleteObjectAsync("alpha", "missing", null, Token);
+
+        Assert.Equal(DeleteObjectStatus.NotFound, status);
     }
 
     [Fact]

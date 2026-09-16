@@ -297,19 +297,36 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
-    public async Task<string?> DeleteObjectAsync(
-        string bucket, string key, CancellationToken cancellationToken)
+    public async Task<DeleteObjectResult> DeleteObjectAsync(
+        string bucket, string key, DeleteCondition? condition, CancellationToken cancellationToken)
     {
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
         {
-            var command = connection.CreateCommand();
-            command.CommandText =
-                "DELETE FROM objects WHERE bucket = $bucket AND key = $key RETURNING blob_id";
-            command.Parameters.AddWithValue("$bucket", bucket);
-            command.Parameters.AddWithValue("$key", key);
-            return (string?)await command.ExecuteScalarAsync(cancellationToken)
-                .ConfigureAwait(false);
+            var transaction = connection.BeginTransaction();
+            await using (transaction.ConfigureAwait(false))
+            {
+                var existing = await FindObjectAsync(connection, transaction, bucket, key, cancellationToken)
+                    .ConfigureAwait(false);
+                if (existing is null)
+                {
+                    return DeleteObjectResult.NotFound;
+                }
+
+                if (condition is not null && !condition.Matches(existing))
+                {
+                    return DeleteObjectResult.PreconditionFailed;
+                }
+
+                var delete = connection.CreateCommand();
+                delete.Transaction = transaction;
+                delete.CommandText = "DELETE FROM objects WHERE bucket = $bucket AND key = $key";
+                delete.Parameters.AddWithValue("$bucket", bucket);
+                delete.Parameters.AddWithValue("$key", key);
+                await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return new DeleteObjectResult(DeleteObjectStatus.Deleted, existing.BlobId);
+            }
         }
     }
 

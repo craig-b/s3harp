@@ -112,18 +112,24 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
         }
     }
 
-    public Task<string?> DeleteObjectAsync(
-        string bucket, string key, CancellationToken cancellationToken)
+    public Task<DeleteObjectResult> DeleteObjectAsync(
+        string bucket, string key, DeleteCondition? condition, CancellationToken cancellationToken)
     {
         lock (gate)
         {
-            if (buckets.TryGetValue(bucket, out var state)
-                && state.Objects.Remove(key, out var record))
+            if (!buckets.TryGetValue(bucket, out var state)
+                || !state.Objects.TryGetValue(key, out var record))
             {
-                return Task.FromResult<string?>(record.BlobId);
+                return Task.FromResult(DeleteObjectResult.NotFound);
             }
 
-            return Task.FromResult<string?>(null);
+            if (condition is not null && !condition.Matches(record))
+            {
+                return Task.FromResult(DeleteObjectResult.PreconditionFailed);
+            }
+
+            state.Objects.Remove(key);
+            return Task.FromResult(new DeleteObjectResult(DeleteObjectStatus.Deleted, record.BlobId));
         }
     }
 

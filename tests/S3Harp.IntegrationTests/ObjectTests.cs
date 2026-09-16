@@ -369,6 +369,80 @@ public sealed class ObjectTests : IDisposable
     }
 
     [Fact]
+    public async Task DeleteObject_WithAFailingCondition_ThrowsPreconditionFailed()
+    {
+        using var s3 = await CreateClientWithBucket();
+        await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "guarded.txt",
+            ContentBody = "content",
+        }, Token);
+
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
+            () => s3.DeleteObjectAsync(new DeleteObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "guarded.txt",
+                IfMatch = "\"badetag\"",
+            }, Token));
+
+        Assert.Equal("PreconditionFailed", exception.ErrorCode);
+        Assert.Equal(HttpStatusCode.PreconditionFailed, exception.StatusCode);
+        var head = await s3.GetObjectMetadataAsync(Bucket, "guarded.txt", Token);
+        await s3.DeleteObjectAsync(new DeleteObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "guarded.txt",
+            IfMatchSize = head.ContentLength,
+            IfMatchLastModifiedTime = head.LastModified,
+        }, Token);
+        await Assert.ThrowsAsync<NoSuchKeyException>(
+            () => s3.GetObjectAsync(Bucket, "guarded.txt", Token));
+    }
+
+    [Fact]
+    public async Task DeleteObjects_ReportsAFailedConditionForThatKeyOnly()
+    {
+        using var s3 = await CreateClientWithBucket();
+        var put = await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "guarded.txt",
+            ContentBody = "content",
+        }, Token);
+        await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "other.txt",
+            ContentBody = "other",
+        }, Token);
+
+        var exception = await Assert.ThrowsAsync<DeleteObjectsException>(
+            () => s3.DeleteObjectsAsync(new DeleteObjectsRequest
+            {
+                BucketName = Bucket,
+                Objects =
+                [
+                    new KeyVersion { Key = "guarded.txt", ETag = "\"badetag\"" },
+                    new KeyVersion { Key = "other.txt", Size = 5 },
+                ],
+            }, Token));
+
+        var error = Assert.Single(exception.Response.DeleteErrors ?? []);
+        Assert.Equal("guarded.txt", error.Key);
+        Assert.Equal("PreconditionFailed", error.Code);
+        Assert.Equal(
+            ["other.txt"], (exception.Response.DeletedObjects ?? []).Select(d => d.Key));
+        var retried = await s3.DeleteObjectsAsync(new DeleteObjectsRequest
+        {
+            BucketName = Bucket,
+            Objects = [new KeyVersion { Key = "guarded.txt", ETag = put.ETag }],
+        }, Token);
+        Assert.Equal(["guarded.txt"], (retried.DeletedObjects ?? []).Select(d => d.Key));
+    }
+
+    [Fact]
     public async Task BatchDelete_RemovesEveryListedKeyInOneRequest()
     {
         using var s3 = await CreateClientWithBucket();

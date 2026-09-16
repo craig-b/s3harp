@@ -98,7 +98,8 @@ public sealed class S3RequestDispatcher(
                 await GetObjectAsync(context, bucket, key, includeContent: false, cancellationToken)
                     .ConfigureAwait(false),
             ("DELETE", not "", not null) =>
-                await DeleteObjectAsync(bucket, key, cancellationToken).ConfigureAwait(false),
+                await DeleteObjectAsync(context, bucket, key, cancellationToken)
+                    .ConfigureAwait(false),
             _ => new S3ErrorResult(S3Errors.NotImplemented),
         };
     }
@@ -539,15 +540,23 @@ public sealed class S3RequestDispatcher(
     }
 
     private async Task<IResult> DeleteObjectAsync(
-        string bucket, string key, CancellationToken cancellationToken)
+        HttpContext context, string bucket, string key, CancellationToken cancellationToken)
     {
         if (!await index.BucketExistsAsync(bucket, cancellationToken).ConfigureAwait(false))
         {
             return new S3ErrorResult(S3Errors.NoSuchBucket);
         }
 
-        await engine.DeleteObjectAsync(bucket, key, cancellationToken).ConfigureAwait(false);
-        return new S3StatusResult(StatusCodes.Status204NoContent);
+        if (!DeleteConditions.TryParse(context.Request.Headers, out var condition))
+        {
+            return new S3ErrorResult(S3Errors.InvalidArgument);
+        }
+
+        var status = await engine.DeleteObjectAsync(bucket, key, condition, cancellationToken)
+            .ConfigureAwait(false);
+        return status == DeleteObjectStatus.PreconditionFailed
+            ? new S3ErrorResult(S3Errors.PreconditionFailed)
+            : new S3StatusResult(StatusCodes.Status204NoContent);
     }
 
     private async Task<IResult> DeleteObjectsAsync(
@@ -559,15 +568,22 @@ public sealed class S3RequestDispatcher(
             return new S3ErrorResult(S3Errors.NoSuchBucket);
         }
 
-        List<string> keys;
+        List<(string Key, DeleteCondition? Condition)> entries = [];
         bool quiet;
         try
         {
             var document = await LoadRequestXmlAsync(context.Request, cancellationToken)
                 .ConfigureAwait(false);
-            keys = [.. document.Root!
-                .Elements().Where(e => e.Name.LocalName == "Object")
-                .Select(o => o.Elements().First(e => e.Name.LocalName == "Key").Value)];
+            foreach (var entry in document.Root!.Elements().Where(e => e.Name.LocalName == "Object"))
+            {
+                if (!DeleteConditions.TryParse(entry, out var condition))
+                {
+                    return new S3ErrorResult(S3Errors.MalformedXML);
+                }
+
+                entries.Add((entry.Elements().First(e => e.Name.LocalName == "Key").Value, condition));
+            }
+
             quiet = string.Equals(
                 document.Root.Elements().FirstOrDefault(e => e.Name.LocalName == "Quiet")?.Value,
                 "true", StringComparison.OrdinalIgnoreCase);
@@ -579,16 +595,24 @@ public sealed class S3RequestDispatcher(
             return new S3ErrorResult(S3Errors.MalformedXML);
         }
 
-        if (keys.Count > maxKeysPerRequest)
+        if (entries.Count > maxKeysPerRequest)
         {
             return new S3ErrorResult(S3Errors.MalformedXML);
         }
 
         var result = new XElement(S3Namespace + "DeleteResult");
-        foreach (var key in keys)
+        foreach (var (key, condition) in entries)
         {
-            await engine.DeleteObjectAsync(bucket, key, cancellationToken).ConfigureAwait(false);
-            if (!quiet)
+            var status = await engine.DeleteObjectAsync(bucket, key, condition, cancellationToken)
+                .ConfigureAwait(false);
+            if (status == DeleteObjectStatus.PreconditionFailed)
+            {
+                result.Add(new XElement(S3Namespace + "Error",
+                    new XElement(S3Namespace + "Key", key),
+                    new XElement(S3Namespace + "Code", S3Errors.PreconditionFailed.Code),
+                    new XElement(S3Namespace + "Message", S3Errors.PreconditionFailed.Message)));
+            }
+            else if (!quiet)
             {
                 result.Add(new XElement(S3Namespace + "Deleted",
                     new XElement(S3Namespace + "Key", key)));

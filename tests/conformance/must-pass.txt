@@ -149,6 +149,12 @@ s3tests/functional/test_s3.py::test_copy_object_ifmatch_failed
 s3tests/functional/test_s3.py::test_copy_object_ifmatch_good
 s3tests/functional/test_s3.py::test_copy_object_ifnonematch_failed
 s3tests/functional/test_s3.py::test_copy_object_ifnonematch_good
+s3tests/functional/test_s3.py::test_delete_object_if_match
+s3tests/functional/test_s3.py::test_delete_object_if_match_last_modified_time
+s3tests/functional/test_s3.py::test_delete_object_if_match_size
+s3tests/functional/test_s3.py::test_delete_objects_if_match
+s3tests/functional/test_s3.py::test_delete_objects_if_match_last_modified_time
+s3tests/functional/test_s3.py::test_delete_objects_if_match_size
 s3tests/functional/test_s3.py::test_encrypted_transfer_13b
 s3tests/functional/test_s3.py::test_encrypted_transfer_1b
 s3tests/functional/test_s3.py::test_encrypted_transfer_1kb
