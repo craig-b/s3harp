@@ -51,7 +51,7 @@ S3Harp itself is the storage backend: objects are stored as plain files on the l
 
 ## Configuration
 
-Configuration uses the `S3HARP_` prefix for environment variables; every setting also works as a command-line switch of the same name, such as `--PORT=9010`. The server authenticates every request with AWS Signature Version 4 against its root keypair, which it requires at startup. A setting that is missing or invalid stops the server with a message naming it.
+Configuration uses the `S3HARP_` prefix for environment variables; every setting is also a flag, such as `--port 9010`, and `s3harp --help` lists them all. A flag overrides the environment. The server authenticates every request with AWS Signature Version 4 against its root keypair, which it requires at startup. A setting that is missing or invalid stops the server with a message naming it.
 
 | Variable | Purpose |
 |---|---|

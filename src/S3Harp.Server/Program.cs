@@ -1,12 +1,15 @@
 using S3Harp.Server;
 
-try
+return S3HarpCommand.Create(settings =>
 {
-    S3HarpApplication.Build(args).Run();
-    return 0;
-}
-catch (StartupException exception)
-{
-    Console.Error.WriteLine(exception.Message);
-    return 1;
-}
+    try
+    {
+        S3HarpApplication.Build(settings).Run();
+        return 0;
+    }
+    catch (StartupException exception)
+    {
+        Console.Error.WriteLine(exception.Message);
+        return 1;
+    }
+}).Parse(args).Invoke();

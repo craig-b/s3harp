@@ -1,18 +1,33 @@
 using System.Text;
+using Microsoft.Extensions.Configuration.Memory;
 using S3Harp.Core;
 using S3Harp.Server.Authentication;
 
 namespace S3Harp.Server;
 
-/// <summary>The composition root: builds a fully wired S3Harp server application.</summary>
-public static class S3HarpApplication
+/// <summary>
+/// The composition root: builds a fully wired S3Harp server application. Settings
+/// come from the <c>S3HARP_</c> environment, overridden by any the caller passes,
+/// which is how the command line reaches them.
+/// </summary>
+public static partial class S3HarpApplication
 {
     private const string MetadataHeaderPrefix = "x-amz-meta-";
 
-    public static WebApplication Build(string[] args)
+    /// <summary>The framework logs only warnings by default; S3Harp's own categories log information.</summary>
+    private static readonly Dictionary<string, string?> LoggingDefaults = new()
     {
-        var builder = WebApplication.CreateBuilder(args);
+        ["Logging:LogLevel:Default"] = "Warning",
+        ["Logging:LogLevel:S3Harp"] = "Information",
+    };
+
+    public static WebApplication Build(IReadOnlyDictionary<string, string?> settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        var builder = WebApplication.CreateBuilder();
+        builder.Configuration.Sources.Insert(0, new MemoryConfigurationSource { InitialData = LoggingDefaults });
         builder.Configuration.AddEnvironmentVariables("S3HARP_");
+        builder.Configuration.AddInMemoryCollection(settings);
         builder.WebHost.ConfigureKestrel(kestrel =>
         {
             // User metadata is UTF-8 on the wire, so those response headers
@@ -41,6 +56,15 @@ public static class S3HarpApplication
         builder.Services.AddSingleton<S3RequestDispatcher>();
 
         var app = builder.Build();
+        app.Lifetime.ApplicationStarted.Register(() =>
+        {
+            var logger = app.Logger;
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                var summary = StartupSummary.Describe(options, app.Urls);
+                Log.Started(logger, summary);
+            }
+        });
 
         app.UseMiddleware<SigV4AuthenticationMiddleware>();
 
@@ -53,5 +77,11 @@ public static class S3HarpApplication
         });
 
         return app;
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(EventId = 1, EventName = "Started", Level = LogLevel.Information, Message = "{Summary}")]
+        public static partial void Started(ILogger logger, string summary);
     }
 }

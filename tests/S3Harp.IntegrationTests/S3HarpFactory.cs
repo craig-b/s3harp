@@ -64,14 +64,14 @@ public sealed class S3HarpFactory : IDisposable
     {
         if (app is null)
         {
-            app = S3HarpApplication.Build(
-            [
-                "--BIND=127.0.0.1",
-                "--PORT=0",
-                $"--ACCESS_KEY_ID={AccessKeyId}",
-                $"--SECRET_ACCESS_KEY={SecretAccessKey}",
-                $"--DATA_DIR={dataDirectory}",
-            ]);
+            app = S3HarpApplication.Build(new Dictionary<string, string?>
+            {
+                ["BIND"] = "127.0.0.1",
+                ["PORT"] = "0",
+                ["ACCESS_KEY_ID"] = AccessKeyId,
+                ["SECRET_ACCESS_KEY"] = SecretAccessKey,
+                ["DATA_DIR"] = dataDirectory,
+            });
             app.StartAsync().GetAwaiter().GetResult();
         }
 
