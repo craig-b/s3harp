@@ -410,10 +410,18 @@ public sealed class S3RequestDispatcherTests : IDisposable
         Assert.Equal("NoSuchBucket", ReadErrorCode(context));
     }
 
-    [Fact]
-    public async Task SubresourceOperations_ReportNotImplemented()
+    [Theory]
+    [InlineData("PUT", "/my-bucket", "?versioning")]
+    [InlineData("GET", "/my-bucket/key", "?attributes")]
+    [InlineData("GET", "/my-bucket/key", "?retention")]
+    [InlineData("GET", "/my-bucket", "?publicAccessBlock")]
+    public async Task SubresourceOperations_ReportNotImplemented(
+        string method, string path, string query)
     {
-        var context = await Dispatch("PUT", "/my-bucket", query: "?versioning");
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/key", body: "content");
+
+        var context = await Dispatch(method, path, query: query);
 
         Assert.Equal(StatusCodes.Status501NotImplemented, context.Response.StatusCode);
         Assert.Equal("NotImplemented", ReadErrorCode(context));

@@ -23,11 +23,18 @@ public sealed class S3RequestDispatcher(
 
     private static readonly XNamespace S3Namespace = "http://s3.amazonaws.com/doc/2006-03-01/";
 
-    /// <summary>Query markers selecting S3 subresources and operations S3Harp will grow into.</summary>
+    /// <summary>
+    /// Every S3 subresource query marker beyond the operations S3Harp serves.
+    /// Each names a distinct operation, so a request carrying one is answered
+    /// as NotImplemented rather than as the plain bucket or object operation.
+    /// </summary>
     private static readonly string[] SubresourceMarkers =
     [
-        "acl", "cors", "lifecycle", "location", "policy",
-        "tagging", "versioning", "website",
+        "accelerate", "acl", "analytics", "attributes", "cors", "encryption",
+        "intelligent-tiering", "inventory", "legal-hold", "lifecycle", "location",
+        "logging", "metrics", "notification", "object-lock", "ownershipControls",
+        "policy", "policyStatus", "publicAccessBlock", "replication", "requestPayment",
+        "restore", "retention", "select", "tagging", "torrent", "versioning", "website",
     ];
 
     public async Task<IResult> DispatchAsync(HttpContext context)
