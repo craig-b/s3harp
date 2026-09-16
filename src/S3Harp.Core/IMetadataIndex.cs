@@ -100,6 +100,10 @@ public interface IMetadataIndex
     Task<IReadOnlyList<PartRecord>> ListPartsAsync(
         string bucket, string key, string uploadId, CancellationToken cancellationToken);
 
+    /// <summary>The bucket's in-progress uploads, ordered by key then upload id.</summary>
+    Task<IReadOnlyList<MultipartUpload>> ListUploadsAsync(
+        string bucket, CancellationToken cancellationToken);
+
     /// <summary>
     /// Atomically stores the assembled object record and removes the upload with its
     /// parts; null when the upload is unknown.

@@ -315,6 +315,30 @@ public abstract class MetadataIndexContractTests
     }
 
     [Fact]
+    public async Task Uploads_ListInKeyThenUploadIdOrder()
+    {
+        await Create("alpha");
+        foreach (var (key, uploadId) in new[] { ("b", "u2"), ("a", "u9"), ("a", "u1") })
+        {
+            Assert.True(await Index.TryCreateUploadAsync(
+                "alpha", UploadFor(key, uploadId), Token));
+        }
+
+        var uploads = await Index.ListUploadsAsync("alpha", Token);
+
+        Assert.Equal(
+            [("a", "u1"), ("a", "u9"), ("b", "u2")],
+            uploads.Select(u => (u.Key, u.UploadId)));
+        Assert.Equal(CreationTime, uploads[0].InitiatedAt);
+    }
+
+    [Fact]
+    public async Task ListingUploads_OfAnUnknownBucket_ReturnsNothing()
+    {
+        Assert.Empty(await Index.ListUploadsAsync("missing", Token));
+    }
+
+    [Fact]
     public async Task DeletingABucketWithAnActiveUpload_ReportsItNotEmpty()
     {
         await StartUpload("alpha", "u1");
@@ -330,8 +354,10 @@ public abstract class MetadataIndexContractTests
         Assert.True(await Index.TryCreateUploadAsync(bucket, Upload(uploadId), Token));
     }
 
-    private static MultipartUpload Upload(string uploadId) => new(
-        uploadId, "key", "text/plain",
+    private static MultipartUpload Upload(string uploadId) => UploadFor("key", uploadId);
+
+    private static MultipartUpload UploadFor(string key, string uploadId) => new(
+        uploadId, key, "text/plain",
         new Dictionary<string, string> { ["meta-1"] = "value-1" }, CreationTime);
 
     private static PartRecord Part(int number, string blobId) =>

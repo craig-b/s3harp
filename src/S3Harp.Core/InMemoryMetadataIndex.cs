@@ -165,6 +165,20 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
         }
     }
 
+    public Task<IReadOnlyList<MultipartUpload>> ListUploadsAsync(
+        string bucket, CancellationToken cancellationToken)
+    {
+        lock (gate)
+        {
+            return Task.FromResult<IReadOnlyList<MultipartUpload>>(
+                buckets.TryGetValue(bucket, out var state)
+                    ? [.. state.Uploads.Values.Select(u => u.Info)
+                        .OrderBy(u => u.Key, StringComparer.Ordinal)
+                        .ThenBy(u => u.UploadId, StringComparer.Ordinal)]
+                    : []);
+        }
+    }
+
     public Task<CompleteUploadResult?> CompleteUploadAsync(
         string bucket, string uploadId, ObjectRecord record,
         CancellationToken cancellationToken)

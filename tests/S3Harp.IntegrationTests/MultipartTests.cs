@@ -84,6 +84,42 @@ public sealed class MultipartTests : IDisposable
     }
 
     [Fact]
+    public async Task ListParts_ReturnsWhatWasUploadedSoFar()
+    {
+        using var s3 = await CreateClientWithBucket();
+        var initiate = await s3.InitiateMultipartUploadAsync(Bucket, "inspect.bin", Token);
+        var part = await s3.UploadPartAsync(new UploadPartRequest
+        {
+            BucketName = Bucket,
+            Key = "inspect.bin",
+            UploadId = initiate.UploadId,
+            PartNumber = 1,
+            InputStream = new MemoryStream(new byte[2048]),
+        }, Token);
+
+        var response = await s3.ListPartsAsync(Bucket, "inspect.bin", initiate.UploadId, Token);
+
+        var listed = Assert.Single(response.Parts ?? []);
+        Assert.Equal(1, listed.PartNumber);
+        Assert.Equal(2048, listed.Size);
+        Assert.Equal(part.ETag, listed.ETag);
+    }
+
+    [Fact]
+    public async Task ListMultipartUploads_ShowsInProgressUploads()
+    {
+        using var s3 = await CreateClientWithBucket();
+        var initiate = await s3.InitiateMultipartUploadAsync(Bucket, "pending.bin", Token);
+
+        var response = await s3.ListMultipartUploadsAsync(
+            new ListMultipartUploadsRequest { BucketName = Bucket }, Token);
+
+        var upload = Assert.Single(response.MultipartUploads ?? []);
+        Assert.Equal("pending.bin", upload.Key);
+        Assert.Equal(initiate.UploadId, upload.UploadId);
+    }
+
+    [Fact]
     public async Task CopiedObject_MatchesTheSourceContentAndETag()
     {
         using var s3 = await CreateClientWithBucket();

@@ -378,6 +378,38 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    public async Task<IReadOnlyList<MultipartUpload>> ListUploadsAsync(
+        string bucket, CancellationToken cancellationToken)
+    {
+        var connection = OpenConnection();
+        await using (connection.ConfigureAwait(false))
+        {
+            var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT upload_id, key, content_type, metadata, initiated_at
+                FROM uploads WHERE bucket = $bucket
+                ORDER BY key, upload_id
+                """;
+            command.Parameters.AddWithValue("$bucket", bucket);
+            var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            await using (reader.ConfigureAwait(false))
+            {
+                var uploads = new List<MultipartUpload>();
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    uploads.Add(new MultipartUpload(
+                        reader.GetString(0),
+                        reader.GetString(1),
+                        reader.IsDBNull(2) ? null : reader.GetString(2),
+                        JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(3))!,
+                        ParseTimestamp(reader.GetString(4))));
+                }
+
+                return uploads;
+            }
+        }
+    }
+
     public async Task<CompleteUploadResult?> CompleteUploadAsync(
         string bucket, string uploadId, ObjectRecord record,
         CancellationToken cancellationToken)

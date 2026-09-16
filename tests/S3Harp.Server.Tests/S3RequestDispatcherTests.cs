@@ -425,6 +425,63 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task ListParts_ReturnsUploadedPartsInOrder()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate("/my-bucket/key");
+        await UploadPart("/my-bucket/key", uploadId, 2, "S3Harp!");
+        await UploadPart("/my-bucket/key", uploadId, 1, "Hello, ");
+
+        var context = await Dispatch("GET", "/my-bucket/key", query: $"?uploadId={uploadId}");
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        var root = ReadBody(context).Root;
+        Assert.NotNull(root);
+        Assert.Equal(S3Namespace + "ListPartsResult", root.Name);
+        Assert.Equal(uploadId, root.Element(S3Namespace + "UploadId")?.Value);
+        var parts = root.Elements(S3Namespace + "Part").ToArray();
+        Assert.Equal(
+            ["1", "2"], parts.Select(p => p.Element(S3Namespace + "PartNumber")?.Value));
+        Assert.Equal("7", parts[0].Element(S3Namespace + "Size")?.Value);
+        Assert.Equal(
+            "\"c84cabbaebee9a9631c8be234ac64c26\"",
+            parts[0].Element(S3Namespace + "ETag")?.Value);
+    }
+
+    [Fact]
+    public async Task ListParts_OfAnUnknownUpload_ReportsNoSuchUpload()
+    {
+        await Dispatch("PUT", "/my-bucket");
+
+        var context = await Dispatch("GET", "/my-bucket/key", query: "?uploadId=missing");
+
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        Assert.Equal("NoSuchUpload", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task ListMultipartUploads_ReturnsActiveUploadsInKeyOrder()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var second = await Initiate("/my-bucket/zulu.txt");
+        var first = await Initiate("/my-bucket/alpha.txt");
+
+        var context = await Dispatch("GET", "/my-bucket", query: "?uploads");
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        var root = ReadBody(context).Root;
+        Assert.NotNull(root);
+        Assert.Equal(S3Namespace + "ListMultipartUploadsResult", root.Name);
+        var uploads = root.Elements(S3Namespace + "Upload").ToArray();
+        Assert.Equal(
+            ["alpha.txt", "zulu.txt"],
+            uploads.Select(u => u.Element(S3Namespace + "Key")?.Value));
+        Assert.Equal(
+            [first, second],
+            uploads.Select(u => u.Element(S3Namespace + "UploadId")?.Value));
+    }
+
+    [Fact]
     public async Task UploadPartCopy_ReportsNotImplemented()
     {
         await Dispatch("PUT", "/my-bucket");

@@ -44,6 +44,11 @@ public sealed class S3RequestDispatcher(
             ("GET", "", null) => await ListBucketsAsync(cancellationToken).ConfigureAwait(false),
             ("GET", not "", null) when query["list-type"] == "2" =>
                 await ListObjectsV2Async(context, bucket, cancellationToken).ConfigureAwait(false),
+            ("GET", not "", null) when query.ContainsKey("uploads") =>
+                await ListMultipartUploadsAsync(bucket, cancellationToken).ConfigureAwait(false),
+            ("GET", not "", not null) when query.ContainsKey("uploadId") =>
+                await ListPartsAsync(bucket, key, query["uploadId"].ToString(), cancellationToken)
+                    .ConfigureAwait(false),
             ("PUT", not "", null) =>
                 await CreateBucketAsync(context, bucket, cancellationToken).ConfigureAwait(false),
             ("HEAD", not "", null) =>
@@ -369,6 +374,73 @@ public sealed class S3RequestDispatcher(
             StatusCodes.Status200OK,
             new XDocument(new XDeclaration("1.0", "UTF-8", standalone: null), result));
     }
+
+    private async Task<IResult> ListPartsAsync(
+        string bucket, string key, string uploadId, CancellationToken cancellationToken)
+    {
+        if (!await index.BucketExistsAsync(bucket, cancellationToken).ConfigureAwait(false))
+        {
+            return new S3ErrorResult(S3Errors.NoSuchBucket);
+        }
+
+        var upload = await index.FindUploadAsync(bucket, key, uploadId, cancellationToken)
+            .ConfigureAwait(false);
+        if (upload is null)
+        {
+            return new S3ErrorResult(S3Errors.NoSuchUpload);
+        }
+
+        var parts = await index.ListPartsAsync(bucket, key, uploadId, cancellationToken)
+            .ConfigureAwait(false);
+        return new S3XmlResult(
+            StatusCodes.Status200OK,
+            new XDocument(
+                new XDeclaration("1.0", "UTF-8", standalone: null),
+                new XElement(S3Namespace + "ListPartsResult",
+                    new XElement(S3Namespace + "Bucket", bucket),
+                    new XElement(S3Namespace + "Key", key),
+                    new XElement(S3Namespace + "UploadId", uploadId),
+                    OwnerElement("Initiator"),
+                    OwnerElement("Owner"),
+                    new XElement(S3Namespace + "StorageClass", "STANDARD"),
+                    new XElement(S3Namespace + "MaxParts", 1000),
+                    new XElement(S3Namespace + "IsTruncated", "false"),
+                    parts.Select(part => new XElement(S3Namespace + "Part",
+                        new XElement(S3Namespace + "PartNumber", part.PartNumber),
+                        new XElement(S3Namespace + "ETag", $"\"{part.ETag}\""),
+                        new XElement(S3Namespace + "Size", part.Size))))));
+    }
+
+    private async Task<IResult> ListMultipartUploadsAsync(
+        string bucket, CancellationToken cancellationToken)
+    {
+        if (!await index.BucketExistsAsync(bucket, cancellationToken).ConfigureAwait(false))
+        {
+            return new S3ErrorResult(S3Errors.NoSuchBucket);
+        }
+
+        var uploads = await index.ListUploadsAsync(bucket, cancellationToken)
+            .ConfigureAwait(false);
+        return new S3XmlResult(
+            StatusCodes.Status200OK,
+            new XDocument(
+                new XDeclaration("1.0", "UTF-8", standalone: null),
+                new XElement(S3Namespace + "ListMultipartUploadsResult",
+                    new XElement(S3Namespace + "Bucket", bucket),
+                    new XElement(S3Namespace + "MaxUploads", 1000),
+                    new XElement(S3Namespace + "IsTruncated", "false"),
+                    uploads.Select(upload => new XElement(S3Namespace + "Upload",
+                        new XElement(S3Namespace + "Key", upload.Key),
+                        new XElement(S3Namespace + "UploadId", upload.UploadId),
+                        OwnerElement("Initiator"),
+                        OwnerElement("Owner"),
+                        new XElement(S3Namespace + "StorageClass", "STANDARD"),
+                        new XElement(S3Namespace + "Initiated", FormatTimestamp(upload.InitiatedAt)))))));
+    }
+
+    private XElement OwnerElement(string elementName) => new(S3Namespace + elementName,
+        new XElement(S3Namespace + "ID", credentials.AccessKeyId),
+        new XElement(S3Namespace + "DisplayName", credentials.AccessKeyId));
 
     private async Task<IResult> InitiateUploadAsync(
         HttpContext context, string bucket, string key, CancellationToken cancellationToken)
