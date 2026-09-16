@@ -15,6 +15,7 @@ S3Harp serves two uses, and the tension between them keeps the project honest:
 - **AWS Signature Version 4 from the start.** SDKs sign every request; auth cuts deep into request parsing and is foundational. This includes the streaming forms (`aws-chunked` / `STREAMING-AWS4-HMAC-SHA256-PAYLOAD`, and its `-TRAILER` variant carrying trailing checksum headers, which current SDKs send by default): the AWS CLI and SDKs send signed chunked bodies on PUT, so verifying these forms is what keeps real clients working.
 - **Single-node, by design.** S3Harp runs on one machine and one filesystem — a permanent scope decision the architecture is free to build on.
 - **Standard-region S3 semantics.** Where S3's behavior differs by region, S3Harp follows the standard regions: creating a bucket you already own returns 409 `BucketAlreadyOwnedByYou`.
+- **Both addressing styles.** A bucket is named either by the path (`/bucket/key`) or by a host label under the configured domain (`bucket.localhost/key`), decided per request from the Host header. SDKs default to the virtual-hosted form, and `*.localhost` resolves to loopback everywhere, so the default domain needs no DNS.
 - **User metadata is UTF-8 on the wire, in both directions.** `x-amz-meta-*` values arrive as UTF-8 bytes and are returned as the same bytes, which is the only encoding that can carry every character a client may store.
 
 ## Architecture
@@ -79,5 +80,4 @@ Each step ends with the AWS SDK exercising it, so compatibility is proven contin
 
 Deliberately open — each awaits an explicit decision:
 
-- **Bucket addressing:** path-style only (`/bucket/key`) vs also virtual-hosted-style (`bucket.host/key`), which needs DNS/host handling.
-- **Configuration surface** beyond the decided variables — `S3HARP_ACCESS_KEY_ID` and `S3HARP_SECRET_ACCESS_KEY` (a single root keypair, required at startup, with multiple accounts as later candidate work behind the same credential-store seam) and `S3HARP_DATA_DIR` (the storage location, required at startup). Ports and other defaults await decision.
+- **Configuration surface** beyond the decided variables — `S3HARP_ACCESS_KEY_ID` and `S3HARP_SECRET_ACCESS_KEY` (a single root keypair, required at startup, with multiple accounts as later candidate work behind the same credential-store seam) `S3HARP_DATA_DIR` (the storage location, required at startup) and `S3HARP_DOMAIN` (the virtual-hosted domain, defaulting to `localhost`). Ports and other defaults await decision.

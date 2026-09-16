@@ -320,6 +320,27 @@ public sealed class ObjectTests : IDisposable
     }
 
     [Fact]
+    public async Task VirtualHostedClient_ReachesTheSameBucketAsPathStyle()
+    {
+        using var pathStyle = await CreateClientWithBucket();
+        using var virtualHosted = factory.CreateS3Client(virtualHosted: true);
+
+        await virtualHosted.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "hosted.txt",
+            ContentBody = "via the host",
+        }, Token);
+
+        using var response = await pathStyle.GetObjectAsync(Bucket, "hosted.txt", Token);
+        using var reader = new StreamReader(response.ResponseStream);
+        Assert.Equal("via the host", await reader.ReadToEndAsync(Token));
+        var listed = await virtualHosted.ListObjectsV2Async(
+            new ListObjectsV2Request { BucketName = Bucket }, Token);
+        Assert.Equal(["hosted.txt"], (listed.S3Objects ?? []).Select(o => o.Key));
+    }
+
+    [Fact]
     public async Task PutObject_ReturnsTheMd5ETag()
     {
         using var s3 = await CreateClientWithBucket();

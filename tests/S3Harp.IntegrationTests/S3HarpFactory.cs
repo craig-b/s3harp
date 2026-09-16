@@ -21,13 +21,26 @@ public sealed class S3HarpFactory : IDisposable
 
     private WebApplication? app;
 
+    /// <summary>
+    /// An SDK client for the server. Path style is the default; a virtual-hosted
+    /// client addresses the server as <c>localhost</c> so buckets become
+    /// <c>bucket.localhost</c> hosts, which resolve to loopback without setup.
+    /// </summary>
     public AmazonS3Client CreateS3Client(
-        string accessKeyId = AccessKeyId, string secretAccessKey = SecretAccessKey)
+        string accessKeyId = AccessKeyId,
+        string secretAccessKey = SecretAccessKey,
+        bool virtualHosted = false)
     {
+        var url = new UriBuilder(EnsureServerStarted());
+        if (virtualHosted)
+        {
+            url.Host = "localhost";
+        }
+
         var config = new AmazonS3Config
         {
-            ServiceURL = EnsureServerStarted(),
-            ForcePathStyle = true,
+            ServiceURL = url.Uri.ToString(),
+            ForcePathStyle = !virtualHosted,
             MaxErrorRetry = 0,
         };
         return new AmazonS3Client(new BasicAWSCredentials(accessKeyId, secretAccessKey), config);

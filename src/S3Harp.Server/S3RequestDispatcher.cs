@@ -15,7 +15,8 @@ public sealed class S3RequestDispatcher(
     IMetadataIndex index,
     StorageEngine engine,
     RootCredentials credentials,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    ServiceDomain domain)
 {
     /// <summary>The version id S3 assigns to objects in unversioned buckets.</summary>
     private const string NullVersionId = "null";
@@ -48,7 +49,8 @@ public sealed class S3RequestDispatcher(
             return new S3ErrorResult(S3Errors.NotImplemented);
         }
 
-        var (bucket, key) = ParsePath(context.Request.Path.Value ?? "/");
+        var (bucket, key) = RequestTarget.Resolve(
+            context.Request.Host.Host, context.Request.Path.Value ?? "/", domain.Name);
         var cancellationToken = context.RequestAborted;
         var query = context.Request.Query;
         return (context.Request.Method, bucket, key) switch
@@ -105,23 +107,6 @@ public sealed class S3RequestDispatcher(
                     .ConfigureAwait(false),
             _ => new S3ErrorResult(S3Errors.NotImplemented),
         };
-    }
-
-    /// <summary>
-    /// Splits <c>/bucket/key</c>. Only the leading slash is structural: every
-    /// later character, including a trailing slash, belongs to the key.
-    /// </summary>
-    private static (string Bucket, string? Key) ParsePath(string path)
-    {
-        var withoutRoot = path.StartsWith('/') ? path[1..] : path;
-        var separator = withoutRoot.IndexOf('/', StringComparison.Ordinal);
-        if (separator < 0)
-        {
-            return (withoutRoot, null);
-        }
-
-        var key = withoutRoot[(separator + 1)..];
-        return (withoutRoot[..separator], key.Length > 0 ? key : null);
     }
 
     private async Task<IResult> ListBucketsAsync(CancellationToken cancellationToken)

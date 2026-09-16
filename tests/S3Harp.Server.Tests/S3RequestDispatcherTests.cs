@@ -27,7 +27,8 @@ public sealed class S3RequestDispatcherTests : IDisposable
                 index, new BlobStore(root), new FixedTimeProvider(Now),
                 new StorageLimits(MinimumPartSize: 5)),
             new RootCredentials(AccessKeyId, "secret"),
-            new FixedTimeProvider(Now));
+            new FixedTimeProvider(Now),
+            new ServiceDomain("localhost"));
     }
 
     public void Dispose() => Directory.Delete(root, recursive: true);
@@ -1612,6 +1613,26 @@ public sealed class S3RequestDispatcherTests : IDisposable
 
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
         Assert.Equal("NoSuchKey", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task VirtualHostedRequests_NameTheBucketInTheHost()
+    {
+        await Dispatch("PUT", "/", configure: request => request.Host = new HostString("my-bucket.localhost"));
+
+        var put = await Dispatch(
+            "PUT", "/greeting.txt", body: "hello",
+            configure: request => request.Host = new HostString("my-bucket.localhost", 9000));
+        var get = await Dispatch(
+            "GET", "/greeting.txt",
+            configure: request => request.Host = new HostString("my-bucket.localhost", 9000));
+        var listed = ReadBody(await Dispatch("GET", "/my-bucket", query: "?list-type=2")).Root!;
+
+        Assert.Equal(StatusCodes.Status200OK, put.Response.StatusCode);
+        Assert.Equal("hello", ReadBodyText(get));
+        Assert.Equal(
+            ["greeting.txt"],
+            listed.Elements(S3Namespace + "Contents").Select(c => c.Element(S3Namespace + "Key")?.Value));
     }
 
     [Fact]

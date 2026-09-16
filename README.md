@@ -58,6 +58,9 @@ Configuration uses the `S3HARP_` prefix for environment variables. The server au
 | `S3HARP_ACCESS_KEY_ID` | The access key id clients sign requests with |
 | `S3HARP_SECRET_ACCESS_KEY` | The matching secret key |
 | `S3HARP_DATA_DIR` | The directory holding all stored data, including the metadata index |
+| `S3HARP_DOMAIN` | The domain buckets are addressed under in virtual-hosted style; defaults to `localhost` |
+
+Buckets are reachable in both of S3's addressing styles: path style (`http://localhost:9000/my-bucket/key`) and virtual-hosted style (`http://my-bucket.localhost:9000/key`), which SDKs use unless told otherwise. Every `*.localhost` name resolves to the loopback address, so the default domain works without DNS setup; set `S3HARP_DOMAIN` when serving under another name.
 
 ## Naming conventions
 

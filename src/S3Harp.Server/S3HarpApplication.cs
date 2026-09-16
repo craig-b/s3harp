@@ -40,6 +40,9 @@ public static class S3HarpApplication
 
         Directory.CreateDirectory(dataDirectory);
 
+        var domain = builder.Configuration["DOMAIN"];
+        builder.Services.AddSingleton(
+            string.IsNullOrWhiteSpace(domain) ? ServiceDomain.Default : new ServiceDomain(domain.Trim()));
         builder.Services.AddSingleton(new RootCredentials(accessKeyId, secretAccessKey));
         builder.Services.AddSingleton<ICredentialStore, RootCredentialStore>();
         builder.Services.AddSingleton(TimeProvider.System);
