@@ -338,8 +338,8 @@ public sealed class S3RequestDispatcher(
         bool quiet;
         try
         {
-            var document = await XDocument.LoadAsync(
-                context.Request.Body, LoadOptions.None, cancellationToken).ConfigureAwait(false);
+            var document = await LoadRequestXmlAsync(context.Request, cancellationToken)
+                .ConfigureAwait(false);
             keys = [.. document.Root!
                 .Elements().Where(e => e.Name.LocalName == "Object")
                 .Select(o => o.Elements().First(e => e.Name.LocalName == "Key").Value)];
@@ -519,8 +519,8 @@ public sealed class S3RequestDispatcher(
         List<(int PartNumber, string ETag)> parts;
         try
         {
-            var document = await XDocument.LoadAsync(
-                context.Request.Body, LoadOptions.None, cancellationToken).ConfigureAwait(false);
+            var document = await LoadRequestXmlAsync(context.Request, cancellationToken)
+                .ConfigureAwait(false);
             parts = [.. document.Root!
                 .Elements().Where(e => e.Name.LocalName == "Part")
                 .Select(part => (
@@ -613,6 +613,14 @@ public sealed class S3RequestDispatcher(
                     new XElement(S3Namespace + "ETag", $"\"{outcome.ETag}\""),
                     new XElement(S3Namespace + "LastModified", FormatTimestamp(outcome.LastModified)))));
     }
+
+    /// <summary>
+    /// Parses an XML request body. Whitespace is preserved because element text
+    /// carries object keys, and a key may consist of nothing but whitespace.
+    /// </summary>
+    private static Task<XDocument> LoadRequestXmlAsync(
+        HttpRequest request, CancellationToken cancellationToken) =>
+        XDocument.LoadAsync(request.Body, LoadOptions.PreserveWhitespace, cancellationToken);
 
     /// <summary>URL-encodes a key for <c>encoding-type=url</c>, keeping the slashes S3 leaves literal.</summary>
     private static string UrlEncodeKey(string value) =>

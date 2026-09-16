@@ -207,6 +207,29 @@ public sealed class ObjectTests : IDisposable
     }
 
     [Fact]
+    public async Task DeleteObjects_RemovesAKeyThatIsOnlyWhitespace()
+    {
+        using var s3 = await CreateClientWithBucket();
+        await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = " ",
+            ContentBody = "content",
+        }, Token);
+
+        var response = await s3.DeleteObjectsAsync(new DeleteObjectsRequest
+        {
+            BucketName = Bucket,
+            Objects = [new KeyVersion { Key = " " }],
+        }, Token);
+
+        Assert.Equal([" "], (response.DeletedObjects ?? []).Select(d => d.Key));
+        var remaining = await s3.ListObjectsV2Async(
+            new ListObjectsV2Request { BucketName = Bucket }, Token);
+        Assert.Empty(remaining.S3Objects ?? []);
+    }
+
+    [Fact]
     public async Task DeletingABucketHoldingObjects_ThrowsBucketNotEmpty()
     {
         using var s3 = await CreateClientWithBucket();
