@@ -332,6 +332,18 @@ public abstract class MetadataIndexContractTests
     }
 
     [Fact]
+    public async Task Part_KeepsItsLastModifiedTime()
+    {
+        await StartUpload("alpha", "u1");
+        var uploadedAt = new DateTimeOffset(2026, 9, 16, 15, 30, 45, TimeSpan.Zero);
+
+        await Index.PutPartAsync(
+            "alpha", "key", "u1", Part(1, "blob-1") with { LastModified = uploadedAt }, Token);
+
+        Assert.Equal(uploadedAt, Assert.Single(await Index.ListPartsAsync("alpha", "key", "u1", Token)).LastModified);
+    }
+
+    [Fact]
     public async Task PutPart_ReplacingAPartNumber_ReturnsTheReplacedBlobId()
     {
         await StartUpload("alpha", "u1");
@@ -502,7 +514,7 @@ public abstract class MetadataIndexContractTests
         new Dictionary<string, string> { ["meta-1"] = "value-1" }, CreationTime);
 
     private static PartRecord Part(int number, string blobId) =>
-        new(number, blobId, Size: 3, ETag: "part-etag");
+        new(number, blobId, Size: 3, ETag: "part-etag", LastModified: CreationTime);
 
     private static ObjectRecord Record(string key, string blobId) => new(
         key, blobId, Size: 3, ETag: "etag-hex", PartSizes: [], ContentType: "text/plain",

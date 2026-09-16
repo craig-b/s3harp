@@ -63,8 +63,7 @@ public sealed class S3RequestDispatcher(
             ("GET", not "", null) =>
                 await ListObjectsAsync(context, bucket, cancellationToken).ConfigureAwait(false),
             ("GET", not "", not null) when query.ContainsKey("uploadId") =>
-                await ListPartsAsync(bucket, key, query["uploadId"].ToString(), cancellationToken)
-                    .ConfigureAwait(false),
+                await ListPartsAsync(context, bucket, key, cancellationToken).ConfigureAwait(false),
             ("PUT", not "", null) =>
                 await CreateBucketAsync(context, bucket, cancellationToken).ConfigureAwait(false),
             ("HEAD", not "", null) =>
@@ -626,13 +625,16 @@ public sealed class S3RequestDispatcher(
     }
 
     private async Task<IResult> ListPartsAsync(
-        string bucket, string key, string uploadId, CancellationToken cancellationToken)
+        HttpContext context, string bucket, string key, CancellationToken cancellationToken)
     {
+        const int maxPartsPerPage = 1000;
         if (!await index.BucketExistsAsync(bucket, cancellationToken).ConfigureAwait(false))
         {
             return new S3ErrorResult(S3Errors.NoSuchBucket);
         }
 
+        var query = context.Request.Query;
+        var uploadId = query["uploadId"].ToString();
         var upload = await index.FindUploadAsync(bucket, key, uploadId, cancellationToken)
             .ConfigureAwait(false);
         if (upload is null)
@@ -640,8 +642,22 @@ public sealed class S3RequestDispatcher(
             return new S3ErrorResult(S3Errors.NoSuchUpload);
         }
 
+        if (!TryReadCount(query, "max-parts", maxPartsPerPage, out var maxParts)
+            || !TryReadCount(query, "part-number-marker", 0, out var marker))
+        {
+            return new S3ErrorResult(S3Errors.InvalidArgument);
+        }
+
+        maxParts = Math.Min(maxParts, maxPartsPerPage);
         var parts = await index.ListPartsAsync(bucket, key, uploadId, cancellationToken)
             .ConfigureAwait(false);
+        var page = parts.Where(part => part.PartNumber > marker).Take(maxParts + 1).ToList();
+        var truncated = page.Count > maxParts;
+        if (truncated)
+        {
+            page.RemoveAt(page.Count - 1);
+        }
+
         return new S3XmlResult(
             StatusCodes.Status200OK,
             new XDocument(
@@ -653,12 +669,25 @@ public sealed class S3RequestDispatcher(
                     OwnerElement("Initiator"),
                     OwnerElement("Owner"),
                     new XElement(S3Namespace + "StorageClass", "STANDARD"),
-                    new XElement(S3Namespace + "MaxParts", 1000),
-                    new XElement(S3Namespace + "IsTruncated", "false"),
-                    parts.Select(part => new XElement(S3Namespace + "Part",
+                    new XElement(S3Namespace + "PartNumberMarker", marker),
+                    truncated
+                        ? new XElement(S3Namespace + "NextPartNumberMarker", page[^1].PartNumber)
+                        : null,
+                    new XElement(S3Namespace + "MaxParts", maxParts),
+                    new XElement(S3Namespace + "IsTruncated", truncated ? "true" : "false"),
+                    page.Select(part => new XElement(S3Namespace + "Part",
                         new XElement(S3Namespace + "PartNumber", part.PartNumber),
+                        new XElement(S3Namespace + "LastModified", FormatTimestamp(part.LastModified)),
                         new XElement(S3Namespace + "ETag", $"\"{part.ETag}\""),
                         new XElement(S3Namespace + "Size", part.Size))))));
+    }
+
+    /// <summary>Reads a non-negative count parameter, falling back when it is absent.</summary>
+    private static bool TryReadCount(IQueryCollection query, string name, int fallback, out int value)
+    {
+        value = fallback;
+        return !query.TryGetValue(name, out var raw)
+            || int.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out value);
     }
 
     private async Task<IResult> ListMultipartUploadsAsync(

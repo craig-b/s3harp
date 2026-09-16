@@ -227,7 +227,8 @@ public sealed class StorageEngine(
         var write = await blobs.WriteAsync(content, cancellationToken).ConfigureAwait(false);
         var stored = await index.PutPartAsync(
             bucket, key, uploadId,
-            new PartRecord(partNumber, write.BlobId, write.Size, write.ContentMd5Hex),
+            new PartRecord(
+                partNumber, write.BlobId, write.Size, write.ContentMd5Hex, timeProvider.GetUtcNow()),
             cancellationToken).ConfigureAwait(false);
         if (!stored.UploadExists)
         {

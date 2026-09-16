@@ -163,7 +163,8 @@ public sealed record MultipartUpload(
     DateTimeOffset InitiatedAt);
 
 /// <summary>A part uploaded into a multipart upload.</summary>
-public sealed record PartRecord(int PartNumber, string BlobId, long Size, string ETag);
+public sealed record PartRecord(
+    int PartNumber, string BlobId, long Size, string ETag, DateTimeOffset LastModified);
 
 /// <summary>The outcome of storing a part record.</summary>
 public sealed record PutPartResult(bool UploadExists, string? ReplacedBlobId);

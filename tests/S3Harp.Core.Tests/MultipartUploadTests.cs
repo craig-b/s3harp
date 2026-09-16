@@ -112,6 +112,17 @@ public sealed class MultipartUploadTests : IDisposable
     }
 
     [Fact]
+    public async Task UploadedPart_IsStampedWithTheCurrentTime()
+    {
+        var uploadId = await StartUpload();
+
+        await UploadPart(uploadId, 1, "Hello, ");
+
+        var part = Assert.Single(await index.ListPartsAsync("alpha", "key", uploadId, Token));
+        Assert.Equal(Now, part.LastModified);
+    }
+
+    [Fact]
     public async Task Complete_LeavesOnlyTheAssembledBlobOnDisk()
     {
         var uploadId = await StartUpload();

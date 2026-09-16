@@ -213,6 +213,49 @@ public sealed class MultipartTests : IDisposable
         Assert.Equal(1, listed.PartNumber);
         Assert.Equal(2048, listed.Size);
         Assert.Equal(part.ETag, listed.ETag);
+        Assert.InRange(
+            listed.LastModified ?? DateTime.MinValue,
+            DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow.AddMinutes(5));
+    }
+
+    [Fact]
+    public async Task ListParts_PagesThroughThePartsWithMaxPartsAndAMarker()
+    {
+        using var s3 = await CreateClientWithBucket();
+        var initiate = await s3.InitiateMultipartUploadAsync(Bucket, "paged.bin", Token);
+        foreach (var number in new[] { 1, 2, 3 })
+        {
+            await s3.UploadPartAsync(new UploadPartRequest
+            {
+                BucketName = Bucket,
+                Key = "paged.bin",
+                UploadId = initiate.UploadId,
+                PartNumber = number,
+                InputStream = new MemoryStream(new byte[16]),
+            }, Token);
+        }
+
+        var first = await s3.ListPartsAsync(new ListPartsRequest
+        {
+            BucketName = Bucket,
+            Key = "paged.bin",
+            UploadId = initiate.UploadId,
+            MaxParts = 2,
+        }, Token);
+        var second = await s3.ListPartsAsync(new ListPartsRequest
+        {
+            BucketName = Bucket,
+            Key = "paged.bin",
+            UploadId = initiate.UploadId,
+            MaxParts = 2,
+            PartNumberMarker = "2",
+        }, Token);
+
+        Assert.Equal([1, 2], (first.Parts ?? []).Select(p => p.PartNumber));
+        Assert.True(first.IsTruncated);
+        Assert.Equal(2, first.NextPartNumberMarker);
+        Assert.Equal([3], (second.Parts ?? []).Select(p => p.PartNumber));
+        Assert.False(second.IsTruncated);
     }
 
     [Fact]

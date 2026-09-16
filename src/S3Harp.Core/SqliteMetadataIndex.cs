@@ -54,6 +54,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 blob_id TEXT NOT NULL,
                 size INTEGER NOT NULL,
                 etag TEXT NOT NULL,
+                uploaded_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.0000000+00:00',
                 PRIMARY KEY (upload_id, part_number)
             ) WITHOUT ROWID;
             """;
@@ -63,6 +64,9 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         EnsureColumn(connection, "objects", "content_headers", "TEXT NOT NULL DEFAULT '{}'");
         EnsureColumn(connection, "uploads", "content_headers", "TEXT NOT NULL DEFAULT '{}'");
         EnsureColumn(connection, "objects", "part_sizes", "TEXT NOT NULL DEFAULT '[]'");
+        EnsureColumn(
+            connection, "parts", "uploaded_at",
+            "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.0000000+00:00'");
     }
 
     private static void EnsureColumn(
@@ -421,16 +425,18 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 var upsert = connection.CreateCommand();
                 upsert.Transaction = transaction;
                 upsert.CommandText = """
-                    INSERT INTO parts (upload_id, part_number, blob_id, size, etag)
-                    VALUES ($upload_id, $number, $blob_id, $size, $etag)
+                    INSERT INTO parts (upload_id, part_number, blob_id, size, etag, uploaded_at)
+                    VALUES ($upload_id, $number, $blob_id, $size, $etag, $uploaded_at)
                     ON CONFLICT (upload_id, part_number) DO UPDATE SET
-                        blob_id = excluded.blob_id, size = excluded.size, etag = excluded.etag
+                        blob_id = excluded.blob_id, size = excluded.size, etag = excluded.etag,
+                        uploaded_at = excluded.uploaded_at
                     """;
                 upsert.Parameters.AddWithValue("$upload_id", uploadId);
                 upsert.Parameters.AddWithValue("$number", part.PartNumber);
                 upsert.Parameters.AddWithValue("$blob_id", part.BlobId);
                 upsert.Parameters.AddWithValue("$size", part.Size);
                 upsert.Parameters.AddWithValue("$etag", part.ETag);
+                upsert.Parameters.AddWithValue("$uploaded_at", FormatTimestamp(part.LastModified));
                 await upsert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -447,7 +453,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         {
             var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT p.part_number, p.blob_id, p.size, p.etag
+                SELECT p.part_number, p.blob_id, p.size, p.etag, p.uploaded_at
                 FROM parts p
                 JOIN uploads u ON u.upload_id = p.upload_id
                 WHERE u.upload_id = $upload_id AND u.bucket = $bucket AND u.key = $key
@@ -464,7 +470,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 {
                     parts.Add(new PartRecord(
                         reader.GetInt32(0), reader.GetString(1),
-                        reader.GetInt64(2), reader.GetString(3)));
+                        reader.GetInt64(2), reader.GetString(3), ParseTimestamp(reader.GetString(4))));
                 }
 
                 return parts;

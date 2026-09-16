@@ -666,6 +666,66 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task ListParts_ReportsWhenEachPartWasUploaded()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate("/my-bucket/key");
+        await UploadPart("/my-bucket/key", uploadId, 1, "Hello, ");
+
+        var context = await Dispatch("GET", "/my-bucket/key", query: $"?uploadId={uploadId}");
+
+        var part = Assert.Single(ReadBody(context).Root!.Elements(S3Namespace + "Part"));
+        Assert.Equal("2026-09-16T12:00:00.000Z", part.Element(S3Namespace + "LastModified")?.Value);
+    }
+
+    [Fact]
+    public async Task ListParts_PaginatesWithMaxPartsAndPartNumberMarker()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate("/my-bucket/key");
+        foreach (var number in new[] { 1, 3, 5 })
+        {
+            await UploadPart("/my-bucket/key", uploadId, number, "content");
+        }
+
+        var first = ReadBody(await Dispatch(
+            "GET", "/my-bucket/key", query: $"?uploadId={uploadId}&max-parts=2")).Root!;
+        var second = ReadBody(await Dispatch(
+            "GET", "/my-bucket/key",
+            query: $"?uploadId={uploadId}&max-parts=2&part-number-marker=3")).Root!;
+
+        Assert.Equal("2", first.Element(S3Namespace + "MaxParts")?.Value);
+        Assert.Equal("0", first.Element(S3Namespace + "PartNumberMarker")?.Value);
+        Assert.Equal("true", first.Element(S3Namespace + "IsTruncated")?.Value);
+        Assert.Equal("3", first.Element(S3Namespace + "NextPartNumberMarker")?.Value);
+        Assert.Equal(
+            ["1", "3"],
+            first.Elements(S3Namespace + "Part").Select(p => p.Element(S3Namespace + "PartNumber")?.Value));
+        Assert.Equal("3", second.Element(S3Namespace + "PartNumberMarker")?.Value);
+        Assert.Equal("false", second.Element(S3Namespace + "IsTruncated")?.Value);
+        Assert.Null(second.Element(S3Namespace + "NextPartNumberMarker"));
+        Assert.Equal(
+            ["5"],
+            second.Elements(S3Namespace + "Part").Select(p => p.Element(S3Namespace + "PartNumber")?.Value));
+    }
+
+    [Theory]
+    [InlineData("max-parts=-1")]
+    [InlineData("max-parts=two")]
+    [InlineData("part-number-marker=first")]
+    public async Task ListParts_WithAnUnusablePagingParameter_ReportsInvalidArgument(string parameter)
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate("/my-bucket/key");
+
+        var context = await Dispatch(
+            "GET", "/my-bucket/key", query: $"?uploadId={uploadId}&{parameter}");
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("InvalidArgument", ReadErrorCode(context));
+    }
+
+    [Fact]
     public async Task ListParts_OfAnUnknownUpload_ReportsNoSuchUpload()
     {
         await Dispatch("PUT", "/my-bucket");
