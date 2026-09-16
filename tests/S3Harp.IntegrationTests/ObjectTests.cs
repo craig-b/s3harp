@@ -260,6 +260,25 @@ public sealed class ObjectTests : IDisposable
     }
 
     [Fact]
+    public async Task PutObject_WithADeclaredChecksumTheBodyFails_ThrowsBadDigest()
+    {
+        using var s3 = await CreateClientWithBucket();
+
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
+            () => s3.PutObjectAsync(new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "checked.txt",
+                ContentBody = "content",
+                ChecksumAlgorithm = ChecksumAlgorithm.SHA256,
+                ChecksumSHA256 = "arcu6553sHVAiX4MjW0j7I7vD4w6R+Gz9Ok0Q9lTa+0=",
+            }, Token));
+
+        Assert.Equal("BadDigest", exception.ErrorCode);
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+    }
+
+    [Fact]
     public async Task PutObject_ReturnsTheMd5ETag()
     {
         using var s3 = await CreateClientWithBucket();

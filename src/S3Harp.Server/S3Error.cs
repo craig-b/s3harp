@@ -21,6 +21,12 @@ public static class S3Errors
         StatusCodes.Status403Forbidden,
         "Request has expired.");
 
+    public static S3Error BadDigest { get; } = new(
+        "BadDigest",
+        StatusCodes.Status400BadRequest,
+        "The Content-MD5 or checksum value that you specified did not match "
+        + "what the server received.");
+
     public static S3Error BucketAlreadyOwnedByYou { get; } = new(
         "BucketAlreadyOwnedByYou",
         StatusCodes.Status409Conflict,

@@ -5,7 +5,9 @@ namespace S3Harp.Server.Authentication;
 
 /// <summary>
 /// Decodes an <c>aws-chunked</c> request body (<c>STREAMING-AWS4-HMAC-SHA256-PAYLOAD</c>),
-/// verifying each chunk's signature against the SigV4 chain before its bytes become readable.
+/// verifying each chunk's signature against the SigV4 chain before its bytes become
+/// readable. With a signed trailer, the checksum the client announced in
+/// <c>x-amz-trailer</c> is verified against the decoded payload as well.
 /// </summary>
 public sealed class SigV4ChunkedStream(
     Stream inner,
@@ -13,13 +15,20 @@ public sealed class SigV4ChunkedStream(
     CredentialScope scope,
     string timestamp,
     string seedSignature,
-    bool signedTrailer = false) : Stream
+    bool signedTrailer = false,
+    ChecksumAlgorithm? trailerChecksum = null) : Stream
 {
     private const int MaxHeaderLength = 1024;
     private const long MaxChunkSize = 16 * 1024 * 1024;
     private const string SignaturePrefix = ";chunk-signature=";
 
     private static readonly string EmptyHash = SigV4Signer.Sha256Hex([]);
+
+    private readonly IncrementalChecksum? checksum =
+        trailerChecksum is { } algorithm ? ChecksumAlgorithms.Create(algorithm) : null;
+
+    private readonly string? checksumTrailer =
+        trailerChecksum is { } named ? ChecksumAlgorithms.HeaderName(named) : null;
 
     private string previousSignature = seedSignature;
     private byte[] currentChunk = [];
@@ -104,6 +113,7 @@ public sealed class SigV4ChunkedStream(
         }
 
         previousSignature = expectedSignature;
+        checksum?.Append(data);
         if (size == 0)
         {
             if (signedTrailer)
@@ -123,6 +133,7 @@ public sealed class SigV4ChunkedStream(
     private async Task VerifyTrailerAsync(CancellationToken cancellationToken)
     {
         var canonicalTrailer = new StringBuilder();
+        var trailers = new List<(string Name, string Value)>();
         string? presentedSignature = null;
         while (await ReadHeaderLineAsync(cancellationToken).ConfigureAwait(false) is
             { Length: > 0 } line)
@@ -142,6 +153,7 @@ public sealed class SigV4ChunkedStream(
             else
             {
                 canonicalTrailer.Append(name).Append(':').Append(value).Append('\n');
+                trailers.Add((name, value));
             }
         }
 
@@ -160,6 +172,23 @@ public sealed class SigV4ChunkedStream(
                 SigV4Signer.Sign(signingKey, stringToSign), presentedSignature))
         {
             throw new PayloadVerificationException(S3Errors.SignatureDoesNotMatch);
+        }
+
+        if (checksum is null)
+        {
+            return;
+        }
+
+        var declared = trailers.FirstOrDefault(
+            trailer => string.Equals(trailer.Name, checksumTrailer, StringComparison.OrdinalIgnoreCase));
+        if (declared.Name is null)
+        {
+            throw new PayloadVerificationException(S3Errors.IncompleteBody);
+        }
+
+        if (!checksum.Matches(declared.Value))
+        {
+            throw new PayloadVerificationException(S3Errors.BadDigest);
         }
     }
 
@@ -183,6 +212,16 @@ public sealed class SigV4ChunkedStream(
         }
 
         throw new InvalidDataException("The chunk header exceeds the supported length.");
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            checksum?.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 
     private async Task ConsumeChunkDelimiterAsync(CancellationToken cancellationToken)

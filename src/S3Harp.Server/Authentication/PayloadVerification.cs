@@ -9,13 +9,11 @@ public sealed class PayloadVerificationException(S3Error error) : IOException(er
 }
 
 /// <summary>
-/// Passes a request body through while hashing it, and fails the final read when the
-/// content's SHA-256 differs from the value the client signed in
-/// <c>x-amz-content-sha256</c>.
+/// Passes a request body through while observing its bytes, and verifies the
+/// content on the final read, once every byte has been seen.
 /// </summary>
-public sealed class Sha256VerifyingStream(Stream inner, string declaredSha256Hex) : Stream
+public abstract class PayloadVerifyingStream(Stream inner) : Stream
 {
-    private readonly IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
     private bool verified;
 
     public override bool CanRead => true;
@@ -38,18 +36,14 @@ public sealed class Sha256VerifyingStream(Stream inner, string declaredSha256Hex
         var read = await inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
         if (read > 0)
         {
-            hash.AppendData(buffer.Span[..read]);
+            Observe(buffer.Span[..read]);
             return read;
         }
 
         if (!verified)
         {
             verified = true;
-            var computed = Convert.ToHexStringLower(hash.GetHashAndReset());
-            if (!SigV4Signer.SignaturesEqual(computed, declaredSha256Hex))
-            {
-                throw new PayloadVerificationException(S3Errors.XAmzContentSHA256Mismatch);
-            }
+            VerifyContent();
         }
 
         return 0;
@@ -69,11 +63,66 @@ public sealed class Sha256VerifyingStream(Stream inner, string declaredSha256Hex
     public override void Write(byte[] buffer, int offset, int count) =>
         throw new NotSupportedException();
 
+    protected abstract void Observe(ReadOnlySpan<byte> data);
+
+    /// <summary>Throws a <see cref="PayloadVerificationException"/> when the content fails.</summary>
+    protected abstract void VerifyContent();
+}
+
+/// <summary>
+/// Fails a request body whose SHA-256 differs from the value the client signed in
+/// <c>x-amz-content-sha256</c>.
+/// </summary>
+public sealed class Sha256VerifyingStream(Stream inner, string declaredSha256Hex)
+    : PayloadVerifyingStream(inner)
+{
+    private readonly IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+
+    protected override void Observe(ReadOnlySpan<byte> data) => hash.AppendData(data);
+
+    protected override void VerifyContent()
+    {
+        var computed = Convert.ToHexStringLower(hash.GetHashAndReset());
+        if (!SigV4Signer.SignaturesEqual(computed, declaredSha256Hex))
+        {
+            throw new PayloadVerificationException(S3Errors.XAmzContentSHA256Mismatch);
+        }
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
             hash.Dispose();
+        }
+
+        base.Dispose(disposing);
+    }
+}
+
+/// <summary>
+/// Fails a request body whose checksum differs from the value the client declared
+/// in its <c>x-amz-checksum-*</c> header.
+/// </summary>
+public sealed class ChecksumVerifyingStream(
+    Stream inner, IncrementalChecksum checksum, string declaredBase64)
+    : PayloadVerifyingStream(inner)
+{
+    protected override void Observe(ReadOnlySpan<byte> data) => checksum.Append(data);
+
+    protected override void VerifyContent()
+    {
+        if (!checksum.Matches(declaredBase64))
+        {
+            throw new PayloadVerificationException(S3Errors.BadDigest);
+        }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            checksum.Dispose();
         }
 
         base.Dispose(disposing);

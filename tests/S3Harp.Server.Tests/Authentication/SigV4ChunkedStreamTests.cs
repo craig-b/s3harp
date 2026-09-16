@@ -108,29 +108,78 @@ public sealed class SigV4ChunkedStreamTests
             () => stream.CopyToAsync(decoded, TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    public async Task TrailerChecksumMatchingThePayload_IsAccepted()
+    {
+        using var stream = CreateStream(
+            TrailerWireBody(PayloadCrc32, PayloadCrc32TrailerSignature),
+            signedTrailer: true, trailerChecksum: ChecksumAlgorithm.Crc32);
+        using var decoded = new MemoryStream();
+
+        await stream.CopyToAsync(decoded, TestContext.Current.CancellationToken);
+
+        Assert.Equal("Hello, S3Harp!", Encoding.UTF8.GetString(decoded.ToArray()));
+    }
+
+    [Fact]
+    public async Task TrailerChecksumDifferingFromThePayload_IsRejectedAsBadDigest()
+    {
+        using var stream = CreateStream(
+            TrailerWireBody(), signedTrailer: true, trailerChecksum: ChecksumAlgorithm.Crc32);
+        using var decoded = new MemoryStream();
+
+        var exception = await Assert.ThrowsAsync<PayloadVerificationException>(
+            () => stream.CopyToAsync(decoded, TestContext.Current.CancellationToken));
+
+        Assert.Equal(S3Errors.BadDigest, exception.Error);
+    }
+
+    [Fact]
+    public async Task ExpectedTrailerChecksumThatNeverArrives_IsRejectedAsIncomplete()
+    {
+        using var stream = CreateStream(
+            TrailerWireBody(), signedTrailer: true, trailerChecksum: ChecksumAlgorithm.Sha256);
+        using var decoded = new MemoryStream();
+
+        var exception = await Assert.ThrowsAsync<PayloadVerificationException>(
+            () => stream.CopyToAsync(decoded, TestContext.Current.CancellationToken));
+
+        Assert.Equal(S3Errors.IncompleteBody, exception.Error);
+    }
+
     private const string TrailerSignature =
         "adf5dc3a91f8f7fc95b307653fb2ca0282c8cd842d652835653eddd8971a48d3";
+
+    /// <summary>The CRC32 of "Hello, S3Harp!" as a client declares it, with its trailer signature.</summary>
+    private const string PayloadCrc32 = "NadAdg==";
+    private const string PayloadCrc32TrailerSignature =
+        "69a5889247bb0c13682f01ac131f026131f8f381793699c12cb1398c337009d7";
 
     private static string WireBody() =>
         $"7;chunk-signature={FirstChunkSignature}\r\nHello, \r\n" +
         $"7;chunk-signature={SecondChunkSignature}\r\nS3Harp!\r\n" +
         $"0;chunk-signature={FinalChunkSignature}\r\n\r\n";
 
-    private static string TrailerWireBody() =>
+    private static string TrailerWireBody(
+        string crc32 = "AAAAAA==", string trailerSignature = TrailerSignature) =>
         $"7;chunk-signature={FirstChunkSignature}\r\nHello, \r\n" +
         $"7;chunk-signature={SecondChunkSignature}\r\nS3Harp!\r\n" +
         $"0;chunk-signature={FinalChunkSignature}\r\n" +
-        "x-amz-checksum-crc32:AAAAAA==\r\n" +
-        $"x-amz-trailer-signature:{TrailerSignature}\r\n" +
+        $"x-amz-checksum-crc32:{crc32}\r\n" +
+        $"x-amz-trailer-signature:{trailerSignature}\r\n" +
         "\r\n";
 
     private static SigV4ChunkedStream CreateStream(
-        string wireBody, string seedSignature = SeedSignature, bool signedTrailer = false) =>
+        string wireBody,
+        string seedSignature = SeedSignature,
+        bool signedTrailer = false,
+        ChecksumAlgorithm? trailerChecksum = null) =>
         new(
             new MemoryStream(Encoding.UTF8.GetBytes(wireBody)),
             SigV4Signer.DeriveSigningKey(SecretAccessKey, Scope),
             Scope,
             Timestamp,
             seedSignature,
-            signedTrailer);
+            signedTrailer,
+            trailerChecksum);
 }

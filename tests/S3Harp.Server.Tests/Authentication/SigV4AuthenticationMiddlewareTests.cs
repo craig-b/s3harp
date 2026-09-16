@@ -155,6 +155,69 @@ public sealed class SigV4AuthenticationMiddlewareTests
     }
 
     [Fact]
+    public async Task DeclaredChecksumMatchingTheBody_DeliversTheBody()
+    {
+        var body = Encoding.UTF8.GetBytes("Hello, S3Harp!");
+        var context = CreateSignedContext(AccessKeyId, SecretAccessKey);
+        context.Request.Headers["x-amz-checksum-sha256"] = "Aj0Lx1vWnbGF+irlCT3Pa4HNGctHtn3/Q49ApNekoy8=";
+        context.Request.Body = new MemoryStream(body);
+
+        (context, var nextCalled) = await RunMiddleware(context);
+
+        Assert.True(nextCalled());
+        using var delivered = new MemoryStream();
+        await context.Request.Body.CopyToAsync(delivered, TestContext.Current.CancellationToken);
+        Assert.Equal(body, delivered.ToArray());
+    }
+
+    [Fact]
+    public async Task DeclaredChecksumDifferingFromTheBody_FailsAsBadDigestWhenConsumed()
+    {
+        var context = CreateSignedContext(AccessKeyId, SecretAccessKey);
+        context.Request.Headers["x-amz-checksum-crc32"] = "AAAAAA==";
+        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("Hello, S3Harp!"));
+
+        (context, var nextCalled) = await RunMiddleware(context);
+
+        Assert.True(nextCalled());
+        using var sink = new MemoryStream();
+        var exception = await Assert.ThrowsAsync<PayloadVerificationException>(
+            () => context.Request.Body.CopyToAsync(sink, TestContext.Current.CancellationToken));
+        Assert.Equal(S3Errors.BadDigest, exception.Error);
+    }
+
+    [Theory]
+    [InlineData("NadAdg==", true)]
+    [InlineData("AAAAAA==", false)]
+    public async Task StreamingTrailerChecksum_IsVerifiedAgainstTheDecodedPayload(
+        string declaredCrc32, bool matches)
+    {
+        var context = CreateSignedContext(
+            AccessKeyId, SecretAccessKey,
+            payloadHash: "STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER");
+        context.Request.Headers["x-amz-trailer"] = "x-amz-checksum-crc32";
+        context.Request.Body = new MemoryStream(BuildChunkedWire(
+            SecretAccessKey, HeaderSignature(context), ["Hello, ", "S3Harp!"],
+            trailer: ("x-amz-checksum-crc32", declaredCrc32)));
+
+        (context, var nextCalled) = await RunMiddleware(context);
+
+        Assert.True(nextCalled());
+        using var decoded = new MemoryStream();
+        var copy = context.Request.Body.CopyToAsync(decoded, TestContext.Current.CancellationToken);
+        if (matches)
+        {
+            await copy;
+            Assert.Equal("Hello, S3Harp!", Encoding.UTF8.GetString(decoded.ToArray()));
+        }
+        else
+        {
+            var exception = await Assert.ThrowsAsync<PayloadVerificationException>(() => copy);
+            Assert.Equal(S3Errors.BadDigest, exception.Error);
+        }
+    }
+
+    [Fact]
     public async Task ValidPresignedRequest_ReachesTheNextMiddleware()
     {
         var context = CreatePresignedContext(AccessKeyId, SecretAccessKey);
@@ -250,7 +313,10 @@ public sealed class SigV4AuthenticationMiddlewareTests
     }
 
     private static byte[] BuildChunkedWire(
-        string secretAccessKey, string seedSignature, string[] chunks)
+        string secretAccessKey,
+        string seedSignature,
+        string[] chunks,
+        (string Name, string Value)? trailer = null)
     {
         var scope = new CredentialScope(Timestamp[..8], "us-east-1", "s3");
         var signingKey = SigV4Signer.DeriveSigningKey(secretAccessKey, scope);
@@ -264,8 +330,22 @@ public sealed class SigV4AuthenticationMiddlewareTests
                 "AWS4-HMAC-SHA256-PAYLOAD", Timestamp, scope.ToString(), previous,
                 emptyHash, SigV4Signer.Sha256Hex(data));
             previous = SigV4Signer.Sign(signingKey, stringToSign);
-            wire.Append(CultureInfo.InvariantCulture, $"{data.Length:x};chunk-signature={previous}\r\n")
-                .Append(chunk).Append("\r\n");
+            wire.Append(CultureInfo.InvariantCulture, $"{data.Length:x};chunk-signature={previous}\r\n");
+            if (data.Length > 0 || trailer is null)
+            {
+                wire.Append(chunk).Append("\r\n");
+            }
+        }
+
+        if (trailer is { } line)
+        {
+            var canonicalTrailer = $"{line.Name}:{line.Value}\n";
+            var trailerSignature = SigV4Signer.Sign(signingKey, string.Join('\n',
+                "AWS4-HMAC-SHA256-TRAILER", Timestamp, scope.ToString(), previous,
+                SigV4Signer.Sha256Hex(Encoding.UTF8.GetBytes(canonicalTrailer))));
+            wire.Append(CultureInfo.InvariantCulture, $"{line.Name}:{line.Value}\r\n")
+                .Append(CultureInfo.InvariantCulture, $"x-amz-trailer-signature:{trailerSignature}\r\n")
+                .Append("\r\n");
         }
 
         return Encoding.UTF8.GetBytes(wire.ToString());

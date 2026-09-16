@@ -90,11 +90,27 @@ public sealed class SigV4AuthenticationMiddleware(
                 request.Body, signingKey, header.Scope, timestamp, header.Signature),
             "STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER" => new SigV4ChunkedStream(
                 request.Body, signingKey, header.Scope, timestamp, header.Signature,
-                signedTrailer: true),
+                signedTrailer: true, AnnouncedTrailerChecksum(request.Headers)),
             _ => new Sha256VerifyingStream(request.Body, payloadHash),
         };
 
+        if (ChecksumAlgorithms.TryFindDeclared(request.Headers, out var algorithm, out var declared))
+        {
+            request.Body = new ChecksumVerifyingStream(
+                request.Body, ChecksumAlgorithms.Create(algorithm), declared);
+        }
+
         await next(context).ConfigureAwait(false);
+    }
+
+    /// <summary>The checksum algorithm <c>x-amz-trailer</c> announces, when it names one.</summary>
+    private static ChecksumAlgorithm? AnnouncedTrailerChecksum(IHeaderDictionary headers)
+    {
+        string? trailer = headers["x-amz-trailer"];
+        return trailer is not null
+            && ChecksumAlgorithms.TryParseHeaderName(trailer.Trim(), out var algorithm)
+            ? algorithm
+            : null;
     }
 
     /// <summary>
