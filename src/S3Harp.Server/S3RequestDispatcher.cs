@@ -18,13 +18,16 @@ public sealed class S3RequestDispatcher(
 {
     private const string MetadataHeaderPrefix = "x-amz-meta-";
 
+    /// <summary>The version id S3 assigns to objects in unversioned buckets.</summary>
+    private const string NullVersionId = "null";
+
     private static readonly XNamespace S3Namespace = "http://s3.amazonaws.com/doc/2006-03-01/";
 
     /// <summary>Query markers selecting S3 subresources and operations S3Harp will grow into.</summary>
     private static readonly string[] SubresourceMarkers =
     [
         "acl", "cors", "lifecycle", "location", "policy",
-        "tagging", "versioning", "versions", "website",
+        "tagging", "versioning", "website",
     ];
 
     public async Task<IResult> DispatchAsync(HttpContext context)
@@ -46,6 +49,9 @@ public sealed class S3RequestDispatcher(
                 await ListObjectsV2Async(context, bucket, cancellationToken).ConfigureAwait(false),
             ("GET", not "", null) when query.ContainsKey("uploads") =>
                 await ListMultipartUploadsAsync(bucket, cancellationToken).ConfigureAwait(false),
+            ("GET", not "", null) when query.ContainsKey("versions") =>
+                await ListObjectVersionsAsync(context, bucket, cancellationToken)
+                    .ConfigureAwait(false),
             ("GET", not "", null) =>
                 await ListObjectsAsync(context, bucket, cancellationToken).ConfigureAwait(false),
             ("GET", not "", not null) when query.ContainsKey("uploadId") =>
@@ -179,7 +185,7 @@ public sealed class S3RequestDispatcher(
         root.Add(
             new XElement(S3Namespace + "MaxKeys", listingQuery.MaxKeys),
             new XElement(S3Namespace + "IsTruncated", listing.IsTruncated ? "true" : "false"));
-        AppendListing(root, listingQuery, listing);
+        AppendListing(root, listingQuery, listing, record => ContentsElement(listingQuery, record));
         return new S3XmlResult(
             StatusCodes.Status200OK,
             new XDocument(new XDeclaration("1.0", "UTF-8", standalone: null), root));
@@ -246,7 +252,7 @@ public sealed class S3RequestDispatcher(
                 Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(listing.NextFromKey))));
         }
 
-        AppendListing(root, listingQuery, listing);
+        AppendListing(root, listingQuery, listing, record => ContentsElement(listingQuery, record));
         return new S3XmlResult(
             StatusCodes.Status200OK,
             new XDocument(new XDeclaration("1.0", "UTF-8", standalone: null), root));
@@ -277,6 +283,14 @@ public sealed class S3RequestDispatcher(
             : afterMarker;
     }
 
+    private static XElement ContentsElement(ListingQuery query, ObjectRecord record) =>
+        new(S3Namespace + "Contents",
+            new XElement(S3Namespace + "Key", query.Encode(record.Key)),
+            new XElement(S3Namespace + "LastModified", FormatTimestamp(record.LastModified)),
+            new XElement(S3Namespace + "ETag", $"\"{record.ETag}\""),
+            new XElement(S3Namespace + "Size", record.Size),
+            new XElement(S3Namespace + "StorageClass", "STANDARD"));
+
     /// <summary>The last entry a listing reported, in key order, across contents and common prefixes.</summary>
     private static string LastEntry(ObjectListing listing)
     {
@@ -287,7 +301,59 @@ public sealed class S3RequestDispatcher(
             : string.CompareOrdinal(lastKey, lastPrefix) > 0 ? lastKey : lastPrefix;
     }
 
-    private static void AppendListing(XElement root, ListingQuery query, ObjectListing listing)
+    /// <summary>
+    /// Every object is its own single, current version: S3Harp buckets are
+    /// unversioned, which S3 reports as the "null" version.
+    /// </summary>
+    private async Task<IResult> ListObjectVersionsAsync(
+        HttpContext context, string bucket, CancellationToken cancellationToken)
+    {
+        if (!await index.BucketExistsAsync(bucket, cancellationToken).ConfigureAwait(false))
+        {
+            return new S3ErrorResult(S3Errors.NoSuchBucket);
+        }
+
+        var query = context.Request.Query;
+        if (ListingQuery.TryParse(query) is not { } listingQuery)
+        {
+            return new S3ErrorResult(S3Errors.InvalidArgument);
+        }
+
+        var keyMarker = query["key-marker"].ToString();
+        var listing = await ListAsync(
+            bucket, listingQuery, ResumeAfterMarker(keyMarker, listingQuery.Delimiter), cancellationToken)
+            .ConfigureAwait(false);
+        var root = new XElement(S3Namespace + "ListVersionsResult",
+            new XElement(S3Namespace + "Name", bucket),
+            new XElement(S3Namespace + "Prefix", listingQuery.Encode(listingQuery.Prefix)),
+            new XElement(S3Namespace + "KeyMarker", listingQuery.Encode(keyMarker)),
+            new XElement(S3Namespace + "VersionIdMarker", query["version-id-marker"].ToString()));
+        if (listing.IsTruncated)
+        {
+            root.Add(
+                new XElement(S3Namespace + "NextKeyMarker", listingQuery.Encode(LastEntry(listing))),
+                new XElement(S3Namespace + "NextVersionIdMarker", NullVersionId));
+        }
+
+        root.Add(
+            new XElement(S3Namespace + "MaxKeys", listingQuery.MaxKeys),
+            new XElement(S3Namespace + "IsTruncated", listing.IsTruncated ? "true" : "false"));
+        AppendListing(root, listingQuery, listing, record => new XElement(S3Namespace + "Version",
+            new XElement(S3Namespace + "Key", listingQuery.Encode(record.Key)),
+            new XElement(S3Namespace + "VersionId", NullVersionId),
+            new XElement(S3Namespace + "IsLatest", "true"),
+            new XElement(S3Namespace + "LastModified", FormatTimestamp(record.LastModified)),
+            new XElement(S3Namespace + "ETag", $"\"{record.ETag}\""),
+            new XElement(S3Namespace + "Size", record.Size),
+            OwnerElement("Owner"),
+            new XElement(S3Namespace + "StorageClass", "STANDARD")));
+        return new S3XmlResult(
+            StatusCodes.Status200OK,
+            new XDocument(new XDeclaration("1.0", "UTF-8", standalone: null), root));
+    }
+
+    private static void AppendListing(
+        XElement root, ListingQuery query, ObjectListing listing, Func<ObjectRecord, XElement> entry)
     {
         if (query.EncodingType.Length > 0)
         {
@@ -299,12 +365,7 @@ public sealed class S3RequestDispatcher(
             root.Add(new XElement(S3Namespace + "Delimiter", query.Encode(query.Delimiter)));
         }
 
-        root.Add(listing.Objects.Select(record => new XElement(S3Namespace + "Contents",
-            new XElement(S3Namespace + "Key", query.Encode(record.Key)),
-            new XElement(S3Namespace + "LastModified", FormatTimestamp(record.LastModified)),
-            new XElement(S3Namespace + "ETag", $"\"{record.ETag}\""),
-            new XElement(S3Namespace + "Size", record.Size),
-            new XElement(S3Namespace + "StorageClass", "STANDARD"))));
+        root.Add(listing.Objects.Select(entry));
         root.Add(listing.CommonPrefixes.Select(commonPrefix =>
             new XElement(S3Namespace + "CommonPrefixes",
                 new XElement(S3Namespace + "Prefix", query.Encode(commonPrefix)))));

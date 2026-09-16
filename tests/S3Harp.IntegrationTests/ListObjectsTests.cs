@@ -126,6 +126,37 @@ public sealed class ListObjectsTests : IDisposable
         Assert.Equal(["a", "b", "c", "d", "e"], collected);
     }
 
+    [Fact]
+    public async Task ListVersions_ReportsEveryObjectAsTheNullVersion_AndPaginates()
+    {
+        using var s3 = await CreateClientWithKeys("a", "b", "c");
+        var collected = new List<S3ObjectVersion>();
+        string? keyMarker = null;
+        bool truncated;
+
+        do
+        {
+            var response = await s3.ListVersionsAsync(new ListVersionsRequest
+            {
+                BucketName = Bucket,
+                MaxKeys = 2,
+                KeyMarker = keyMarker,
+            }, Token);
+            collected.AddRange(response.Versions ?? []);
+            truncated = response.IsTruncated ?? false;
+            keyMarker = response.NextKeyMarker;
+        }
+        while (truncated);
+
+        Assert.Equal(["a", "b", "c"], collected.Select(v => v.Key));
+        Assert.All(collected, v =>
+        {
+            Assert.Equal("null", v.VersionId);
+            Assert.True(v.IsLatest);
+            Assert.NotEqual(true, v.IsDeleteMarker);
+        });
+    }
+
     public void Dispose() => factory.Dispose();
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;

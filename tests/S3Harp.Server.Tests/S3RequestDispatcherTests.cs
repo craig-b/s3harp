@@ -312,6 +312,80 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task ListObjectVersions_ReportsEachObjectAsItsOnlyVersion()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/a.txt", body: "hello world");
+        await Dispatch("PUT", "/my-bucket/docs/one.txt", body: "one");
+
+        var context = await Dispatch("GET", "/my-bucket", query: "?versions&delimiter=%2F");
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        var root = ReadBody(context).Root;
+        Assert.NotNull(root);
+        Assert.Equal(S3Namespace + "ListVersionsResult", root.Name);
+        Assert.Equal("my-bucket", root.Element(S3Namespace + "Name")?.Value);
+        Assert.Equal("", root.Element(S3Namespace + "KeyMarker")?.Value);
+        Assert.Equal("", root.Element(S3Namespace + "VersionIdMarker")?.Value);
+        Assert.Equal("1000", root.Element(S3Namespace + "MaxKeys")?.Value);
+        Assert.Equal("false", root.Element(S3Namespace + "IsTruncated")?.Value);
+        var version = Assert.Single(root.Elements(S3Namespace + "Version"));
+        Assert.Equal("a.txt", version.Element(S3Namespace + "Key")?.Value);
+        Assert.Equal("null", version.Element(S3Namespace + "VersionId")?.Value);
+        Assert.Equal("true", version.Element(S3Namespace + "IsLatest")?.Value);
+        Assert.Equal("11", version.Element(S3Namespace + "Size")?.Value);
+        Assert.Equal(
+            "\"5eb63bbbe01eeed093cb22bb8f5acdc3\"",
+            version.Element(S3Namespace + "ETag")?.Value);
+        Assert.Equal(
+            "2026-09-16T12:00:00.000Z",
+            version.Element(S3Namespace + "LastModified")?.Value);
+        Assert.Equal(AccessKeyId, version.Element(S3Namespace + "Owner")?.Element(S3Namespace + "ID")?.Value);
+        Assert.Empty(root.Elements(S3Namespace + "DeleteMarker"));
+        var commonPrefix = Assert.Single(root.Elements(S3Namespace + "CommonPrefixes"));
+        Assert.Equal("docs/", commonPrefix.Element(S3Namespace + "Prefix")?.Value);
+    }
+
+    [Fact]
+    public async Task ListObjectVersions_PaginatesWithKeyMarkersPastDelimiterGroups()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        foreach (var key in new[] { "a", "docs/one", "docs/two", "z" })
+        {
+            await Dispatch("PUT", $"/my-bucket/{key}", body: key);
+        }
+
+        var first = ReadBody(await Dispatch(
+            "GET", "/my-bucket", query: "?versions&max-keys=2&delimiter=%2F")).Root;
+        Assert.NotNull(first);
+        Assert.Equal("true", first.Element(S3Namespace + "IsTruncated")?.Value);
+        Assert.Equal("docs/", first.Element(S3Namespace + "NextKeyMarker")?.Value);
+        Assert.Equal("null", first.Element(S3Namespace + "NextVersionIdMarker")?.Value);
+
+        var second = ReadBody(await Dispatch(
+            "GET", "/my-bucket",
+            query: "?versions&max-keys=2&delimiter=%2F&key-marker=docs%2F&version-id-marker=null")).Root;
+        Assert.NotNull(second);
+        Assert.Equal("docs/", second.Element(S3Namespace + "KeyMarker")?.Value);
+        Assert.Equal("null", second.Element(S3Namespace + "VersionIdMarker")?.Value);
+        Assert.Equal("false", second.Element(S3Namespace + "IsTruncated")?.Value);
+        Assert.Empty(second.Elements(S3Namespace + "CommonPrefixes"));
+        Assert.Equal(
+            ["z"],
+            second.Elements(S3Namespace + "Version")
+                .Select(v => v.Element(S3Namespace + "Key")?.Value));
+    }
+
+    [Fact]
+    public async Task ListObjectVersions_OnAnUnknownBucket_ReportsNoSuchBucket()
+    {
+        var context = await Dispatch("GET", "/my-bucket", query: "?versions");
+
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        Assert.Equal("NoSuchBucket", ReadErrorCode(context));
+    }
+
+    [Fact]
     public async Task ListObjects_OnAnUnknownBucket_ReportsNoSuchBucket()
     {
         var context = await Dispatch("GET", "/my-bucket");
