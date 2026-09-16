@@ -198,7 +198,9 @@ public sealed class S3RequestDispatcher(
         root.Add(
             new XElement(S3Namespace + "MaxKeys", listingQuery.MaxKeys),
             new XElement(S3Namespace + "IsTruncated", listing.IsTruncated ? "true" : "false"));
-        AppendListing(root, listingQuery, listing, record => ContentsElement(listingQuery, record));
+        // The original listing always names each object's owner.
+        AppendListing(root, listingQuery, listing,
+            record => ContentsElement(listingQuery, record, includeOwner: true));
         return new S3XmlResult(
             StatusCodes.Status200OK,
             new XDocument(new XDeclaration("1.0", "UTF-8", standalone: null), root));
@@ -265,7 +267,9 @@ public sealed class S3RequestDispatcher(
                 Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(listing.NextFromKey))));
         }
 
-        AppendListing(root, listingQuery, listing, record => ContentsElement(listingQuery, record));
+        var fetchOwner = string.Equals(query["fetch-owner"], "true", StringComparison.OrdinalIgnoreCase);
+        AppendListing(root, listingQuery, listing,
+            record => ContentsElement(listingQuery, record, includeOwner: fetchOwner));
         return new S3XmlResult(
             StatusCodes.Status200OK,
             new XDocument(new XDeclaration("1.0", "UTF-8", standalone: null), root));
@@ -296,12 +300,13 @@ public sealed class S3RequestDispatcher(
             : afterMarker;
     }
 
-    private static XElement ContentsElement(ListingQuery query, ObjectRecord record) =>
+    private XElement ContentsElement(ListingQuery query, ObjectRecord record, bool includeOwner) =>
         new(S3Namespace + "Contents",
             new XElement(S3Namespace + "Key", query.Encode(record.Key)),
             new XElement(S3Namespace + "LastModified", FormatTimestamp(record.LastModified)),
             new XElement(S3Namespace + "ETag", $"\"{record.ETag}\""),
             new XElement(S3Namespace + "Size", record.Size),
+            includeOwner ? OwnerElement("Owner") : null,
             new XElement(S3Namespace + "StorageClass", "STANDARD"));
 
     /// <summary>The last entry a listing reported, in key order, across contents and common prefixes.</summary>

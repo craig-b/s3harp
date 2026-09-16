@@ -404,6 +404,34 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task ListObjectsV2_IncludesOwnersOnlyWhenAsked()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/a.txt", body: "a");
+
+        var plain = ReadBody(await Dispatch("GET", "/my-bucket", query: "?list-type=2")).Root;
+        var withOwner = ReadBody(await Dispatch(
+            "GET", "/my-bucket", query: "?list-type=2&fetch-owner=true")).Root;
+
+        Assert.Null(plain?.Element(S3Namespace + "Contents")?.Element(S3Namespace + "Owner"));
+        var owner = withOwner?.Element(S3Namespace + "Contents")?.Element(S3Namespace + "Owner");
+        Assert.Equal(AccessKeyId, owner?.Element(S3Namespace + "ID")?.Value);
+        Assert.Equal(AccessKeyId, owner?.Element(S3Namespace + "DisplayName")?.Value);
+    }
+
+    [Fact]
+    public async Task ListObjects_AlwaysIncludesOwners()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/a.txt", body: "a");
+
+        var root = ReadBody(await Dispatch("GET", "/my-bucket")).Root;
+
+        var owner = root?.Element(S3Namespace + "Contents")?.Element(S3Namespace + "Owner");
+        Assert.Equal(AccessKeyId, owner?.Element(S3Namespace + "ID")?.Value);
+    }
+
+    [Fact]
     public async Task ListObjects_OnAnUnknownBucket_ReportsNoSuchBucket()
     {
         var context = await Dispatch("GET", "/my-bucket");

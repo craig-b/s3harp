@@ -106,6 +106,7 @@ s3tests/functional/test_s3.py::test_bucket_listv2_delimiter_whitespace
 s3tests/functional/test_s3.py::test_bucket_listv2_encoding_basic
 s3tests/functional/test_s3.py::test_bucket_listv2_fetchowner_defaultempty
 s3tests/functional/test_s3.py::test_bucket_listv2_fetchowner_empty
+s3tests/functional/test_s3.py::test_bucket_listv2_fetchowner_notempty
 s3tests/functional/test_s3.py::test_bucket_listv2_many
 s3tests/functional/test_s3.py::test_bucket_listv2_maxkeys_none
 s3tests/functional/test_s3.py::test_bucket_listv2_maxkeys_one
