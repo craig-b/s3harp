@@ -480,3 +480,6 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Ceph s3-tests checkout and environment created by tests/conformance/run.sh
+.conformance/

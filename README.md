@@ -20,6 +20,15 @@ Working now, each proven by integration tests driving the real AWS SDK:
 - Server-side CopyObject, with metadata copied or replaced per the metadata directive
 - S3 XML error responses that SDKs parse into their typed exceptions
 
+## Conformance
+
+Ceph's [s3-tests](https://github.com/ceph/s3-tests) suite runs against every push in CI. `tests/conformance/must-pass.txt` lists the cases S3Harp passes; the run fails if any listed case fails, and also fails if a case outside the list starts passing, so the list only ever grows. To run it locally (needs `uv`):
+
+```sh
+dotnet build src/S3Harp.Server --configuration Release
+tests/conformance/run.sh
+```
+
 ## What it's for
 
 Two uses, in a tension that keeps the project honest:
