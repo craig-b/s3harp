@@ -16,6 +16,10 @@ public sealed record ObjectListing(
 /// <summary>The outcome of storing an object.</summary>
 public sealed record PutObjectOutcome(bool BucketExists, string? ETag);
 
+/// <summary>The caller-supplied attributes of an object: its content type and user metadata.</summary>
+public sealed record ObjectAttributes(
+    string? ContentType, IReadOnlyDictionary<string, string> Metadata);
+
 /// <summary>The outcome of uploading a part.</summary>
 public sealed record UploadPartOutcome(bool UploadExists, string? ETag);
 
@@ -325,7 +329,7 @@ public sealed class StorageEngine(IMetadataIndex index, BlobStore blobs, TimePro
         string sourceKey,
         string destinationBucket,
         string destinationKey,
-        IReadOnlyDictionary<string, string>? metadataOverride,
+        ObjectAttributes? replacement,
         CancellationToken cancellationToken)
     {
         var source = await index.FindObjectAsync(sourceBucket, sourceKey, cancellationToken)
@@ -340,7 +344,8 @@ public sealed class StorageEngine(IMetadataIndex index, BlobStore blobs, TimePro
         {
             Key = destinationKey,
             BlobId = blobId,
-            Metadata = metadataOverride ?? source.Metadata,
+            ContentType = replacement is null ? source.ContentType : replacement.ContentType,
+            Metadata = replacement?.Metadata ?? source.Metadata,
             LastModified = timeProvider.GetUtcNow(),
         };
         var stored = await index.PutObjectAsync(destinationBucket, record, cancellationToken)

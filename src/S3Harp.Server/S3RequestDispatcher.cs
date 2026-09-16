@@ -762,12 +762,15 @@ public sealed class S3RequestDispatcher(
             return new S3ErrorResult(S3Errors.NoSuchBucket);
         }
 
-        var replaceMetadata = string.Equals(
+        var replace = string.Equals(
             context.Request.Headers["x-amz-metadata-directive"], "REPLACE",
             StringComparison.OrdinalIgnoreCase);
         var outcome = await engine.CopyObjectAsync(
             sourceBucket, sourceKey, bucket, key,
-            replaceMetadata ? ReadMetadataHeaders(context.Request) : null,
+            replace
+                ? new ObjectAttributes(
+                    context.Request.ContentType, ReadMetadataHeaders(context.Request))
+                : null,
             cancellationToken).ConfigureAwait(false);
         if (outcome is null)
         {

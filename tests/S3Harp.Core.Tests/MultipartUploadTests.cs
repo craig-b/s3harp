@@ -170,6 +170,27 @@ public sealed class MultipartUploadTests : IDisposable
     }
 
     [Fact]
+    public async Task CopiedObject_TakesReplacementContentTypeAndMetadata()
+    {
+        await CreateBucket();
+        using (var content = new MemoryStream(Encoding.UTF8.GetBytes("hello world")))
+        {
+            await engine.PutObjectAsync("alpha", "src", content, "audio/mpeg",
+                new Dictionary<string, string> { ["note"] = "old" }, Token);
+        }
+
+        var replacement = new ObjectAttributes(
+            "audio/ogg", new Dictionary<string, string> { ["note"] = "new" });
+        await engine.CopyObjectAsync("alpha", "src", "alpha", "dst", replacement, Token);
+
+        var download = await engine.GetObjectAsync("alpha", "dst", Token);
+        Assert.NotNull(download);
+        await download.Content.DisposeAsync();
+        Assert.Equal("audio/ogg", download.Record.ContentType);
+        Assert.Equal("new", download.Record.Metadata["note"]);
+    }
+
+    [Fact]
     public async Task CopyingAMissingSource_ReturnsNothing()
     {
         await CreateBucket();

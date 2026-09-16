@@ -685,6 +685,27 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task CopyWithReplaceDirective_TakesTheRequestContentType()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch(
+            "PUT", "/my-bucket/src.txt", body: "hello",
+            configure: request => request.ContentType = "audio/mpeg");
+
+        await Dispatch(
+            "PUT", "/my-bucket/dst.txt",
+            configure: request =>
+            {
+                request.Headers["x-amz-copy-source"] = "/my-bucket/src.txt";
+                request.Headers["x-amz-metadata-directive"] = "REPLACE";
+                request.ContentType = "audio/ogg";
+            });
+
+        var copied = await Dispatch("HEAD", "/my-bucket/dst.txt");
+        Assert.Equal("audio/ogg", copied.Response.ContentType);
+    }
+
+    [Fact]
     public async Task CopyingAMissingSource_ReportsNoSuchKey()
     {
         await Dispatch("PUT", "/my-bucket");

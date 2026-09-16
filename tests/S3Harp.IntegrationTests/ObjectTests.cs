@@ -61,6 +61,35 @@ public sealed class ObjectTests : IDisposable
     }
 
     [Fact]
+    public async Task CopyObject_WithReplaceDirective_TakesTheNewContentTypeAndMetadata()
+    {
+        using var s3 = await CreateClientWithBucket();
+        await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "song",
+            ContentBody = "content",
+            ContentType = "audio/mpeg",
+            Metadata = { ["note"] = "old" },
+        }, Token);
+
+        await s3.CopyObjectAsync(new CopyObjectRequest
+        {
+            SourceBucket = Bucket,
+            SourceKey = "song",
+            DestinationBucket = Bucket,
+            DestinationKey = "copy",
+            MetadataDirective = S3MetadataDirective.REPLACE,
+            ContentType = "audio/ogg",
+            Metadata = { ["note"] = "new" },
+        }, Token);
+        var copied = await s3.GetObjectMetadataAsync(Bucket, "copy", Token);
+
+        Assert.Equal("audio/ogg", copied.Headers.ContentType);
+        Assert.Equal("new", copied.Metadata["note"]);
+    }
+
+    [Fact]
     public async Task PutObject_ReturnsTheMd5ETag()
     {
         using var s3 = await CreateClientWithBucket();
