@@ -256,7 +256,8 @@ public sealed class S3RequestDispatcher(
             root.Add(new XElement(S3Namespace + "StartAfter", listingQuery.Encode(startAfter)));
         }
 
-        if (continuationToken.Length > 0)
+        // The token is echoed whenever the client sent one, even empty.
+        if (query.ContainsKey("continuation-token"))
         {
             root.Add(new XElement(S3Namespace + "ContinuationToken", continuationToken));
         }

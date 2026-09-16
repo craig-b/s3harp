@@ -91,6 +91,7 @@ s3tests/functional/test_s3.py::test_bucket_list_prefix_not_exist
 s3tests/functional/test_s3.py::test_bucket_list_special_prefix
 s3tests/functional/test_s3.py::test_bucket_listv2_both_continuationtoken_startafter
 s3tests/functional/test_s3.py::test_bucket_listv2_continuationtoken
+s3tests/functional/test_s3.py::test_bucket_listv2_continuationtoken_empty
 s3tests/functional/test_s3.py::test_bucket_listv2_delimiter_alt
 s3tests/functional/test_s3.py::test_bucket_listv2_delimiter_basic
 s3tests/functional/test_s3.py::test_bucket_listv2_delimiter_dot

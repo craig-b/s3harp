@@ -404,6 +404,23 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task ListObjectsV2_EchoesAnEmptyContinuationToken()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/a.txt", body: "a");
+
+        var root = ReadBody(await Dispatch(
+            "GET", "/my-bucket", query: "?list-type=2&continuation-token=")).Root;
+
+        Assert.NotNull(root);
+        Assert.Equal("", root.Element(S3Namespace + "ContinuationToken")?.Value);
+        Assert.Equal("false", root.Element(S3Namespace + "IsTruncated")?.Value);
+        Assert.Equal(
+            ["a.txt"],
+            root.Elements(S3Namespace + "Contents").Select(c => c.Element(S3Namespace + "Key")?.Value));
+    }
+
+    [Fact]
     public async Task ListObjectsV2_IncludesOwnersOnlyWhenAsked()
     {
         await Dispatch("PUT", "/my-bucket");
