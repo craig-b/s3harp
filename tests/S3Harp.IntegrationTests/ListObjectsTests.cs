@@ -67,6 +67,26 @@ public sealed class ListObjectsTests : IDisposable
     }
 
     [Fact]
+    public async Task ListObjectsV2_WithUrlEncoding_ServesEncodedSpecialCharacterKeys()
+    {
+        using var s3 = await CreateClientWithKeys("plus+and space.txt", "docs/nested key.txt");
+
+        var response = await s3.ListObjectsV2Async(new ListObjectsV2Request
+        {
+            BucketName = Bucket,
+            Encoding = EncodingType.Url,
+        }, Token);
+
+        // The .NET SDK hands back the wire values verbatim; decoding them
+        // reproduces the original keys, which is the client contract.
+        var keys = (response.S3Objects ?? []).Select(o => o.Key).ToArray();
+        Assert.Equal(["docs/nested%20key.txt", "plus%2Band%20space.txt"], keys);
+        Assert.Equal(
+            ["docs/nested key.txt", "plus+and space.txt"],
+            keys.Select(Uri.UnescapeDataString));
+    }
+
+    [Fact]
     public async Task ListObjectsV2_StartAfter_SkipsEarlierKeys()
     {
         using var s3 = await CreateClientWithKeys("a", "b", "c");

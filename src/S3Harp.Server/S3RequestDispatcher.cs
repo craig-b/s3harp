@@ -150,6 +150,15 @@ public sealed class S3RequestDispatcher(
         }
 
         var query = context.Request.Query;
+        var encodingType = query["encoding-type"].ToString();
+        if (encodingType is not ("" or "url"))
+        {
+            return new S3ErrorResult(S3Errors.InvalidArgument);
+        }
+
+        var encode = encodingType.Length > 0
+            ? UrlEncodeKey
+            : (Func<string, string>)(value => value);
         var prefix = query["prefix"].ToString();
         var delimiter = query["delimiter"].ToString() is { Length: > 0 } value ? value : null;
         var startAfter = query["start-after"].ToString();
@@ -190,20 +199,25 @@ public sealed class S3RequestDispatcher(
 
         var root = new XElement(S3Namespace + "ListBucketResult",
             new XElement(S3Namespace + "Name", bucket),
-            new XElement(S3Namespace + "Prefix", prefix),
+            new XElement(S3Namespace + "Prefix", encode(prefix)),
             new XElement(S3Namespace + "MaxKeys", maxKeys),
             new XElement(S3Namespace + "KeyCount",
                 listing.Objects.Count + listing.CommonPrefixes.Count),
             new XElement(S3Namespace + "IsTruncated",
                 listing.IsTruncated ? "true" : "false"));
+        if (encodingType.Length > 0)
+        {
+            root.Add(new XElement(S3Namespace + "EncodingType", encodingType));
+        }
+
         if (delimiter is not null)
         {
-            root.Add(new XElement(S3Namespace + "Delimiter", delimiter));
+            root.Add(new XElement(S3Namespace + "Delimiter", encode(delimiter)));
         }
 
         if (startAfter.Length > 0)
         {
-            root.Add(new XElement(S3Namespace + "StartAfter", startAfter));
+            root.Add(new XElement(S3Namespace + "StartAfter", encode(startAfter)));
         }
 
         if (continuationToken.Length > 0)
@@ -218,14 +232,14 @@ public sealed class S3RequestDispatcher(
         }
 
         root.Add(listing.Objects.Select(record => new XElement(S3Namespace + "Contents",
-            new XElement(S3Namespace + "Key", record.Key),
+            new XElement(S3Namespace + "Key", encode(record.Key)),
             new XElement(S3Namespace + "LastModified", FormatTimestamp(record.LastModified)),
             new XElement(S3Namespace + "ETag", $"\"{record.ETag}\""),
             new XElement(S3Namespace + "Size", record.Size),
             new XElement(S3Namespace + "StorageClass", "STANDARD"))));
         root.Add(listing.CommonPrefixes.Select(commonPrefix =>
             new XElement(S3Namespace + "CommonPrefixes",
-                new XElement(S3Namespace + "Prefix", commonPrefix))));
+                new XElement(S3Namespace + "Prefix", encode(commonPrefix)))));
 
         return new S3XmlResult(
             StatusCodes.Status200OK,
@@ -527,6 +541,10 @@ public sealed class S3RequestDispatcher(
                     new XElement(S3Namespace + "ETag", $"\"{outcome.ETag}\""),
                     new XElement(S3Namespace + "LastModified", FormatTimestamp(outcome.LastModified)))));
     }
+
+    /// <summary>URL-encodes a key for <c>encoding-type=url</c>, keeping the slashes S3 leaves literal.</summary>
+    private static string UrlEncodeKey(string value) =>
+        string.Join('/', value.Split('/').Select(Uri.EscapeDataString));
 
     private static Dictionary<string, string> ReadMetadataHeaders(HttpRequest request)
     {

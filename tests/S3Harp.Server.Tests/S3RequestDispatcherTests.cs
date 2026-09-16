@@ -196,6 +196,39 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task ListObjectsV2_WithUrlEncoding_EncodesKeysAndEchoesTheEncodingType()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/plus+and space.txt", body: "1");
+        await Dispatch("PUT", "/my-bucket/docs/nested key.txt", body: "2");
+
+        var context = await Dispatch(
+            "GET", "/my-bucket", query: "?list-type=2&encoding-type=url&delimiter=%2F");
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        var root = ReadBody(context).Root;
+        Assert.NotNull(root);
+        Assert.Equal("url", root.Element(S3Namespace + "EncodingType")?.Value);
+        var contents = Assert.Single(root.Elements(S3Namespace + "Contents"));
+        Assert.Equal(
+            "plus%2Band%20space.txt", contents.Element(S3Namespace + "Key")?.Value);
+        var commonPrefix = Assert.Single(root.Elements(S3Namespace + "CommonPrefixes"));
+        Assert.Equal("docs/", commonPrefix.Element(S3Namespace + "Prefix")?.Value);
+    }
+
+    [Fact]
+    public async Task ListObjectsV2_WithAnUnknownEncodingType_ReportsInvalidArgument()
+    {
+        await Dispatch("PUT", "/my-bucket");
+
+        var context = await Dispatch(
+            "GET", "/my-bucket", query: "?list-type=2&encoding-type=base64");
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("InvalidArgument", ReadErrorCode(context));
+    }
+
+    [Fact]
     public async Task ListObjectsV2_OnAnUnknownBucket_ReportsNoSuchBucket()
     {
         var context = await Dispatch("GET", "/my-bucket", query: "?list-type=2");
