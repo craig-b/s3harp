@@ -38,7 +38,7 @@ public sealed class ChecksumHeadersTests
     }
 
     [Fact]
-    public void TheDeclaredChecksumNamesTheUploadAlgorithm()
+    public void TheChecksumValueNamesTheUploadAlgorithm()
     {
         var headers = new HeaderDictionary
         {
@@ -90,5 +90,15 @@ public sealed class ChecksumHeadersTests
     {
         Assert.Equal("ChecksumCRC32C", ChecksumHeaders.ElementName(ChecksumAlgorithm.Crc32C));
         Assert.Equal("COMPOSITE", ChecksumHeaders.TypeName(ChecksumType.Composite));
+    }
+
+    [Theory]
+    [InlineData("COMPOSITE", ChecksumType.Composite)]
+    [InlineData("full_object", ChecksumType.FullObject)]
+    public void ParsesTheChecksumTypeHeader(string value, ChecksumType expected)
+    {
+        Assert.True(ChecksumHeaders.TryParseType(value, out var type));
+        Assert.Equal(expected, type);
+        Assert.False(ChecksumHeaders.TryParseType("PARTIAL", out _));
     }
 }

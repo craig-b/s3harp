@@ -260,7 +260,7 @@ public sealed class ObjectTests : IDisposable
     }
 
     [Fact]
-    public async Task PutObject_WithADeclaredChecksumTheBodyFails_ThrowsBadDigest()
+    public async Task PutObject_WithAChecksumValueTheBodyFails_ThrowsBadDigest()
     {
         using var s3 = await CreateClientWithBucket();
 

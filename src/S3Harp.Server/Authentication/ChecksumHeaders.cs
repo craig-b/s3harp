@@ -107,6 +107,56 @@ public static class ChecksumHeaders
         return null;
     }
 
+    /// <summary>
+    /// The checksum type a multipart upload asks for in <c>x-amz-checksum-type</c>:
+    /// none when the header is absent; false when it names no type.
+    /// </summary>
+    public static bool TryReadType(IHeaderDictionary headers, out ChecksumType? type)
+    {
+        ArgumentNullException.ThrowIfNull(headers);
+        type = null;
+        string? value = headers[TypeHeader];
+        if (value is null)
+        {
+            return true;
+        }
+
+        if (!TryParseType(value.Trim(), out var parsed))
+        {
+            return false;
+        }
+
+        type = parsed;
+        return true;
+    }
+
+    public static bool TryParseType(string value, out ChecksumType type)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        foreach (var candidate in new[] { ChecksumType.FullObject, ChecksumType.Composite })
+        {
+            if (string.Equals(value, TypeName(candidate), StringComparison.OrdinalIgnoreCase))
+            {
+                type = candidate;
+                return true;
+            }
+        }
+
+        type = default;
+        return false;
+    }
+
+    /// <summary>Announces the algorithm and type a multipart upload was created with.</summary>
+    public static void WriteAlgorithm(IHeaderDictionary headers, ChecksumAlgorithm algorithm, ChecksumType type)
+    {
+        ArgumentNullException.ThrowIfNull(headers);
+        headers[AlgorithmHeader] = ChecksumAlgorithms.Name(algorithm);
+        headers[TypeHeader] = TypeName(type);
+    }
+
+    /// <summary>The default algorithm of an upload that names none.</summary>
+    public static ChecksumAlgorithm Default => DefaultAlgorithm;
+
     /// <summary>True when a read asks for the object's checksum with <c>x-amz-checksum-mode</c>.</summary>
     public static bool ModeEnabled(IHeaderDictionary headers)
     {

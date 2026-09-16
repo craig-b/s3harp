@@ -66,4 +66,42 @@ public sealed class ChecksumTests
     {
         Assert.False(ChecksumAlgorithms.TryParseName("MD5", out _));
     }
+
+    [Theory]
+    [InlineData(
+        ChecksumAlgorithm.Sha256,
+        "275VF5loJr1YYawit0XSHREhkFXYkkPKGuoK0x9VKxI=,mrHwOfjTL5Zwfj74F05HOQGLdUb7E5szdCbxgUSq6NM=,Vw7oB/nKQ5xWb3hNgbyfkvDiivl+U+/Dft48nfJfDow=",
+        "uWBwpe1dxI4Vw8Gf0X9ynOdw/SS6VBzfWm9giiv1sf4=-3")]
+    [InlineData(
+        ChecksumAlgorithm.Sha1,
+        "iIaTCGbm+vdVjNqIMF2S0T7ibMk=,LS/TJ32bAVKEwRu+sE3X7awh/lk=,6DDwovUaHwrKNXDMzOGbuvj9kxI=",
+        "sizjvY4eud3MrcHdZM3cQ/ol39o=-3")]
+    [InlineData(ChecksumAlgorithm.Crc32, "3ldvBQ==,0oUPLw==", "5m/Xbg==-2")]
+    public void ComposesPartChecksumsAsS3Does(
+        ChecksumAlgorithm algorithm, string partChecksums, string expected)
+    {
+        Assert.Equal(expected, ChecksumAlgorithms.Composite(algorithm, partChecksums.Split(',')));
+    }
+
+    [Theory]
+    [InlineData(ChecksumAlgorithm.Crc32, ChecksumType.Composite)]
+    [InlineData(ChecksumAlgorithm.Crc32C, ChecksumType.Composite)]
+    [InlineData(ChecksumAlgorithm.Sha1, ChecksumType.Composite)]
+    [InlineData(ChecksumAlgorithm.Sha256, ChecksumType.Composite)]
+    [InlineData(ChecksumAlgorithm.Crc64Nvme, ChecksumType.FullObject)]
+    public void DefaultsMultipartUploadsToTheTypeS3Does(ChecksumAlgorithm algorithm, ChecksumType type)
+    {
+        Assert.Equal(type, ChecksumAlgorithms.DefaultType(algorithm));
+    }
+
+    [Theory]
+    [InlineData(ChecksumAlgorithm.Crc32, ChecksumType.FullObject, true)]
+    [InlineData(ChecksumAlgorithm.Crc32C, ChecksumType.FullObject, true)]
+    [InlineData(ChecksumAlgorithm.Sha256, ChecksumType.FullObject, false)]
+    [InlineData(ChecksumAlgorithm.Sha1, ChecksumType.FullObject, false)]
+    [InlineData(ChecksumAlgorithm.Crc64Nvme, ChecksumType.Composite, false)]
+    public void OnlyCrcsSpanBothTypes(ChecksumAlgorithm algorithm, ChecksumType type, bool supported)
+    {
+        Assert.Equal(supported, ChecksumAlgorithms.Supports(algorithm, type));
+    }
 }

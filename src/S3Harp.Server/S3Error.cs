@@ -27,6 +27,11 @@ public static class S3Errors
         "The Content-MD5 or checksum value that you specified did not match "
         + "what the server received.");
 
+    public static S3Error ChecksumTypeUnsupported { get; } = new(
+        "InvalidRequest",
+        StatusCodes.Status400BadRequest,
+        "The checksum type is not supported for the checksum algorithm.");
+
     public static S3Error BucketAlreadyOwnedByYou { get; } = new(
         "BucketAlreadyOwnedByYou",
         StatusCodes.Status409Conflict,

@@ -726,6 +726,137 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task InitiateUpload_AnnouncesTheChecksumAlgorithmAndType()
+    {
+        await Dispatch("PUT", "/my-bucket");
+
+        var named = await Dispatch(
+            "POST", "/my-bucket/key", query: "?uploads",
+            configure: request => request.Headers["x-amz-checksum-algorithm"] = "SHA256");
+        var unnamed = await Dispatch("POST", "/my-bucket/other", query: "?uploads");
+
+        Assert.Equal("SHA256", named.Response.Headers["x-amz-checksum-algorithm"]);
+        Assert.Equal("COMPOSITE", named.Response.Headers["x-amz-checksum-type"]);
+        Assert.Equal("CRC64NVME", unnamed.Response.Headers["x-amz-checksum-algorithm"]);
+        Assert.Equal("FULL_OBJECT", unnamed.Response.Headers["x-amz-checksum-type"]);
+    }
+
+    [Theory]
+    [InlineData("SHA256", "FULL_OBJECT")]
+    [InlineData("CRC64NVME", "COMPOSITE")]
+    [InlineData("CRC32", "PARTIAL")]
+    public async Task InitiateUpload_WithAnUnsupportedChecksumType_ReportsInvalidRequest(
+        string algorithm, string type)
+    {
+        await Dispatch("PUT", "/my-bucket");
+
+        var context = await Dispatch(
+            "POST", "/my-bucket/key", query: "?uploads",
+            configure: request =>
+            {
+                request.Headers["x-amz-checksum-algorithm"] = algorithm;
+                request.Headers["x-amz-checksum-type"] = type;
+            });
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("InvalidRequest", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task UploadPart_EchoesThePartsChecksum()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate(
+            "/my-bucket/key", request => request.Headers["x-amz-checksum-algorithm"] = "SHA256");
+
+        var context = await Dispatch(
+            "PUT", "/my-bucket/key", query: $"?partNumber=1&uploadId={uploadId}", body: "Hello, ");
+
+        Assert.Equal(
+            "I0Kb2bqY3VFAMJu5sAlLOq1kJDD/9vs8ph8AjOZE80o=", context.Response.Headers["x-amz-checksum-sha256"]);
+    }
+
+    [Fact]
+    public async Task CompleteUpload_ReportsTheCompositeChecksumAndChecksTheDeclaredOnes()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate(
+            "/my-bucket/key", request => request.Headers["x-amz-checksum-algorithm"] = "SHA256");
+        var first = await UploadPart("/my-bucket/key", uploadId, 1, "Hello, ");
+        var second = await UploadPart("/my-bucket/key", uploadId, 2, "S3Harp!");
+        string Body(string firstChecksum) => $"""
+            <CompleteMultipartUpload>
+              <Part><PartNumber>1</PartNumber><ETag>{first}</ETag><ChecksumSHA256>{firstChecksum}</ChecksumSHA256></Part>
+              <Part><PartNumber>2</PartNumber><ETag>{second}</ETag></Part>
+            </CompleteMultipartUpload>
+            """;
+
+        var wrongPart = await Dispatch(
+            "POST", "/my-bucket/key", query: $"?uploadId={uploadId}", body: Body("bad="));
+        var wrongWhole = await Dispatch(
+            "POST", "/my-bucket/key", query: $"?uploadId={uploadId}",
+            body: Body("I0Kb2bqY3VFAMJu5sAlLOq1kJDD/9vs8ph8AjOZE80o="),
+            configure: request => request.Headers["x-amz-checksum-sha256"] = "bad=");
+        var completed = await Dispatch(
+            "POST", "/my-bucket/key", query: $"?uploadId={uploadId}",
+            body: Body("I0Kb2bqY3VFAMJu5sAlLOq1kJDD/9vs8ph8AjOZE80o="),
+            configure: request =>
+                request.Headers["x-amz-checksum-sha256"] = "sDGBh5Sl/cL+/VEtpYWyKkP3wHD+lmz/q9Wq8TQpY8c=-2");
+
+        Assert.Equal("InvalidPart", ReadErrorCode(wrongPart));
+        Assert.Equal("BadDigest", ReadErrorCode(wrongWhole));
+        Assert.Equal(StatusCodes.Status200OK, completed.Response.StatusCode);
+        var result = ReadBody(completed).Root!;
+        Assert.Equal(
+            "sDGBh5Sl/cL+/VEtpYWyKkP3wHD+lmz/q9Wq8TQpY8c=-2",
+            result.Element(S3Namespace + "ChecksumSHA256")?.Value);
+        Assert.Equal("COMPOSITE", result.Element(S3Namespace + "ChecksumType")?.Value);
+    }
+
+    [Fact]
+    public async Task ListParts_ReportsTheChecksumAlgorithmTypeAndEachPartsChecksum()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate(
+            "/my-bucket/key", request => request.Headers["x-amz-checksum-algorithm"] = "CRC32");
+        await UploadPart("/my-bucket/key", uploadId, 1, "Hello, ");
+
+        var root = ReadBody(await Dispatch("GET", "/my-bucket/key", query: $"?uploadId={uploadId}")).Root!;
+
+        Assert.Equal("CRC32", root.Element(S3Namespace + "ChecksumAlgorithm")?.Value);
+        Assert.Equal("COMPOSITE", root.Element(S3Namespace + "ChecksumType")?.Value);
+        var part = Assert.Single(root.Elements(S3Namespace + "Part"));
+        Assert.Equal("3ldvBQ==", part.Element(S3Namespace + "ChecksumCRC32")?.Value);
+    }
+
+    [Fact]
+    public async Task GetObject_ByPartNumber_WithChecksumMode_ReportsThatPartsChecksum()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate(
+            "/my-bucket/key", request => request.Headers["x-amz-checksum-algorithm"] = "CRC32");
+        var first = await UploadPart("/my-bucket/key", uploadId, 1, "Hello, ");
+        var second = await UploadPart("/my-bucket/key", uploadId, 2, "S3Harp!");
+        await Dispatch("POST", "/my-bucket/key", query: $"?uploadId={uploadId}", body: $"""
+            <CompleteMultipartUpload>
+              <Part><PartNumber>1</PartNumber><ETag>{first}</ETag></Part>
+              <Part><PartNumber>2</PartNumber><ETag>{second}</ETag></Part>
+            </CompleteMultipartUpload>
+            """);
+
+        var part = await Dispatch(
+            "GET", "/my-bucket/key", query: "?partNumber=2",
+            configure: request => request.Headers["x-amz-checksum-mode"] = "ENABLED");
+        var whole = await Dispatch(
+            "HEAD", "/my-bucket/key",
+            configure: request => request.Headers["x-amz-checksum-mode"] = "ENABLED");
+
+        Assert.Equal("0oUPLw==", part.Response.Headers["x-amz-checksum-crc32"]);
+        Assert.Equal("COMPOSITE", part.Response.Headers["x-amz-checksum-type"]);
+        Assert.Equal("5m/Xbg==-2", whole.Response.Headers["x-amz-checksum-crc32"]);
+    }
+
+    [Fact]
     public async Task ListParts_OfAnUnknownUpload_ReportsNoSuchUpload()
     {
         await Dispatch("PUT", "/my-bucket");
@@ -1143,9 +1274,9 @@ public sealed class S3RequestDispatcherTests : IDisposable
         Assert.Equal("NoSuchKey", ReadErrorCode(context));
     }
 
-    private async Task<string> Initiate(string path)
+    private async Task<string> Initiate(string path, Action<HttpRequest>? configure = null)
     {
-        var context = await Dispatch("POST", path, query: "?uploads");
+        var context = await Dispatch("POST", path, query: "?uploads", configure: configure);
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         var uploadId = ReadBody(context).Root?.Element(S3Namespace + "UploadId")?.Value;
         Assert.False(string.IsNullOrEmpty(uploadId));

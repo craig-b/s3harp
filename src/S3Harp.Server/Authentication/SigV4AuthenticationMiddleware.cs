@@ -95,7 +95,10 @@ public sealed class SigV4AuthenticationMiddleware(
             _ => new Sha256VerifyingStream(request.Body, payloadHash),
         };
 
-        if (ChecksumHeaders.TryFindDeclared(request.Headers, out var algorithm, out var declared))
+        // On CompleteMultipartUpload the checksum header names the object being
+        // assembled, not the XML body, so the body is not held to it.
+        if (!IsCompleteMultipartUpload(request)
+            && ChecksumHeaders.TryFindDeclared(request.Headers, out var algorithm, out var declared))
         {
             request.Body = new ChecksumVerifyingStream(
                 request.Body, ChecksumAlgorithms.Create(algorithm), declared);
@@ -103,6 +106,9 @@ public sealed class SigV4AuthenticationMiddleware(
 
         await next(context).ConfigureAwait(false);
     }
+
+    private static bool IsCompleteMultipartUpload(HttpRequest request) =>
+        HttpMethods.IsPost(request.Method) && request.Query.ContainsKey("uploadId");
 
     /// <summary>The checksum algorithm <c>x-amz-trailer</c> announces, when it names one.</summary>
     private static ChecksumAlgorithm? AnnouncedTrailerChecksum(IHeaderDictionary headers)

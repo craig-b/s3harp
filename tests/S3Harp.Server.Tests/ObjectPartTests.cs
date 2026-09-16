@@ -37,6 +37,7 @@ public sealed class ObjectPartTests
     }
 
     private static ObjectRecord Record(long[] partSizes) => new(
-        "key", "blob", Size: partSizes.Sum(), ETag: "etag", partSizes, Checksum: null, ContentType: null,
+        "key", "blob", Size: partSizes.Sum(), ETag: "etag",
+        [.. partSizes.Select(size => new CompletedPart(size, null))], Checksum: null, ContentType: null,
         ContentHeaders.None, new Dictionary<string, string>(), DateTimeOffset.UnixEpoch);
 }

@@ -491,7 +491,7 @@ public sealed class S3RequestDispatcher(
                 : new S3ErrorResult(S3Errors.PreconditionFailed);
         }
 
-        var (range, partsCount, refusal) = SelectContent(context.Request, download.Record);
+        var (range, partsCount, checksum, refusal) = SelectContent(context.Request, download.Record);
         if (refusal is not null)
         {
             await download.Content.DisposeAsync().ConfigureAwait(false);
@@ -499,11 +499,6 @@ public sealed class S3RequestDispatcher(
         }
 
         var served = ResponseHeaderOverrides.Apply(context.Request.Query, download.Record);
-        // A whole-object checksum describes the whole object, so a range response omits it.
-        var checksum = ChecksumHeaders.ModeEnabled(context.Request.Headers)
-            && range.Outcome == RangeOutcome.WholeObject
-            ? download.Record.Checksum
-            : null;
         if (includeContent)
         {
             return new S3ObjectResult(served, download.Content, range, partsCount, checksum);
@@ -515,17 +510,21 @@ public sealed class S3RequestDispatcher(
 
     /// <summary>
     /// The slice of the object a GET or HEAD serves: the part named by
-    /// <c>partNumber</c>, else the <c>Range</c> header's bytes, else the whole object.
-    /// A refusal names the error to answer with instead.
+    /// <c>partNumber</c>, else the <c>Range</c> header's bytes, else the whole object,
+    /// with the checksum to announce when the read asks for one: the part's for a
+    /// part, the object's for the whole object, none for a range of it. A refusal
+    /// names the error to answer with instead.
     /// </summary>
-    private static (RangeEvaluation Range, int? PartsCount, S3Error? Refusal) SelectContent(
-        HttpRequest request, ObjectRecord record)
+    private static (RangeEvaluation Range, int? PartsCount, Checksum? Checksum, S3Error? Refusal)
+        SelectContent(HttpRequest request, ObjectRecord record)
     {
         var rangeHeader = request.Headers.Range.ToString();
+        var announce = ChecksumHeaders.ModeEnabled(request.Headers);
         if (!request.Query.TryGetValue("partNumber", out var partNumberValue))
         {
             var range = RangeHeader.Evaluate(rangeHeader, record.Size);
             return (range, null,
+                announce && range.Outcome == RangeOutcome.WholeObject ? record.Checksum : null,
                 range.Outcome == RangeOutcome.Unsatisfiable ? S3Errors.InvalidRange : null);
         }
 
@@ -533,18 +532,29 @@ public sealed class S3RequestDispatcher(
                 out var partNumber)
             || partNumber is < 1 or > MaxPartNumber)
         {
-            return (default, null, S3Errors.InvalidArgument);
+            return (default, null, null, S3Errors.InvalidArgument);
         }
 
         if (rangeHeader.Length > 0)
         {
-            return (default, null, S3Errors.RangeWithPartNumber);
+            return (default, null, null, S3Errors.RangeWithPartNumber);
         }
 
-        return ObjectPart.Select(partNumber, record) is { } part
-            ? (part, record.PartSizes.Count > 0 ? record.PartSizes.Count : null, null)
-            : (default, null, S3Errors.InvalidPart);
+        if (ObjectPart.Select(partNumber, record) is not { } part)
+        {
+            return (default, null, null, S3Errors.InvalidPart);
+        }
+
+        return record.Parts.Count == 0
+            ? (part, null, announce ? record.Checksum : null, null)
+            : (part, record.Parts.Count, announce ? PartChecksum(record, partNumber) : null, null);
     }
+
+    /// <summary>A part's checksum, in the object's algorithm and type.</summary>
+    private static Checksum? PartChecksum(ObjectRecord record, int partNumber) =>
+        record.Checksum is { } checksum && record.Parts[partNumber - 1].Checksum is { } value
+            ? checksum with { Value = value }
+            : null;
 
     private async Task<IResult> DeleteObjectAsync(
         HttpContext context, string bucket, string key, CancellationToken cancellationToken)
@@ -676,6 +686,9 @@ public sealed class S3RequestDispatcher(
                     OwnerElement("Initiator"),
                     OwnerElement("Owner"),
                     new XElement(S3Namespace + "StorageClass", "STANDARD"),
+                    new XElement(
+                        S3Namespace + "ChecksumAlgorithm", ChecksumAlgorithms.Name(upload.ChecksumAlgorithm)),
+                    new XElement(S3Namespace + "ChecksumType", ChecksumHeaders.TypeName(upload.ChecksumType)),
                     new XElement(S3Namespace + "PartNumberMarker", marker),
                     truncated
                         ? new XElement(S3Namespace + "NextPartNumberMarker", page[^1].PartNumber)
@@ -686,7 +699,12 @@ public sealed class S3RequestDispatcher(
                         new XElement(S3Namespace + "PartNumber", part.PartNumber),
                         new XElement(S3Namespace + "LastModified", FormatTimestamp(part.LastModified)),
                         new XElement(S3Namespace + "ETag", $"\"{part.ETag}\""),
-                        new XElement(S3Namespace + "Size", part.Size))))));
+                        new XElement(S3Namespace + "Size", part.Size),
+                        part.Checksum is null
+                            ? null
+                            : new XElement(
+                                S3Namespace + ChecksumHeaders.ElementName(upload.ChecksumAlgorithm),
+                                part.Checksum))))));
     }
 
     /// <summary>Reads a non-negative count parameter, falling back when it is absent.</summary>
@@ -736,14 +754,28 @@ public sealed class S3RequestDispatcher(
             return new S3ErrorResult(S3Errors.NoSuchBucket);
         }
 
+        var algorithm = ChecksumHeaders.RequestedAlgorithm(context.Request.Headers)
+            ?? ChecksumHeaders.Default;
+        if (!ChecksumHeaders.TryReadType(context.Request.Headers, out var requestedType))
+        {
+            return new S3ErrorResult(S3Errors.ChecksumTypeUnsupported);
+        }
+
+        var type = requestedType ?? ChecksumAlgorithms.DefaultType(algorithm);
+        if (!ChecksumAlgorithms.Supports(algorithm, type))
+        {
+            return new S3ErrorResult(S3Errors.ChecksumTypeUnsupported);
+        }
+
         var uploadId = await engine.InitiateUploadAsync(
-            bucket, key, RequestAttributes.Read(context.Request), cancellationToken)
+            bucket, key, RequestAttributes.Read(context.Request), algorithm, type, cancellationToken)
             .ConfigureAwait(false);
         if (uploadId is null)
         {
             return new S3ErrorResult(S3Errors.NoSuchBucket);
         }
 
+        ChecksumHeaders.WriteAlgorithm(context.Response.Headers, algorithm, type);
         return new S3XmlResult(
             StatusCodes.Status200OK,
             new XDocument(
@@ -791,6 +823,11 @@ public sealed class S3RequestDispatcher(
         }
 
         context.Response.Headers.ETag = $"\"{outcome.ETag}\"";
+        if (outcome.Checksum is { } checksum)
+        {
+            context.Response.Headers[ChecksumHeaders.HeaderName(checksum.Algorithm)] = checksum.Value;
+        }
+
         return new S3StatusResult(StatusCodes.Status200OK);
     }
 
@@ -802,18 +839,19 @@ public sealed class S3RequestDispatcher(
             return new S3ErrorResult(S3Errors.NoSuchBucket);
         }
 
-        List<(int PartNumber, string ETag)> parts;
+        List<RequestedPart> parts;
         try
         {
             var document = await LoadRequestXmlAsync(context.Request, cancellationToken)
                 .ConfigureAwait(false);
             parts = [.. document.Root!
                 .Elements().Where(e => e.Name.LocalName == "Part")
-                .Select(part => (
+                .Select(part => new RequestedPart(
                     int.Parse(
                         part.Elements().First(e => e.Name.LocalName == "PartNumber").Value,
                         CultureInfo.InvariantCulture),
-                    part.Elements().First(e => e.Name.LocalName == "ETag").Value))];
+                    part.Elements().First(e => e.Name.LocalName == "ETag").Value,
+                    DeclaredPartChecksum(part)))];
         }
         catch (Exception exception) when (
             exception is System.Xml.XmlException or InvalidOperationException
@@ -822,8 +860,12 @@ public sealed class S3RequestDispatcher(
             return new S3ErrorResult(S3Errors.MalformedXML);
         }
 
+        var expected = ChecksumHeaders.TryFindDeclared(
+            context.Request.Headers, out var algorithm, out var declared)
+            ? new ChecksumValue(algorithm, declared)
+            : null;
         var outcome = await engine.CompleteUploadAsync(
-            bucket, key, context.Request.Query["uploadId"].ToString(), parts,
+            bucket, key, context.Request.Query["uploadId"].ToString(), parts, expected,
             WriteConditionHeaders.Parse(context.Request.Headers), cancellationToken)
             .ConfigureAwait(false);
         return outcome.Status switch
@@ -832,6 +874,7 @@ public sealed class S3RequestDispatcher(
             CompleteUploadStatus.InvalidPart => new S3ErrorResult(S3Errors.InvalidPart),
             CompleteUploadStatus.InvalidPartOrder => new S3ErrorResult(S3Errors.InvalidPartOrder),
             CompleteUploadStatus.EntityTooSmall => new S3ErrorResult(S3Errors.EntityTooSmall),
+            CompleteUploadStatus.BadDigest => new S3ErrorResult(S3Errors.BadDigest),
             CompleteUploadStatus.ObjectMissing => new S3ErrorResult(S3Errors.NoSuchKey),
             CompleteUploadStatus.PreconditionFailed => new S3ErrorResult(S3Errors.PreconditionFailed),
             _ => new S3XmlResult(
@@ -842,8 +885,25 @@ public sealed class S3RequestDispatcher(
                         new XElement(S3Namespace + "Location", $"/{bucket}/{key}"),
                         new XElement(S3Namespace + "Bucket", bucket),
                         new XElement(S3Namespace + "Key", key),
-                        new XElement(S3Namespace + "ETag", $"\"{outcome.ETag}\"")))),
+                        new XElement(S3Namespace + "ETag", $"\"{outcome.ETag}\""),
+                        ChecksumElements(outcome.Checksum)))),
         };
+    }
+
+    /// <summary>The checksum a completion request declares for a part, in whichever <c>Checksum*</c> element.</summary>
+    private static ChecksumValue? DeclaredPartChecksum(XElement part)
+    {
+        const string prefix = "Checksum";
+        foreach (var element in part.Elements())
+        {
+            if (element.Name.LocalName.StartsWith(prefix, StringComparison.Ordinal)
+                && ChecksumAlgorithms.TryParseName(element.Name.LocalName[prefix.Length..], out var algorithm))
+            {
+                return new ChecksumValue(algorithm, element.Value.Trim());
+            }
+        }
+
+        return null;
     }
 
     private async Task<IResult> AbortUploadAsync(

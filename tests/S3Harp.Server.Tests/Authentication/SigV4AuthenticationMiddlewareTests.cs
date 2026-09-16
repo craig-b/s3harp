@@ -156,7 +156,7 @@ public sealed class SigV4AuthenticationMiddlewareTests
     }
 
     [Fact]
-    public async Task DeclaredChecksumMatchingTheBody_DeliversTheBody()
+    public async Task ChecksumValueMatchingTheBody_DeliversTheBody()
     {
         var body = Encoding.UTF8.GetBytes("Hello, S3Harp!");
         var context = CreateSignedContext(AccessKeyId, SecretAccessKey);
@@ -172,7 +172,7 @@ public sealed class SigV4AuthenticationMiddlewareTests
     }
 
     [Fact]
-    public async Task DeclaredChecksumDifferingFromTheBody_FailsAsBadDigestWhenConsumed()
+    public async Task ChecksumValueDifferingFromTheBody_FailsAsBadDigestWhenConsumed()
     {
         var context = CreateSignedContext(AccessKeyId, SecretAccessKey);
         context.Request.Headers["x-amz-checksum-crc32"] = "AAAAAA==";
@@ -185,6 +185,28 @@ public sealed class SigV4AuthenticationMiddlewareTests
         var exception = await Assert.ThrowsAsync<PayloadVerificationException>(
             () => context.Request.Body.CopyToAsync(sink, TestContext.Current.CancellationToken));
         Assert.Equal(S3Errors.BadDigest, exception.Error);
+    }
+
+    [Fact]
+    public async Task OnCompleteMultipartUpload_TheChecksumHeaderIsNotHeldAgainstTheBody()
+    {
+        var context = CreateSignedContext(
+            AccessKeyId, SecretAccessKey,
+            shape: context =>
+            {
+                context.Request.Method = "POST";
+                context.Request.QueryString = new QueryString("?uploadId=abc");
+                context.Features.GetRequiredFeature<IHttpRequestFeature>().RawTarget = "/demo?uploadId=abc";
+            });
+        context.Request.Headers["x-amz-checksum-sha256"] = "sDGBh5Sl/cL+/VEtpYWyKkP3wHD+lmz/q9Wq8TQpY8c=-2";
+        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("<CompleteMultipartUpload/>"));
+
+        (context, var nextCalled) = await RunMiddleware(context);
+
+        Assert.True(nextCalled());
+        using var sink = new MemoryStream();
+        await context.Request.Body.CopyToAsync(sink, TestContext.Current.CancellationToken);
+        Assert.Equal("<CompleteMultipartUpload/>", Encoding.UTF8.GetString(sink.ToArray()));
     }
 
     [Theory]
@@ -384,9 +406,11 @@ public sealed class SigV4AuthenticationMiddlewareTests
         string secretAccessKey,
         DateTimeOffset? signedAt = null,
         string payloadHash = UnsignedPayload,
-        string? dateHeaderFormat = null)
+        string? dateHeaderFormat = null,
+        Action<DefaultHttpContext>? shape = null)
     {
         var context = CreateContext();
+        shape?.Invoke(context);
         var timestamp = (signedAt ?? Now).ToString(
             "yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
         var scope = new CredentialScope(timestamp[..8], "us-east-1", "s3");

@@ -32,7 +32,7 @@ public sealed class MultipartUploadTests : IDisposable
         var uploadId = await engine.InitiateUploadAsync(
             "alpha", "key",
             new ObjectAttributes("text/plain", ContentHeaders.None, new Dictionary<string, string>()),
-            Token);
+            ChecksumAlgorithm.Crc64Nvme, ChecksumType.FullObject, Token);
 
         Assert.False(string.IsNullOrEmpty(uploadId));
     }
@@ -42,7 +42,8 @@ public sealed class MultipartUploadTests : IDisposable
     {
         Assert.Null(await engine.InitiateUploadAsync(
             "missing", "key",
-            new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()), Token));
+            new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()),
+            ChecksumAlgorithm.Crc64Nvme, ChecksumType.FullObject, Token));
     }
 
     [Fact]
@@ -55,7 +56,7 @@ public sealed class MultipartUploadTests : IDisposable
         Assert.Equal(SecondPartETag, second);
 
         var outcome = await engine.CompleteUploadAsync(
-            "alpha", "key", uploadId, [(1, FirstPartETag), (2, SecondPartETag)], null, Token);
+            "alpha", "key", uploadId, [new(1, FirstPartETag), new(2, SecondPartETag)], null, null, Token);
 
         Assert.Equal(CompleteUploadStatus.Completed, outcome.Status);
         Assert.Equal(CombinedETag, outcome.ETag);
@@ -75,10 +76,10 @@ public sealed class MultipartUploadTests : IDisposable
         await UploadPart(uploadId, 3, "S3Harp!");
 
         await engine.CompleteUploadAsync(
-            "alpha", "key", uploadId, [(1, FirstPartETag), (3, SecondPartETag)], null, Token);
+            "alpha", "key", uploadId, [new(1, FirstPartETag), new(3, SecondPartETag)], null, null, Token);
 
         var record = await index.FindObjectAsync("alpha", "key", Token);
-        Assert.Equal([7, 7], record?.PartSizes);
+        Assert.Equal([7L, 7L], record?.Parts.Select(part => part.Size));
     }
 
     [Fact]
@@ -92,7 +93,7 @@ public sealed class MultipartUploadTests : IDisposable
             ChecksumAlgorithm.Crc64Nvme, null, Token);
 
         var record = await index.FindObjectAsync("alpha", "key", Token);
-        Assert.Empty(record!.PartSizes);
+        Assert.Empty(record!.Parts);
     }
 
     [Fact]
@@ -102,13 +103,13 @@ public sealed class MultipartUploadTests : IDisposable
         await UploadPart(uploadId, 1, "Hello, ");
         await UploadPart(uploadId, 2, "S3Harp!");
         await engine.CompleteUploadAsync(
-            "alpha", "key", uploadId, [(1, FirstPartETag), (2, SecondPartETag)], null, Token);
+            "alpha", "key", uploadId, [new(1, FirstPartETag), new(2, SecondPartETag)], null, null, Token);
 
         await engine.CopyObjectAsync("alpha", "key", "alpha", "copy", null, null, Token);
 
         var record = await index.FindObjectAsync("alpha", "copy", Token);
         Assert.Equal(CombinedETag, record?.ETag);
-        Assert.Equal([7, 7], record?.PartSizes);
+        Assert.Equal([7L, 7L], record?.Parts.Select(part => part.Size));
     }
 
     [Fact]
@@ -123,6 +124,114 @@ public sealed class MultipartUploadTests : IDisposable
     }
 
     [Fact]
+    public async Task InitiatedUpload_KeepsItsChecksumAlgorithmAndType()
+    {
+        var uploadId = await StartUpload(ChecksumAlgorithm.Sha1, ChecksumType.Composite);
+
+        var upload = await index.FindUploadAsync("alpha", "key", uploadId, Token);
+
+        Assert.Equal(ChecksumAlgorithm.Sha1, upload?.ChecksumAlgorithm);
+        Assert.Equal(ChecksumType.Composite, upload?.ChecksumType);
+    }
+
+    [Fact]
+    public async Task UploadedPart_CarriesItsChecksumInTheUploadsAlgorithm()
+    {
+        var uploadId = await StartUpload(ChecksumAlgorithm.Crc32, ChecksumType.Composite);
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("Hello, "));
+        var outcome = await engine.UploadPartAsync("alpha", "key", uploadId, 1, stream, Token);
+
+        Assert.Equal(new ChecksumValue(ChecksumAlgorithm.Crc32, "3ldvBQ=="), outcome.Checksum);
+        Assert.Equal("3ldvBQ==", Assert.Single(await index.ListPartsAsync("alpha", "key", uploadId, Token)).Checksum);
+    }
+
+    [Fact]
+    public async Task CompletedUpload_CarriesTheCompositeChecksumAndEachPartsChecksum()
+    {
+        var uploadId = await StartUpload(ChecksumAlgorithm.Sha256, ChecksumType.Composite);
+        await UploadPart(uploadId, 1, "Hello, ");
+        await UploadPart(uploadId, 2, "S3Harp!");
+
+        var outcome = await engine.CompleteUploadAsync(
+            "alpha", "key", uploadId,
+            [new(1, FirstPartETag, new(ChecksumAlgorithm.Sha256, "I0Kb2bqY3VFAMJu5sAlLOq1kJDD/9vs8ph8AjOZE80o=")), new(2, SecondPartETag)],
+            new ChecksumValue(ChecksumAlgorithm.Sha256, "sDGBh5Sl/cL+/VEtpYWyKkP3wHD+lmz/q9Wq8TQpY8c=-2"),
+            null, Token);
+
+        Assert.Equal(CompleteUploadStatus.Completed, outcome.Status);
+        var expected = new Checksum(
+            ChecksumAlgorithm.Sha256, "sDGBh5Sl/cL+/VEtpYWyKkP3wHD+lmz/q9Wq8TQpY8c=-2", ChecksumType.Composite);
+        Assert.Equal(expected, outcome.Checksum);
+        var record = await index.FindObjectAsync("alpha", "key", Token);
+        Assert.Equal(expected, record?.Checksum);
+        Assert.Equal(
+            [
+                new CompletedPart(7, "I0Kb2bqY3VFAMJu5sAlLOq1kJDD/9vs8ph8AjOZE80o="),
+                new CompletedPart(7, "u3yWE0yGgxW/IQ83c7yx8/C9BEoHBn9Z9+ka8q8dzhU="),
+            ],
+            record?.Parts);
+    }
+
+    [Fact]
+    public async Task CompletedUpload_OfFullObjectType_ChecksumsTheAssembledObject()
+    {
+        var uploadId = await StartUpload(ChecksumAlgorithm.Crc32, ChecksumType.FullObject);
+        await UploadPart(uploadId, 1, "Hello, ");
+        await UploadPart(uploadId, 2, "S3Harp!");
+
+        var outcome = await engine.CompleteUploadAsync(
+            "alpha", "key", uploadId, [new(1, FirstPartETag), new(2, SecondPartETag)], null, null, Token);
+
+        Assert.Equal(
+            new Checksum(ChecksumAlgorithm.Crc32, "NadAdg==", ChecksumType.FullObject), outcome.Checksum);
+    }
+
+    [Fact]
+    public async Task CompletingWithAPartChecksumThatDiffers_ReportsInvalidPart()
+    {
+        var uploadId = await StartUpload(ChecksumAlgorithm.Sha256, ChecksumType.Composite);
+        await UploadPart(uploadId, 1, "Hello, ");
+
+        var outcome = await engine.CompleteUploadAsync(
+            "alpha", "key", uploadId,
+            [new(1, FirstPartETag, new(ChecksumAlgorithm.Sha256, "bad="))], null, null, Token);
+
+        Assert.Equal(CompleteUploadStatus.InvalidPart, outcome.Status);
+    }
+
+    [Fact]
+    public async Task CompletingWithAnExpectedChecksumThatDiffers_ReportsBadDigestAndKeepsTheUpload()
+    {
+        var uploadId = await StartUpload(ChecksumAlgorithm.Sha256, ChecksumType.Composite);
+        await UploadPart(uploadId, 1, "Hello, ");
+        await UploadPart(uploadId, 2, "S3Harp!");
+
+        var outcome = await engine.CompleteUploadAsync(
+            "alpha", "key", uploadId, [new(1, FirstPartETag), new(2, SecondPartETag)],
+            new ChecksumValue(ChecksumAlgorithm.Sha256, "bad="), null, Token);
+
+        Assert.Equal(CompleteUploadStatus.BadDigest, outcome.Status);
+        Assert.NotNull(await index.FindUploadAsync("alpha", "key", uploadId, Token));
+        Assert.Equal(2, CountBlobFiles());
+    }
+
+    [Fact]
+    public async Task CompletingAnUploadAgain_ReturnsTheStoredChecksum()
+    {
+        var uploadId = await StartUpload(ChecksumAlgorithm.Crc32, ChecksumType.Composite);
+        await UploadPart(uploadId, 1, "Hello, ");
+        await UploadPart(uploadId, 2, "S3Harp!");
+        RequestedPart[] parts = [new(1, FirstPartETag), new(2, SecondPartETag)];
+
+        var first = await engine.CompleteUploadAsync("alpha", "key", uploadId, parts, null, null, Token);
+        var second = await engine.CompleteUploadAsync("alpha", "key", uploadId, parts, null, null, Token);
+
+        Assert.Equal("5m/Xbg==-2", first.Checksum?.Value);
+        Assert.Equal(first.Checksum, second.Checksum);
+    }
+
+    [Fact]
     public async Task Complete_LeavesOnlyTheAssembledBlobOnDisk()
     {
         var uploadId = await StartUpload();
@@ -130,7 +239,7 @@ public sealed class MultipartUploadTests : IDisposable
         await UploadPart(uploadId, 2, "S3Harp!");
 
         await engine.CompleteUploadAsync(
-            "alpha", "key", uploadId, [(1, FirstPartETag), (2, SecondPartETag)], null, Token);
+            "alpha", "key", uploadId, [new(1, FirstPartETag), new(2, SecondPartETag)], null, null, Token);
 
         Assert.Equal(1, CountBlobFiles());
     }
@@ -142,7 +251,7 @@ public sealed class MultipartUploadTests : IDisposable
         await UploadPart(uploadId, 1, "Hello, ");
 
         var outcome = await engine.CompleteUploadAsync(
-            "alpha", "key", uploadId, [(1, SecondPartETag)], null, Token);
+            "alpha", "key", uploadId, [new(1, SecondPartETag)], null, null, Token);
 
         Assert.Equal(CompleteUploadStatus.InvalidPart, outcome.Status);
     }
@@ -155,7 +264,7 @@ public sealed class MultipartUploadTests : IDisposable
         await UploadPart(uploadId, 2, "S3Harp!");
 
         var outcome = await engine.CompleteUploadAsync(
-            "alpha", "key", uploadId, [(2, SecondPartETag), (1, FirstPartETag)], null, Token);
+            "alpha", "key", uploadId, [new(2, SecondPartETag), new(1, FirstPartETag)], null, null, Token);
 
         Assert.Equal(CompleteUploadStatus.InvalidPartOrder, outcome.Status);
     }
@@ -168,7 +277,7 @@ public sealed class MultipartUploadTests : IDisposable
         var second = await UploadPart(uploadId, 2, "S3Harp!");
 
         var outcome = await engine.CompleteUploadAsync(
-            "alpha", "key", uploadId, [(1, tiny!), (2, second!)], null, Token);
+            "alpha", "key", uploadId, [new(1, tiny!), new(2, second!)], null, null, Token);
 
         Assert.Equal(CompleteUploadStatus.EntityTooSmall, outcome.Status);
         Assert.NotNull(await index.FindUploadAsync("alpha", "key", uploadId, Token));
@@ -182,7 +291,7 @@ public sealed class MultipartUploadTests : IDisposable
         var tiny = await UploadPart(uploadId, 2, "tiny");
 
         var outcome = await engine.CompleteUploadAsync(
-            "alpha", "key", uploadId, [(1, first!), (2, tiny!)], null, Token);
+            "alpha", "key", uploadId, [new(1, first!), new(2, tiny!)], null, null, Token);
 
         Assert.Equal(CompleteUploadStatus.Completed, outcome.Status);
     }
@@ -194,10 +303,10 @@ public sealed class MultipartUploadTests : IDisposable
         var first = await UploadPart(uploadId, 1, "Hello, ");
         var second = await UploadPart(uploadId, 2, "S3Harp!");
         await engine.CompleteUploadAsync(
-            "alpha", "key", uploadId, [(1, first!), (2, second!)], null, Token);
+            "alpha", "key", uploadId, [new(1, first!), new(2, second!)], null, null, Token);
 
         var again = await engine.CompleteUploadAsync(
-            "alpha", "key", uploadId, [(1, first!), (2, second!)], null, Token);
+            "alpha", "key", uploadId, [new(1, first!), new(2, second!)], null, null, Token);
 
         Assert.Equal(CompleteUploadStatus.Completed, again.Status);
         Assert.Equal(CombinedETag, again.ETag);
@@ -211,10 +320,10 @@ public sealed class MultipartUploadTests : IDisposable
         var first = await UploadPart(uploadId, 1, "Hello, ");
         var second = await UploadPart(uploadId, 2, "S3Harp!");
         await engine.CompleteUploadAsync(
-            "alpha", "key", uploadId, [(1, first!), (2, second!)], null, Token);
+            "alpha", "key", uploadId, [new(1, first!), new(2, second!)], null, null, Token);
 
         var again = await engine.CompleteUploadAsync(
-            "alpha", "key", uploadId, [(1, first!)], null, Token);
+            "alpha", "key", uploadId, [new(1, first!)], null, null, Token);
 
         Assert.Equal(CompleteUploadStatus.NoSuchUpload, again.Status);
     }
@@ -225,7 +334,7 @@ public sealed class MultipartUploadTests : IDisposable
         await CreateBucket();
 
         var outcome = await engine.CompleteUploadAsync(
-            "alpha", "key", "missing", [(1, FirstPartETag)], null, Token);
+            "alpha", "key", "missing", [new(1, FirstPartETag)], null, null, Token);
 
         Assert.Equal(CompleteUploadStatus.NoSuchUpload, outcome.Status);
     }
@@ -244,7 +353,7 @@ public sealed class MultipartUploadTests : IDisposable
         }
 
         var outcome = await engine.CompleteUploadAsync(
-            "alpha", "key", uploadId, [(1, FirstPartETag)],
+            "alpha", "key", uploadId, [new(1, FirstPartETag)], null,
             new WriteCondition(MustNotMatch: ETagCondition.AnyObject), Token);
 
         Assert.Equal(CompleteUploadStatus.PreconditionFailed, outcome.Status);
@@ -346,11 +455,12 @@ public sealed class MultipartUploadTests : IDisposable
         var headers = new ContentHeaders(CacheControl: "no-cache", ContentEncoding: "gzip");
         var uploadId = await engine.InitiateUploadAsync(
             "alpha", "key",
-            new ObjectAttributes("text/plain", headers, new Dictionary<string, string>()), Token);
+            new ObjectAttributes("text/plain", headers, new Dictionary<string, string>()),
+            ChecksumAlgorithm.Crc64Nvme, ChecksumType.FullObject, Token);
         Assert.NotNull(uploadId);
         await UploadPart(uploadId, 1, "Hello, ");
 
-        await engine.CompleteUploadAsync("alpha", "key", uploadId, [(1, FirstPartETag)], null, Token);
+        await engine.CompleteUploadAsync("alpha", "key", uploadId, [new(1, FirstPartETag)], null, null, Token);
 
         var download = await engine.GetObjectAsync("alpha", "key", Token);
         Assert.NotNull(download);
@@ -373,13 +483,16 @@ public sealed class MultipartUploadTests : IDisposable
     private async Task CreateBucket() =>
         Assert.True(await index.TryCreateBucketAsync("alpha", Now, Token));
 
-    private async Task<string> StartUpload()
+    private async Task<string> StartUpload(
+        ChecksumAlgorithm algorithm = ChecksumAlgorithm.Crc64Nvme,
+        ChecksumType type = ChecksumType.FullObject)
     {
         await CreateBucket();
         var uploadId = await engine.InitiateUploadAsync(
             "alpha", "key",
             new ObjectAttributes("text/plain", ContentHeaders.None,
-                new Dictionary<string, string> { ["note"] = "from-test" }), Token);
+                new Dictionary<string, string> { ["note"] = "from-test" }),
+            algorithm, type, Token);
         Assert.NotNull(uploadId);
         return uploadId;
     }

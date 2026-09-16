@@ -5,8 +5,8 @@ public sealed record BucketInfo(string Name, DateTimeOffset CreatedAt);
 
 /// <summary>
 /// An object's metadata: the key → blob mapping and everything served in headers.
-/// <paramref name="PartSizes"/> lists the size of each part, in order, of an object
-/// assembled by a multipart upload; it is empty for an object stored in one piece.
+/// <paramref name="Parts"/> lists the parts, in order, of an object assembled by a
+/// multipart upload; it is empty for an object stored in one piece.
 /// <paramref name="Checksum"/> is the integrity checksum stored with the object;
 /// objects recorded before checksums were kept have none.
 /// </summary>
@@ -15,12 +15,18 @@ public sealed record ObjectRecord(
     string BlobId,
     long Size,
     string ETag,
-    IReadOnlyList<long> PartSizes,
+    IReadOnlyList<CompletedPart> Parts,
     Checksum? Checksum,
     string? ContentType,
     ContentHeaders ContentHeaders,
     IReadOnlyDictionary<string, string> Metadata,
     DateTimeOffset LastModified);
+
+/// <summary>
+/// A part of a completed multipart object: its size and, when the part was
+/// uploaded with checksums kept, its checksum in the object's algorithm.
+/// </summary>
+public sealed record CompletedPart(long Size, string? Checksum);
 
 /// <summary>
 /// The standard HTTP content headers stored with an object and replayed on
@@ -156,18 +162,28 @@ public sealed record DeleteBucketOutcome(
     public static DeleteBucketOutcome NotEmpty { get; } = new(DeleteBucketResult.NotEmpty, []);
 }
 
-/// <summary>An in-progress multipart upload.</summary>
+/// <summary>
+/// An in-progress multipart upload, with the checksum algorithm its parts are
+/// summed with and the type of checksum the completed object carries.
+/// </summary>
 public sealed record MultipartUpload(
     string UploadId,
     string Key,
     string? ContentType,
     ContentHeaders ContentHeaders,
     IReadOnlyDictionary<string, string> Metadata,
+    ChecksumAlgorithm ChecksumAlgorithm,
+    ChecksumType ChecksumType,
     DateTimeOffset InitiatedAt);
 
-/// <summary>A part uploaded into a multipart upload.</summary>
+/// <summary>A part uploaded into a multipart upload, with its checksum in the upload's algorithm.</summary>
 public sealed record PartRecord(
-    int PartNumber, string BlobId, long Size, string ETag, DateTimeOffset LastModified);
+    int PartNumber,
+    string BlobId,
+    long Size,
+    string ETag,
+    string? Checksum,
+    DateTimeOffset LastModified);
 
 /// <summary>The outcome of storing a part record.</summary>
 public sealed record PutPartResult(bool UploadExists, string? ReplacedBlobId);
@@ -179,6 +195,7 @@ public enum CompleteUploadStatus
     InvalidPart,
     InvalidPartOrder,
     EntityTooSmall,
+    BadDigest,
     ObjectMissing,
     PreconditionFailed,
 }

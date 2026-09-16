@@ -94,7 +94,8 @@ public sealed class ConcurrencyStressTests : IDisposable
         await CreateBucket();
         var uploadId = await engine.InitiateUploadAsync(
             "alpha", "assembled",
-            new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()), Token);
+            new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()),
+            ChecksumAlgorithm.Crc64Nvme, ChecksumType.FullObject, Token);
         Assert.NotNull(uploadId);
 
         var outcomes = await Task.WhenAll(Enumerable.Range(0, WriterCount)

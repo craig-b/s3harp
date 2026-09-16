@@ -108,6 +108,61 @@ public sealed class MultipartTests : IDisposable
     }
 
     [Fact]
+    public async Task MultipartUpload_WithSha256_ReportsPartAndCompositeChecksums()
+    {
+        using var s3 = await CreateClientWithBucket();
+        var initiate = await s3.InitiateMultipartUploadAsync(new InitiateMultipartUploadRequest
+        {
+            BucketName = Bucket,
+            Key = "summed.bin",
+            ChecksumAlgorithm = ChecksumAlgorithm.SHA256,
+        }, Token);
+        var uploaded = new List<PartETag>();
+        foreach (var (bytes, number) in new[] { (new byte[5 * 1024 * 1024], 1), (new byte[1024], 2) })
+        {
+            var part = await s3.UploadPartAsync(new UploadPartRequest
+            {
+                BucketName = Bucket,
+                Key = "summed.bin",
+                UploadId = initiate.UploadId,
+                PartNumber = number,
+                InputStream = new MemoryStream(bytes),
+                ChecksumAlgorithm = ChecksumAlgorithm.SHA256,
+            }, Token);
+            Assert.NotNull(part.ChecksumSHA256);
+            uploaded.Add(new PartETag(number, part.ETag) { ChecksumSHA256 = part.ChecksumSHA256 });
+        }
+
+        var completed = await s3.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
+        {
+            BucketName = Bucket,
+            Key = "summed.bin",
+            UploadId = initiate.UploadId,
+            PartETags = uploaded,
+        }, Token);
+        var head = await s3.GetObjectMetadataAsync(new GetObjectMetadataRequest
+        {
+            BucketName = Bucket,
+            Key = "summed.bin",
+            ChecksumMode = ChecksumMode.ENABLED,
+        }, Token);
+        using var secondPart = await s3.GetObjectAsync(new GetObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "summed.bin",
+            PartNumber = 2,
+            ChecksumMode = ChecksumMode.ENABLED,
+        }, Token);
+
+        Assert.Equal(ChecksumAlgorithm.SHA256, initiate.ChecksumAlgorithm);
+        Assert.Equal(ChecksumType.COMPOSITE, initiate.ChecksumType);
+        Assert.EndsWith("-2", completed.ChecksumSHA256, StringComparison.Ordinal);
+        Assert.Equal(ChecksumType.COMPOSITE, completed.ChecksumType);
+        Assert.Equal(completed.ChecksumSHA256, head.ChecksumSHA256);
+        Assert.Equal(uploaded[1].ChecksumSHA256, secondPart.ChecksumSHA256);
+    }
+
+    [Fact]
     public async Task CompletingWithANonFinalPartUnderFiveMiB_ThrowsEntityTooSmall()
     {
         using var s3 = await CreateClientWithBucket();

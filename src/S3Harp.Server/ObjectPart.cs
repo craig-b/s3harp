@@ -14,7 +14,7 @@ public static class ObjectPart
     public static RangeEvaluation? Select(int partNumber, ObjectRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
-        var sizes = record.PartSizes;
+        var sizes = record.Parts;
         if (sizes.Count == 0)
         {
             return partNumber == 1 ? new RangeEvaluation(RangeOutcome.WholeObject, 0, 0) : null;
@@ -28,9 +28,9 @@ public static class ObjectPart
         long from = 0;
         for (var i = 0; i < partNumber - 1; i++)
         {
-            from += sizes[i];
+            from += sizes[i].Size;
         }
 
-        return new RangeEvaluation(RangeOutcome.Partial, from, from + sizes[partNumber - 1] - 1);
+        return new RangeEvaluation(RangeOutcome.Partial, from, from + sizes[partNumber - 1].Size - 1);
     }
 }

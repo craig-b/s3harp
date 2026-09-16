@@ -25,6 +25,9 @@ public enum ChecksumType
 /// </summary>
 public sealed record Checksum(ChecksumAlgorithm Algorithm, string Value, ChecksumType Type);
 
+/// <summary>A checksum value with its algorithm: a part's, or one a client declares.</summary>
+public sealed record ChecksumValue(ChecksumAlgorithm Algorithm, string Value);
+
 /// <summary>
 /// Names the checksum algorithms as S3 does and creates the incremental
 /// computation of each.
@@ -58,6 +61,39 @@ public static class ChecksumAlgorithms
         algorithm = default;
         return false;
     }
+
+    /// <summary>
+    /// S3's composite checksum of a multipart object: the checksum of the parts'
+    /// checksum bytes in order, suffixed with the part count.
+    /// </summary>
+    public static string Composite(ChecksumAlgorithm algorithm, IEnumerable<string> partChecksums)
+    {
+        ArgumentNullException.ThrowIfNull(partChecksums);
+        using var checksum = Create(algorithm);
+        var count = 0;
+        foreach (var part in partChecksums)
+        {
+            checksum.Append(Convert.FromBase64String(part));
+            count++;
+        }
+
+        return $"{Convert.ToBase64String(checksum.Finish())}-{count}";
+    }
+
+    /// <summary>The type a multipart upload takes when the client names only the algorithm.</summary>
+    public static ChecksumType DefaultType(ChecksumAlgorithm algorithm) =>
+        algorithm == ChecksumAlgorithm.Crc64Nvme ? ChecksumType.FullObject : ChecksumType.Composite;
+
+    /// <summary>
+    /// Whether a multipart upload may combine the algorithm and type: CRC-32 and
+    /// CRC-32C span both, the SHAs compose only, and CRC-64/NVME covers whole objects only.
+    /// </summary>
+    public static bool Supports(ChecksumAlgorithm algorithm, ChecksumType type) => algorithm switch
+    {
+        ChecksumAlgorithm.Crc32 or ChecksumAlgorithm.Crc32C => true,
+        ChecksumAlgorithm.Crc64Nvme => type == ChecksumType.FullObject,
+        _ => type == ChecksumType.Composite,
+    };
 
     public static IncrementalChecksum Create(ChecksumAlgorithm algorithm) => algorithm switch
     {

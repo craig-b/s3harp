@@ -36,7 +36,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 metadata TEXT NOT NULL,
                 last_modified TEXT NOT NULL,
                 content_headers TEXT NOT NULL DEFAULT '{}',
-                part_sizes TEXT NOT NULL DEFAULT '[]',
+                parts TEXT NOT NULL DEFAULT '[]',
                 checksum TEXT,
                 PRIMARY KEY (bucket, key)
             ) WITHOUT ROWID;
@@ -47,7 +47,9 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 content_type TEXT,
                 metadata TEXT NOT NULL,
                 initiated_at TEXT NOT NULL,
-                content_headers TEXT NOT NULL DEFAULT '{}'
+                content_headers TEXT NOT NULL DEFAULT '{}',
+                checksum_algorithm TEXT,
+                checksum_type TEXT
             );
             CREATE TABLE IF NOT EXISTS parts (
                 upload_id TEXT NOT NULL REFERENCES uploads(upload_id),
@@ -56,6 +58,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 size INTEGER NOT NULL,
                 etag TEXT NOT NULL,
                 uploaded_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.0000000+00:00',
+                checksum TEXT,
                 PRIMARY KEY (upload_id, part_number)
             ) WITHOUT ROWID;
             """;
@@ -64,20 +67,21 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         // Databases created before these columns existed gain them in place.
         EnsureColumn(connection, "objects", "content_headers", "TEXT NOT NULL DEFAULT '{}'");
         EnsureColumn(connection, "uploads", "content_headers", "TEXT NOT NULL DEFAULT '{}'");
-        EnsureColumn(connection, "objects", "part_sizes", "TEXT NOT NULL DEFAULT '[]'");
+        EnsureColumn(connection, "objects", "parts", "TEXT NOT NULL DEFAULT '[]'");
+        CarryPartSizesIntoParts(connection);
         EnsureColumn(connection, "objects", "checksum", "TEXT");
+        EnsureColumn(connection, "uploads", "checksum_algorithm", "TEXT");
+        EnsureColumn(connection, "uploads", "checksum_type", "TEXT");
         EnsureColumn(
             connection, "parts", "uploaded_at",
             "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.0000000+00:00'");
+        EnsureColumn(connection, "parts", "checksum", "TEXT");
     }
 
     private static void EnsureColumn(
         SqliteConnection connection, string table, string column, string definition)
     {
-        using var probe = connection.CreateCommand();
-        probe.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = $column";
-        probe.Parameters.AddWithValue("$column", column);
-        if ((long)probe.ExecuteScalar()! > 0)
+        if (ColumnExists(connection, table, column))
         {
             return;
         }
@@ -85,6 +89,34 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         using var alter = connection.CreateCommand();
         alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition}";
         alter.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Databases that recorded only part sizes carry them into the parts column,
+    /// each part without a checksum.
+    /// </summary>
+    private static void CarryPartSizesIntoParts(SqliteConnection connection)
+    {
+        if (!ColumnExists(connection, "objects", "part_sizes"))
+        {
+            return;
+        }
+
+        using var migrate = connection.CreateCommand();
+        migrate.CommandText = """
+            UPDATE objects SET parts = (
+                SELECT json_group_array(json_object('Size', value)) FROM json_each(objects.part_sizes));
+            ALTER TABLE objects DROP COLUMN part_sizes;
+            """;
+        migrate.ExecuteNonQuery();
+    }
+
+    private static bool ColumnExists(SqliteConnection connection, string table, string column)
+    {
+        using var probe = connection.CreateCommand();
+        probe.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = $column";
+        probe.Parameters.AddWithValue("$column", column);
+        return (long)probe.ExecuteScalar()! > 0;
     }
 
     public async Task<bool> TryCreateBucketAsync(
@@ -253,7 +285,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         command.Transaction = transaction;
         command.CommandText = """
             SELECT key, blob_id, size, etag, content_type, metadata, last_modified,
-                   content_headers, part_sizes, checksum
+                   content_headers, parts, checksum
             FROM objects WHERE bucket = $bucket AND key = $key
             """;
         command.Parameters.AddWithValue("$bucket", bucket);
@@ -279,7 +311,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT key, blob_id, size, etag, content_type, metadata, last_modified,
-                       content_headers, part_sizes, checksum
+                       content_headers, parts, checksum
                 FROM objects
                 WHERE bucket = $bucket AND key >= $lower AND ($upper IS NULL OR key < $upper)
                 ORDER BY key
@@ -347,10 +379,11 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             var command = connection.CreateCommand();
             command.CommandText = """
                 INSERT INTO uploads
-                    (upload_id, bucket, key, content_type, metadata, initiated_at, content_headers)
+                    (upload_id, bucket, key, content_type, metadata, initiated_at, content_headers,
+                     checksum_algorithm, checksum_type)
                 VALUES
                     ($upload_id, $bucket, $key, $content_type, $metadata, $initiated_at,
-                     $content_headers)
+                     $content_headers, $checksum_algorithm, $checksum_type)
                 """;
             command.Parameters.AddWithValue("$upload_id", upload.UploadId);
             command.Parameters.AddWithValue("$bucket", bucket);
@@ -361,6 +394,8 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             command.Parameters.AddWithValue(
                 "$content_headers", WriteContentHeaders(upload.ContentHeaders));
             command.Parameters.AddWithValue("$initiated_at", FormatTimestamp(upload.InitiatedAt));
+            command.Parameters.AddWithValue("$checksum_algorithm", upload.ChecksumAlgorithm.ToString());
+            command.Parameters.AddWithValue("$checksum_type", upload.ChecksumType.ToString());
             try
             {
                 return await command.ExecuteNonQueryAsync(cancellationToken)
@@ -391,6 +426,8 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                         reader.IsDBNull(0) ? null : reader.GetString(0),
                         ReadContentHeaders(reader.GetString(3)),
                         JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(1))!,
+                        ReadEnum(reader, 4, ChecksumAlgorithm.Crc64Nvme),
+                        ReadEnum(reader, 5, ChecksumType.FullObject),
                         ParseTimestamp(reader.GetString(2)))
                     : null;
             }
@@ -427,11 +464,12 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 var upsert = connection.CreateCommand();
                 upsert.Transaction = transaction;
                 upsert.CommandText = """
-                    INSERT INTO parts (upload_id, part_number, blob_id, size, etag, uploaded_at)
-                    VALUES ($upload_id, $number, $blob_id, $size, $etag, $uploaded_at)
+                    INSERT INTO parts
+                        (upload_id, part_number, blob_id, size, etag, uploaded_at, checksum)
+                    VALUES ($upload_id, $number, $blob_id, $size, $etag, $uploaded_at, $checksum)
                     ON CONFLICT (upload_id, part_number) DO UPDATE SET
                         blob_id = excluded.blob_id, size = excluded.size, etag = excluded.etag,
-                        uploaded_at = excluded.uploaded_at
+                        uploaded_at = excluded.uploaded_at, checksum = excluded.checksum
                     """;
                 upsert.Parameters.AddWithValue("$upload_id", uploadId);
                 upsert.Parameters.AddWithValue("$number", part.PartNumber);
@@ -439,6 +477,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 upsert.Parameters.AddWithValue("$size", part.Size);
                 upsert.Parameters.AddWithValue("$etag", part.ETag);
                 upsert.Parameters.AddWithValue("$uploaded_at", FormatTimestamp(part.LastModified));
+                upsert.Parameters.AddWithValue("$checksum", (object?)part.Checksum ?? DBNull.Value);
                 await upsert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -455,7 +494,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         {
             var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT p.part_number, p.blob_id, p.size, p.etag, p.uploaded_at
+                SELECT p.part_number, p.blob_id, p.size, p.etag, p.uploaded_at, p.checksum
                 FROM parts p
                 JOIN uploads u ON u.upload_id = p.upload_id
                 WHERE u.upload_id = $upload_id AND u.bucket = $bucket AND u.key = $key
@@ -471,8 +510,9 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
                     parts.Add(new PartRecord(
-                        reader.GetInt32(0), reader.GetString(1),
-                        reader.GetInt64(2), reader.GetString(3), ParseTimestamp(reader.GetString(4))));
+                        reader.GetInt32(0), reader.GetString(1), reader.GetInt64(2), reader.GetString(3),
+                        reader.IsDBNull(5) ? null : reader.GetString(5),
+                        ParseTimestamp(reader.GetString(4))));
                 }
 
                 return parts;
@@ -488,7 +528,8 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         {
             var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT upload_id, key, content_type, metadata, initiated_at, content_headers
+                SELECT upload_id, key, content_type, metadata, initiated_at, content_headers,
+                       checksum_algorithm, checksum_type
                 FROM uploads WHERE bucket = $bucket
                 ORDER BY key, upload_id
                 """;
@@ -505,6 +546,8 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                         reader.IsDBNull(2) ? null : reader.GetString(2),
                         ReadContentHeaders(reader.GetString(5)),
                         JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(3))!,
+                        ReadEnum(reader, 6, ChecksumAlgorithm.Crc64Nvme),
+                        ReadEnum(reader, 7, ChecksumType.FullObject),
                         ParseTimestamp(reader.GetString(4))));
                 }
 
@@ -583,7 +626,8 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     {
         var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT content_type, metadata, initiated_at, content_headers
+            SELECT content_type, metadata, initiated_at, content_headers,
+                   checksum_algorithm, checksum_type
             FROM uploads
             WHERE upload_id = $upload_id AND bucket = $bucket AND key = $key
             """;
@@ -623,10 +667,10 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         upsert.CommandText = """
             INSERT INTO objects
                 (bucket, key, blob_id, size, etag, content_type, metadata, last_modified,
-                 content_headers, part_sizes, checksum)
+                 content_headers, parts, checksum)
             VALUES
                 ($bucket, $key, $blob_id, $size, $etag, $content_type, $metadata, $last_modified,
-                 $content_headers, $part_sizes, $checksum)
+                 $content_headers, $parts, $checksum)
             ON CONFLICT (bucket, key) DO UPDATE SET
                 blob_id = excluded.blob_id,
                 size = excluded.size,
@@ -634,7 +678,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 content_type = excluded.content_type,
                 metadata = excluded.metadata,
                 content_headers = excluded.content_headers,
-                part_sizes = excluded.part_sizes,
+                parts = excluded.parts,
                 checksum = excluded.checksum,
                 last_modified = excluded.last_modified
             """;
@@ -647,7 +691,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         upsert.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(record.Metadata));
         upsert.Parameters.AddWithValue("$last_modified", FormatTimestamp(record.LastModified));
         upsert.Parameters.AddWithValue("$content_headers", WriteContentHeaders(record.ContentHeaders));
-        upsert.Parameters.AddWithValue("$part_sizes", JsonSerializer.Serialize(record.PartSizes));
+        upsert.Parameters.AddWithValue("$parts", JsonSerializer.Serialize(record.Parts, ContentHeadersJson));
         upsert.Parameters.AddWithValue(
             "$checksum",
             record.Checksum is null
@@ -699,7 +743,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         reader.GetString(1),
         reader.GetInt64(2),
         reader.GetString(3),
-        JsonSerializer.Deserialize<long[]>(reader.GetString(8))!,
+        JsonSerializer.Deserialize<CompletedPart[]>(reader.GetString(8), ContentHeadersJson)!,
         reader.IsDBNull(9) ? null : JsonSerializer.Deserialize<Checksum>(reader.GetString(9), ChecksumJson),
         reader.IsDBNull(4) ? null : reader.GetString(4),
         ReadContentHeaders(reader.GetString(7)),
@@ -721,6 +765,11 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
 
     private static ContentHeaders ReadContentHeaders(string json) =>
         JsonSerializer.Deserialize<ContentHeaders>(json, ContentHeadersJson) ?? ContentHeaders.None;
+
+    /// <summary>An enum stored by name; rows written before the column existed take the fallback.</summary>
+    private static TEnum ReadEnum<TEnum>(SqliteDataReader reader, int ordinal, TEnum fallback)
+        where TEnum : struct, Enum =>
+        reader.IsDBNull(ordinal) ? fallback : Enum.Parse<TEnum>(reader.GetString(ordinal));
 
     private static string FormatTimestamp(DateTimeOffset timestamp) =>
         timestamp.ToString("O", CultureInfo.InvariantCulture);
