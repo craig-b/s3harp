@@ -154,8 +154,22 @@ public sealed class MultipartTests : IDisposable
             ChecksumMode = ChecksumMode.ENABLED,
         }, Token);
 
+        var attributes = await s3.GetObjectAttributesAsync(new GetObjectAttributesRequest
+        {
+            BucketName = Bucket,
+            Key = "summed.bin",
+            ObjectAttributes = [ObjectAttributes.ETag, ObjectAttributes.Checksum, ObjectAttributes.ObjectParts, ObjectAttributes.ObjectSize],
+        }, Token);
+
         Assert.Equal(ChecksumAlgorithm.SHA256, initiate.ChecksumAlgorithm);
         Assert.Equal(ChecksumType.COMPOSITE, initiate.ChecksumType);
+        Assert.Equal(completed.ETag.Trim('"'), attributes.ETag);
+        Assert.Equal(completed.ChecksumSHA256, attributes.Checksum.ChecksumSHA256);
+        Assert.Equal(2, attributes.ObjectParts.TotalPartsCount);
+        Assert.Equal(5 * 1024 * 1024 + 1024, attributes.ObjectSize);
+        Assert.Equal(
+            uploaded.Select(part => part.ChecksumSHA256),
+            (attributes.ObjectParts.Parts ?? []).Select(part => part.ChecksumSHA256));
         Assert.EndsWith("-2", completed.ChecksumSHA256, StringComparison.Ordinal);
         Assert.Equal(ChecksumType.COMPOSITE, completed.ChecksumType);
         Assert.Equal(completed.ChecksumSHA256, head.ChecksumSHA256);

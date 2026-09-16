@@ -161,6 +161,10 @@ s3tests/functional/test_s3.py::test_encrypted_transfer_1kb
 s3tests/functional/test_s3.py::test_encrypted_transfer_1MB
 s3tests/functional/test_s3.py::test_encryption_sse_c_multipart_upload
 s3tests/functional/test_s3.py::test_encryption_sse_c_unaligned_multipart_upload
+s3tests/functional/test_s3.py::test_get_checksum_object_attributes
+s3tests/functional/test_s3.py::test_get_multipart_checksum_object_attributes
+s3tests/functional/test_s3.py::test_get_multipart_object_attributes
+s3tests/functional/test_s3.py::test_get_object_attributes
 s3tests/functional/test_s3.py::test_get_object_ifmatch_failed
 s3tests/functional/test_s3.py::test_get_object_ifmatch_good
 s3tests/functional/test_s3.py::test_get_object_ifmodifiedsince_failed
@@ -169,6 +173,8 @@ s3tests/functional/test_s3.py::test_get_object_ifnonematch_failed
 s3tests/functional/test_s3.py::test_get_object_ifnonematch_good
 s3tests/functional/test_s3.py::test_get_object_ifunmodifiedsince_failed
 s3tests/functional/test_s3.py::test_get_object_ifunmodifiedsince_good
+s3tests/functional/test_s3.py::test_get_paginated_multipart_object_attributes
+s3tests/functional/test_s3.py::test_get_single_multipart_object_attributes
 s3tests/functional/test_s3.py::test_list_buckets_bad_auth
 s3tests/functional/test_s3.py::test_list_buckets_invalid_auth
 s3tests/functional/test_s3.py::test_list_multipart_upload
@@ -193,6 +199,11 @@ s3tests/functional/test_s3.py::test_multipart_upload_overwrite_existing_object
 s3tests/functional/test_s3.py::test_multipart_upload_resend_part
 s3tests/functional/test_s3.py::test_multipart_upload_size_too_small
 s3tests/functional/test_s3.py::test_multipart_upload_small
+s3tests/functional/test_s3.py::test_multipart_use_cksum_helper_crc32
+s3tests/functional/test_s3.py::test_multipart_use_cksum_helper_crc32c
+s3tests/functional/test_s3.py::test_multipart_use_cksum_helper_crc64nvme
+s3tests/functional/test_s3.py::test_multipart_use_cksum_helper_sha1
+s3tests/functional/test_s3.py::test_multipart_use_cksum_helper_sha256
 s3tests/functional/test_s3.py::test_non_multipart_get_part
 s3tests/functional/test_s3.py::test_non_multipart_sse_c_get_part
 s3tests/functional/test_s3.py::test_object_anon_put

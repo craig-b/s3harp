@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Xml.Linq;
+using Microsoft.Extensions.Primitives;
 using S3Harp.Core;
 using S3Harp.Server.Authentication;
 
@@ -31,7 +32,7 @@ public sealed class S3RequestDispatcher(
     /// </summary>
     private static readonly string[] SubresourceMarkers =
     [
-        "accelerate", "acl", "analytics", "attributes", "cors", "encryption",
+        "accelerate", "acl", "analytics", "cors", "encryption",
         "intelligent-tiering", "inventory", "legal-hold", "lifecycle", "location",
         "logging", "metrics", "notification", "object-lock", "ownershipControls",
         "policy", "policyStatus", "publicAccessBlock", "replication", "requestPayment",
@@ -64,6 +65,9 @@ public sealed class S3RequestDispatcher(
                 await ListObjectsAsync(context, bucket, cancellationToken).ConfigureAwait(false),
             ("GET", not "", not null) when query.ContainsKey("uploadId") =>
                 await ListPartsAsync(context, bucket, key, cancellationToken).ConfigureAwait(false),
+            ("GET", not "", not null) when query.ContainsKey("attributes") =>
+                await GetObjectAttributesAsync(context, bucket, key, cancellationToken)
+                    .ConfigureAwait(false),
             ("PUT", not "", null) =>
                 await CreateBucketAsync(context, bucket, cancellationToken).ConfigureAwait(false),
             ("HEAD", not "", null) =>
@@ -659,8 +663,8 @@ public sealed class S3RequestDispatcher(
             return new S3ErrorResult(S3Errors.NoSuchUpload);
         }
 
-        if (!TryReadCount(query, "max-parts", maxPartsPerPage, out var maxParts)
-            || !TryReadCount(query, "part-number-marker", 0, out var marker))
+        if (!TryReadCount(query["max-parts"], maxPartsPerPage, out var maxParts)
+            || !TryReadCount(query["part-number-marker"], 0, out var marker))
         {
             return new S3ErrorResult(S3Errors.InvalidArgument);
         }
@@ -668,12 +672,7 @@ public sealed class S3RequestDispatcher(
         maxParts = Math.Min(maxParts, maxPartsPerPage);
         var parts = await index.ListPartsAsync(bucket, key, uploadId, cancellationToken)
             .ConfigureAwait(false);
-        var page = parts.Where(part => part.PartNumber > marker).Take(maxParts + 1).ToList();
-        var truncated = page.Count > maxParts;
-        if (truncated)
-        {
-            page.RemoveAt(page.Count - 1);
-        }
+        var (page, truncated) = PageOfParts(parts, part => part.PartNumber, marker, maxParts);
 
         return new S3XmlResult(
             StatusCodes.Status200OK,
@@ -707,12 +706,100 @@ public sealed class S3RequestDispatcher(
                                 part.Checksum))))));
     }
 
-    /// <summary>Reads a non-negative count parameter, falling back when it is absent.</summary>
-    private static bool TryReadCount(IQueryCollection query, string name, int fallback, out int value)
+    /// <summary>Reads a non-negative count from a query or header value, falling back when it is absent.</summary>
+    private static bool TryReadCount(StringValues raw, int fallback, out int value)
     {
         value = fallback;
-        return !query.TryGetValue(name, out var raw)
-            || int.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out value);
+        return raw.Count == 0
+            || int.TryParse(raw.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out value);
+    }
+
+    /// <summary>The parts numbered beyond the marker, up to the page size, and whether more follow.</summary>
+    private static (List<T> Page, bool Truncated) PageOfParts<T>(
+        IEnumerable<T> parts, Func<T, int> partNumber, int marker, int maxParts)
+    {
+        var page = parts.Where(part => partNumber(part) > marker).Take(maxParts + 1).ToList();
+        var truncated = page.Count > maxParts;
+        if (truncated)
+        {
+            page.RemoveAt(page.Count - 1);
+        }
+
+        return (page, truncated);
+    }
+
+    /// <summary>The attributes GetObjectAttributes can report, in the order S3 lists them.</summary>
+    private static readonly string[] ObjectAttributeNames =
+        ["ETag", "Checksum", "ObjectParts", "StorageClass", "ObjectSize"];
+
+    private async Task<IResult> GetObjectAttributesAsync(
+        HttpContext context, string bucket, string key, CancellationToken cancellationToken)
+    {
+        const int maxPartsPerPage = 1000;
+        if (!await index.BucketExistsAsync(bucket, cancellationToken).ConfigureAwait(false))
+        {
+            return new S3ErrorResult(S3Errors.NoSuchBucket);
+        }
+
+        var headers = context.Request.Headers;
+        var requested = headers["x-amz-object-attributes"].ToString()
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.Ordinal);
+        if (requested.Count == 0
+            || !requested.IsSubsetOf(ObjectAttributeNames)
+            || !TryReadCount(headers["x-amz-max-parts"], maxPartsPerPage, out var maxParts)
+            || !TryReadCount(headers["x-amz-part-number-marker"], 0, out var marker))
+        {
+            return new S3ErrorResult(S3Errors.InvalidArgument);
+        }
+
+        var record = await index.FindObjectAsync(bucket, key, cancellationToken).ConfigureAwait(false);
+        if (record is null)
+        {
+            return new S3ErrorResult(S3Errors.NoSuchKey);
+        }
+
+        maxParts = Math.Min(maxParts, maxPartsPerPage);
+        context.Response.Headers.LastModified = HttpDate.Format(record.LastModified);
+        return new S3XmlResult(
+            StatusCodes.Status200OK,
+            new XDocument(
+                new XDeclaration("1.0", "UTF-8", standalone: null),
+                new XElement(S3Namespace + "GetObjectAttributesResponse",
+                    requested.Contains("ETag") ? new XElement(S3Namespace + "ETag", record.ETag) : null,
+                    requested.Contains("Checksum") && record.Checksum is not null
+                        ? new XElement(S3Namespace + "Checksum", ChecksumElements(record.Checksum))
+                        : null,
+                    requested.Contains("ObjectParts") && record.Parts.Count > 0
+                        ? ObjectPartsElement(record, marker, maxParts)
+                        : null,
+                    requested.Contains("StorageClass")
+                        ? new XElement(S3Namespace + "StorageClass", "STANDARD")
+                        : null,
+                    requested.Contains("ObjectSize")
+                        ? new XElement(S3Namespace + "ObjectSize", record.Size)
+                        : null)));
+    }
+
+    /// <summary>One page of a multipart object's parts, numbered from one in upload order.</summary>
+    private static XElement ObjectPartsElement(ObjectRecord record, int marker, int maxParts)
+    {
+        var numbered = record.Parts.Select((part, i) => (Number: i + 1, Part: part));
+        var (page, truncated) = PageOfParts(numbered, part => part.Number, marker, maxParts);
+        return new XElement(S3Namespace + "ObjectParts",
+            new XElement(S3Namespace + "PartsCount", record.Parts.Count),
+            new XElement(S3Namespace + "PartNumberMarker", marker),
+            truncated ? new XElement(S3Namespace + "NextPartNumberMarker", page[^1].Number) : null,
+            new XElement(S3Namespace + "MaxParts", maxParts),
+            new XElement(S3Namespace + "IsTruncated", truncated ? "true" : "false"),
+            page.Select(entry => new XElement(S3Namespace + "Part",
+                new XElement(S3Namespace + "PartNumber", entry.Number),
+                new XElement(S3Namespace + "Size", entry.Part.Size),
+                entry.Part.Checksum is not null && record.Checksum is not null
+                    ? new XElement(
+                        S3Namespace + ChecksumHeaders.ElementName(record.Checksum.Algorithm),
+                        entry.Part.Checksum)
+                    : null)));
     }
 
     private async Task<IResult> ListMultipartUploadsAsync(

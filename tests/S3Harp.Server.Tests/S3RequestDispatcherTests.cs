@@ -459,7 +459,6 @@ public sealed class S3RequestDispatcherTests : IDisposable
 
     [Theory]
     [InlineData("PUT", "/my-bucket", "?versioning")]
-    [InlineData("GET", "/my-bucket/key", "?attributes")]
     [InlineData("GET", "/my-bucket/key", "?retention")]
     [InlineData("GET", "/my-bucket", "?publicAccessBlock")]
     public async Task SubresourceOperations_ReportNotImplemented(
@@ -472,6 +471,127 @@ public sealed class S3RequestDispatcherTests : IDisposable
 
         Assert.Equal(StatusCodes.Status501NotImplemented, context.Response.StatusCode);
         Assert.Equal("NotImplemented", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task GetObjectAttributes_ReportsTheRequestedAttributesOfASinglePieceObject()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/key", body: "Hello, S3Harp!");
+
+        var context = await Dispatch(
+            "GET", "/my-bucket/key", query: "?attributes",
+            configure: request => request.Headers["x-amz-object-attributes"] =
+                "ETag, Checksum, ObjectParts, StorageClass, ObjectSize");
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        Assert.Equal("Wed, 16 Sep 2026 12:00:00 GMT", context.Response.Headers.LastModified);
+        var root = ReadBody(context).Root!;
+        Assert.Equal(S3Namespace + "GetObjectAttributesResponse", root.Name);
+        Assert.Equal("d6f1f9b294570683440503af6883416c", root.Element(S3Namespace + "ETag")?.Value);
+        var checksum = root.Element(S3Namespace + "Checksum")!;
+        Assert.Equal("v+mfzPLqhcw=", checksum.Element(S3Namespace + "ChecksumCRC64NVME")?.Value);
+        Assert.Equal("FULL_OBJECT", checksum.Element(S3Namespace + "ChecksumType")?.Value);
+        Assert.Null(root.Element(S3Namespace + "ObjectParts"));
+        Assert.Equal("STANDARD", root.Element(S3Namespace + "StorageClass")?.Value);
+        Assert.Equal("14", root.Element(S3Namespace + "ObjectSize")?.Value);
+    }
+
+    [Fact]
+    public async Task GetObjectAttributes_OfAMultipartObject_ListsItsPartsAndPagesThem()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate(
+            "/my-bucket/key", request => request.Headers["x-amz-checksum-algorithm"] = "SHA256");
+        var first = await UploadPart("/my-bucket/key", uploadId, 1, "Hello, ");
+        var second = await UploadPart("/my-bucket/key", uploadId, 2, "S3Harp!");
+        await Dispatch("POST", "/my-bucket/key", query: $"?uploadId={uploadId}", body: $"""
+            <CompleteMultipartUpload>
+              <Part><PartNumber>1</PartNumber><ETag>{first}</ETag></Part>
+              <Part><PartNumber>2</PartNumber><ETag>{second}</ETag></Part>
+            </CompleteMultipartUpload>
+            """);
+
+        var firstPage = ReadBody(await Dispatch(
+            "GET", "/my-bucket/key", query: "?attributes",
+            configure: request =>
+            {
+                request.Headers["x-amz-object-attributes"] = "ObjectParts";
+                request.Headers["x-amz-max-parts"] = "1";
+            })).Root!.Element(S3Namespace + "ObjectParts")!;
+        var secondPage = ReadBody(await Dispatch(
+            "GET", "/my-bucket/key", query: "?attributes",
+            configure: request =>
+            {
+                request.Headers["x-amz-object-attributes"] = "ObjectParts";
+                request.Headers["x-amz-part-number-marker"] = "1";
+            })).Root!.Element(S3Namespace + "ObjectParts")!;
+
+        Assert.Equal("2", firstPage.Element(S3Namespace + "PartsCount")?.Value);
+        Assert.Equal("1", firstPage.Element(S3Namespace + "MaxParts")?.Value);
+        Assert.Equal("0", firstPage.Element(S3Namespace + "PartNumberMarker")?.Value);
+        Assert.Equal("true", firstPage.Element(S3Namespace + "IsTruncated")?.Value);
+        Assert.Equal("1", firstPage.Element(S3Namespace + "NextPartNumberMarker")?.Value);
+        var part = Assert.Single(firstPage.Elements(S3Namespace + "Part"));
+        Assert.Equal("1", part.Element(S3Namespace + "PartNumber")?.Value);
+        Assert.Equal("7", part.Element(S3Namespace + "Size")?.Value);
+        Assert.Equal(
+            "I0Kb2bqY3VFAMJu5sAlLOq1kJDD/9vs8ph8AjOZE80o=", part.Element(S3Namespace + "ChecksumSHA256")?.Value);
+        Assert.Equal("1", secondPage.Element(S3Namespace + "PartNumberMarker")?.Value);
+        Assert.Equal("false", secondPage.Element(S3Namespace + "IsTruncated")?.Value);
+        Assert.Null(secondPage.Element(S3Namespace + "NextPartNumberMarker"));
+        Assert.Equal(
+            ["2"],
+            secondPage.Elements(S3Namespace + "Part").Select(p => p.Element(S3Namespace + "PartNumber")?.Value));
+    }
+
+    [Fact]
+    public async Task GetObjectAttributes_ReturnsOnlyTheAttributesAskedFor()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/key", body: "Hello, S3Harp!");
+
+        var root = ReadBody(await Dispatch(
+            "GET", "/my-bucket/key", query: "?attributes",
+            configure: request => request.Headers["x-amz-object-attributes"] = "ObjectSize")).Root!;
+
+        Assert.Equal(["ObjectSize"], root.Elements().Select(e => e.Name.LocalName));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("ETag, Colour")]
+    public async Task GetObjectAttributes_WithoutUsableAttributes_ReportsInvalidArgument(string? header)
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/key", body: "Hello, S3Harp!");
+
+        var context = await Dispatch(
+            "GET", "/my-bucket/key", query: "?attributes",
+            configure: request =>
+            {
+                if (header is not null)
+                {
+                    request.Headers["x-amz-object-attributes"] = header;
+                }
+            });
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("InvalidArgument", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task GetObjectAttributes_OfAMissingKey_ReportsNoSuchKey()
+    {
+        await Dispatch("PUT", "/my-bucket");
+
+        var context = await Dispatch(
+            "GET", "/my-bucket/missing", query: "?attributes",
+            configure: request => request.Headers["x-amz-object-attributes"] = "ETag");
+
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        Assert.Equal("NoSuchKey", ReadErrorCode(context));
     }
 
     [Fact]
