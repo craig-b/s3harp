@@ -157,6 +157,28 @@ public sealed class ListObjectsTests : IDisposable
         });
     }
 
+    [Fact]
+    public async Task ListObjectsV2_AKeyEndingInTheDelimiter_IsGroupedNotListed()
+    {
+        using var s3 = await CreateClientWithKeys("asdf/", "asdf/x");
+
+        var grouped = await s3.ListObjectsV2Async(new ListObjectsV2Request
+        {
+            BucketName = Bucket,
+            Delimiter = "/",
+        }, Token);
+        var beneath = await s3.ListObjectsV2Async(new ListObjectsV2Request
+        {
+            BucketName = Bucket,
+            Prefix = "asdf/",
+            Delimiter = "/",
+        }, Token);
+
+        Assert.Empty(grouped.S3Objects ?? []);
+        Assert.Equal(["asdf/"], grouped.CommonPrefixes ?? []);
+        Assert.Equal(["asdf/", "asdf/x"], (beneath.S3Objects ?? []).Select(o => o.Key));
+    }
+
     public void Dispose() => factory.Dispose();
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;

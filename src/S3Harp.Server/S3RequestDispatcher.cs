@@ -95,13 +95,21 @@ public sealed class S3RequestDispatcher(
         };
     }
 
+    /// <summary>
+    /// Splits <c>/bucket/key</c>. Only the leading slash is structural: every
+    /// later character, including a trailing slash, belongs to the key.
+    /// </summary>
     private static (string Bucket, string? Key) ParsePath(string path)
     {
-        var trimmed = path.Trim('/');
-        var separator = trimmed.IndexOf('/', StringComparison.Ordinal);
-        return separator < 0
-            ? (trimmed, null)
-            : (trimmed[..separator], trimmed[(separator + 1)..]);
+        var withoutRoot = path.StartsWith('/') ? path[1..] : path;
+        var separator = withoutRoot.IndexOf('/', StringComparison.Ordinal);
+        if (separator < 0)
+        {
+            return (withoutRoot, null);
+        }
+
+        var key = withoutRoot[(separator + 1)..];
+        return (withoutRoot[..separator], key.Length > 0 ? key : null);
     }
 
     private async Task<IResult> ListBucketsAsync(CancellationToken cancellationToken)

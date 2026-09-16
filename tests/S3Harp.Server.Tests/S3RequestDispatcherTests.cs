@@ -386,6 +386,22 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task ObjectKeysEndingInASlash_KeepTheSlash()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/folder/", body: "");
+
+        var get = await Dispatch("GET", "/my-bucket/folder/");
+        Assert.Equal(StatusCodes.Status200OK, get.Response.StatusCode);
+        var listing = ReadBody(await Dispatch("GET", "/my-bucket", query: "?list-type=2")).Root;
+        Assert.NotNull(listing);
+        Assert.Equal(
+            ["folder/"],
+            listing.Elements(S3Namespace + "Contents")
+                .Select(c => c.Element(S3Namespace + "Key")?.Value));
+    }
+
+    [Fact]
     public async Task ListObjects_OnAnUnknownBucket_ReportsNoSuchBucket()
     {
         var context = await Dispatch("GET", "/my-bucket");
