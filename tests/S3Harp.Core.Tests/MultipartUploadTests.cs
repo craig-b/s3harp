@@ -133,6 +133,38 @@ public sealed class MultipartUploadTests : IDisposable
     }
 
     [Fact]
+    public async Task CompletingAnUploadAgain_WithTheSameParts_RepeatsTheResult()
+    {
+        var uploadId = await StartUpload();
+        var first = await UploadPart(uploadId, 1, "Hello, ");
+        var second = await UploadPart(uploadId, 2, "S3Harp!");
+        await engine.CompleteUploadAsync(
+            "alpha", "key", uploadId, [(1, first!), (2, second!)], null, Token);
+
+        var again = await engine.CompleteUploadAsync(
+            "alpha", "key", uploadId, [(1, first!), (2, second!)], null, Token);
+
+        Assert.Equal(CompleteUploadStatus.Completed, again.Status);
+        Assert.Equal(CombinedETag, again.ETag);
+        Assert.Equal(1, CountBlobFiles());
+    }
+
+    [Fact]
+    public async Task CompletingAnUploadAgain_WithDifferentParts_ReportsNoSuchUpload()
+    {
+        var uploadId = await StartUpload();
+        var first = await UploadPart(uploadId, 1, "Hello, ");
+        var second = await UploadPart(uploadId, 2, "S3Harp!");
+        await engine.CompleteUploadAsync(
+            "alpha", "key", uploadId, [(1, first!), (2, second!)], null, Token);
+
+        var again = await engine.CompleteUploadAsync(
+            "alpha", "key", uploadId, [(1, first!)], null, Token);
+
+        Assert.Equal(CompleteUploadStatus.NoSuchUpload, again.Status);
+    }
+
+    [Fact]
     public async Task CompletingAnUnknownUpload_ReportsIt()
     {
         await CreateBucket();

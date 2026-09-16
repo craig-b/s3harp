@@ -253,7 +253,8 @@ public sealed class StorageEngine(
             .ConfigureAwait(false);
         if (upload is null)
         {
-            return new CompleteUploadOutcome(CompleteUploadStatus.NoSuchUpload, null);
+            return await RepeatedCompletionAsync(bucket, key, requestedParts, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         for (var i = 1; i < requestedParts.Count; i++)
@@ -377,20 +378,56 @@ public sealed class StorageEngine(
         return new CopyObjectOutcome(record.ETag, record.LastModified);
     }
 
-    private static string MultipartETag(List<PartRecord> parts)
+    /// <summary>
+    /// Completing an upload that no longer exists succeeds again when the object at
+    /// the key is the one those exact parts produced: a retried completion is
+    /// idempotent, as it is on S3.
+    /// </summary>
+    private async Task<CompleteUploadOutcome> RepeatedCompletionAsync(
+        string bucket,
+        string key,
+        IReadOnlyList<(int PartNumber, string ETag)> requestedParts,
+        CancellationToken cancellationToken)
     {
-        var combined = new byte[parts.Count * 16];
-        for (var i = 0; i < parts.Count; i++)
+        var expectedETag = MultipartETag(requestedParts.Select(part => part.ETag.Trim('"')));
+        var existing = await index.FindObjectAsync(bucket, key, cancellationToken)
+            .ConfigureAwait(false);
+        return expectedETag is not null
+            && existing is not null
+            && string.Equals(existing.ETag, expectedETag, StringComparison.OrdinalIgnoreCase)
+            ? new CompleteUploadOutcome(CompleteUploadStatus.Completed, existing.ETag)
+            : new CompleteUploadOutcome(CompleteUploadStatus.NoSuchUpload, null);
+    }
+
+    private static string MultipartETag(List<PartRecord> parts) =>
+        MultipartETag(parts.Select(part => part.ETag))!;
+
+    /// <summary>S3's multipart ETag: the MD5 of the concatenated part MD5s, suffixed with the part count; null when a part ETag is not an MD5.</summary>
+    private static string? MultipartETag(IEnumerable<string> partETags)
+    {
+        var combined = new List<byte>();
+        var count = 0;
+        foreach (var partETag in partETags)
         {
-            Convert.FromHexString(parts[i].ETag).CopyTo(combined, i * 16);
+            if (partETag.Length != 32 || !partETag.All(char.IsAsciiHexDigit))
+            {
+                return null;
+            }
+
+            combined.AddRange(Convert.FromHexString(partETag));
+            count++;
         }
 
-        // The multipart ETag is S3's MD5-of-part-MD5s format; a protocol artifact,
-        // carrying no security claim.
+        if (count == 0)
+        {
+            return null;
+        }
+
+        // The multipart ETag is a protocol artifact carrying no security claim.
 #pragma warning disable CA5351
-        var hash = System.Security.Cryptography.MD5.HashData(combined);
+        var hash = System.Security.Cryptography.MD5.HashData(combined.ToArray());
 #pragma warning restore CA5351
-        return $"{Convert.ToHexStringLower(hash)}-{parts.Count}";
+        return $"{Convert.ToHexStringLower(hash)}-{count}";
     }
 
     private static string? FindGroupPrefix(string key, string prefix, string? delimiter)

@@ -90,6 +90,33 @@ public sealed class MultipartTests : IDisposable
     }
 
     [Fact]
+    public async Task CompletingTwiceWithTheSameParts_SucceedsBothTimes()
+    {
+        using var s3 = await CreateClientWithBucket();
+        var initiate = await s3.InitiateMultipartUploadAsync(Bucket, "twice.bin", Token);
+        var part = await s3.UploadPartAsync(new UploadPartRequest
+        {
+            BucketName = Bucket,
+            Key = "twice.bin",
+            UploadId = initiate.UploadId,
+            PartNumber = 1,
+            InputStream = new MemoryStream(new byte[1024]),
+        }, Token);
+        var request = new CompleteMultipartUploadRequest
+        {
+            BucketName = Bucket,
+            Key = "twice.bin",
+            UploadId = initiate.UploadId,
+            PartETags = [new PartETag(1, part.ETag)],
+        };
+
+        var first = await s3.CompleteMultipartUploadAsync(request, Token);
+        var second = await s3.CompleteMultipartUploadAsync(request, Token);
+
+        Assert.Equal(first.ETag, second.ETag);
+    }
+
+    [Fact]
     public async Task AbortedUpload_RefusesCompletion()
     {
         using var s3 = await CreateClientWithBucket();

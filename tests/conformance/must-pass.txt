@@ -169,6 +169,7 @@ s3tests/functional/test_s3.py::test_multi_object_delete_key_limit
 s3tests/functional/test_s3.py::test_multi_objectv2_delete
 s3tests/functional/test_s3.py::test_multi_objectv2_delete_key_limit
 s3tests/functional/test_s3.py::test_multipart_put_object_if_match
+s3tests/functional/test_s3.py::test_multipart_upload
 s3tests/functional/test_s3.py::test_multipart_upload_complete_without_create
 s3tests/functional/test_s3.py::test_multipart_upload_contents
 s3tests/functional/test_s3.py::test_multipart_upload_empty
@@ -178,6 +179,7 @@ s3tests/functional/test_s3.py::test_multipart_upload_multiple_sizes
 s3tests/functional/test_s3.py::test_multipart_upload_overwrite_existing_object
 s3tests/functional/test_s3.py::test_multipart_upload_resend_part
 s3tests/functional/test_s3.py::test_multipart_upload_size_too_small
+s3tests/functional/test_s3.py::test_multipart_upload_small
 s3tests/functional/test_s3.py::test_object_anon_put
 s3tests/functional/test_s3.py::test_object_content_encoding_aws_chunked
 s3tests/functional/test_s3.py::test_object_copy_16m
