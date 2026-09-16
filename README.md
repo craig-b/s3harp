@@ -11,6 +11,7 @@ Working now, each proven by integration tests driving the real AWS SDK:
 - AWS Signature Version 4 on every request — header verification plus chunked payload signing, including the trailer variants current SDKs send by default
 - Bucket create, list, head, and delete
 - Object PUT, GET, HEAD, and DELETE with ETags, content types, and `x-amz-meta-*` metadata, stored durably (temp file → fsync → rename)
+- ListObjectsV2 with prefixes, delimiter grouping into common prefixes, `start-after`, and continuation-token pagination
 - S3 XML error responses that SDKs parse into their typed exceptions
 
 ## What it's for

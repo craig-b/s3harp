@@ -82,6 +82,25 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
         }
     }
 
+    public Task<IReadOnlyList<ObjectRecord>> ScanObjectsAsync(
+        string bucket, string prefix, string fromKey, int limit,
+        CancellationToken cancellationToken)
+    {
+        lock (gate)
+        {
+            if (!buckets.TryGetValue(bucket, out var state))
+            {
+                return Task.FromResult<IReadOnlyList<ObjectRecord>>([]);
+            }
+
+            return Task.FromResult<IReadOnlyList<ObjectRecord>>([.. state.Objects.Values
+                .Where(o => o.Key.StartsWith(prefix, StringComparison.Ordinal)
+                    && string.CompareOrdinal(o.Key, fromKey) >= 0)
+                .OrderBy(o => o.Key, StringComparer.Ordinal)
+                .Take(limit)]);
+        }
+    }
+
     public Task<string?> DeleteObjectAsync(
         string bucket, string key, CancellationToken cancellationToken)
     {

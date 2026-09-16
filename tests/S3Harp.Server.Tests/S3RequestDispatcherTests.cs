@@ -120,6 +120,102 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task ListObjectsV2_ReturnsContentsAndCommonPrefixes()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/a.txt", body: "hello world");
+        await Dispatch("PUT", "/my-bucket/docs/one.txt", body: "one");
+        await Dispatch("PUT", "/my-bucket/docs/two.txt", body: "two");
+
+        var context = await Dispatch("GET", "/my-bucket", query: "?list-type=2&delimiter=%2F");
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        var root = ReadBody(context).Root;
+        Assert.NotNull(root);
+        Assert.Equal(S3Namespace + "ListBucketResult", root.Name);
+        Assert.Equal("my-bucket", root.Element(S3Namespace + "Name")?.Value);
+        Assert.Equal("2", root.Element(S3Namespace + "KeyCount")?.Value);
+        Assert.Equal("false", root.Element(S3Namespace + "IsTruncated")?.Value);
+        var contents = Assert.Single(root.Elements(S3Namespace + "Contents"));
+        Assert.Equal("a.txt", contents.Element(S3Namespace + "Key")?.Value);
+        Assert.Equal("11", contents.Element(S3Namespace + "Size")?.Value);
+        Assert.Equal(
+            "\"5eb63bbbe01eeed093cb22bb8f5acdc3\"",
+            contents.Element(S3Namespace + "ETag")?.Value);
+        Assert.Equal(
+            "2026-09-16T12:00:00.000Z",
+            contents.Element(S3Namespace + "LastModified")?.Value);
+        var commonPrefix = Assert.Single(root.Elements(S3Namespace + "CommonPrefixes"));
+        Assert.Equal("docs/", commonPrefix.Element(S3Namespace + "Prefix")?.Value);
+    }
+
+    [Fact]
+    public async Task ListObjectsV2_PaginatesWithContinuationTokens()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        foreach (var key in new[] { "a", "b", "c" })
+        {
+            await Dispatch("PUT", $"/my-bucket/{key}", body: key);
+        }
+
+        var first = ReadBody(await Dispatch(
+            "GET", "/my-bucket", query: "?list-type=2&max-keys=2")).Root;
+        Assert.NotNull(first);
+        Assert.Equal("true", first.Element(S3Namespace + "IsTruncated")?.Value);
+        var token = first.Element(S3Namespace + "NextContinuationToken")?.Value;
+        Assert.False(string.IsNullOrEmpty(token));
+
+        var second = ReadBody(await Dispatch(
+            "GET", "/my-bucket",
+            query: $"?list-type=2&max-keys=2&continuation-token={Uri.EscapeDataString(token)}")).Root;
+        Assert.NotNull(second);
+        Assert.Equal("false", second.Element(S3Namespace + "IsTruncated")?.Value);
+        Assert.Equal(
+            ["c"],
+            second.Elements(S3Namespace + "Contents")
+                .Select(c => c.Element(S3Namespace + "Key")?.Value));
+    }
+
+    [Fact]
+    public async Task ListObjectsV2_StartAfter_BeginsStrictlyBeyondTheGivenKey()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        foreach (var key in new[] { "a", "b", "c" })
+        {
+            await Dispatch("PUT", $"/my-bucket/{key}", body: key);
+        }
+
+        var root = ReadBody(await Dispatch(
+            "GET", "/my-bucket", query: "?list-type=2&start-after=a")).Root;
+
+        Assert.NotNull(root);
+        Assert.Equal(
+            ["b", "c"],
+            root.Elements(S3Namespace + "Contents")
+                .Select(c => c.Element(S3Namespace + "Key")?.Value));
+    }
+
+    [Fact]
+    public async Task ListObjectsV2_OnAnUnknownBucket_ReportsNoSuchBucket()
+    {
+        var context = await Dispatch("GET", "/my-bucket", query: "?list-type=2");
+
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        Assert.Equal("NoSuchBucket", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task GetBucketWithoutListType_ReportsNotImplemented()
+    {
+        await Dispatch("PUT", "/my-bucket");
+
+        var context = await Dispatch("GET", "/my-bucket");
+
+        Assert.Equal(StatusCodes.Status501NotImplemented, context.Response.StatusCode);
+        Assert.Equal("NotImplemented", ReadErrorCode(context));
+    }
+
+    [Fact]
     public async Task SubresourceOperations_ReportNotImplemented()
     {
         var context = await Dispatch("POST", "/my-bucket/my-key", query: "?uploads");

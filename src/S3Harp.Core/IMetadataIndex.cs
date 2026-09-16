@@ -51,6 +51,14 @@ public interface IMetadataIndex
     Task<ObjectRecord?> FindObjectAsync(
         string bucket, string key, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Up to <paramref name="limit"/> records whose keys start with the prefix and
+    /// order at or above <paramref name="fromKey"/>, in ordinal key order.
+    /// </summary>
+    Task<IReadOnlyList<ObjectRecord>> ScanObjectsAsync(
+        string bucket, string prefix, string fromKey, int limit,
+        CancellationToken cancellationToken);
+
     /// <summary>Removes the record, returning its blob id; null when the key is unknown.</summary>
     Task<string?> DeleteObjectAsync(
         string bucket, string key, CancellationToken cancellationToken);

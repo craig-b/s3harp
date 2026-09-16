@@ -23,7 +23,7 @@ public sealed class S3RequestDispatcher(
     /// <summary>Query markers selecting S3 subresources and operations S3Harp will grow into.</summary>
     private static readonly string[] SubresourceMarkers =
     [
-        "acl", "cors", "delete", "lifecycle", "list-type", "location", "policy",
+        "acl", "cors", "delete", "lifecycle", "location", "policy",
         "tagging", "uploadId", "uploads", "versioning", "versions", "website",
     ];
 
@@ -41,6 +41,8 @@ public sealed class S3RequestDispatcher(
         return (context.Request.Method, bucket, key) switch
         {
             ("GET", "", null) => await ListBucketsAsync(cancellationToken).ConfigureAwait(false),
+            ("GET", not "", null) when context.Request.Query["list-type"] == "2" =>
+                await ListObjectsV2Async(context, bucket, cancellationToken).ConfigureAwait(false),
             ("PUT", not "", null) =>
                 await CreateBucketAsync(context, bucket, cancellationToken).ConfigureAwait(false),
             ("HEAD", not "", null) =>
@@ -119,6 +121,97 @@ public sealed class S3RequestDispatcher(
             DeleteBucketResult.NotEmpty => new S3ErrorResult(S3Errors.BucketNotEmpty),
             _ => new S3ErrorResult(S3Errors.NoSuchBucket),
         };
+
+    private async Task<IResult> ListObjectsV2Async(
+        HttpContext context, string bucket, CancellationToken cancellationToken)
+    {
+        if (!await index.BucketExistsAsync(bucket, cancellationToken).ConfigureAwait(false))
+        {
+            return new S3ErrorResult(S3Errors.NoSuchBucket);
+        }
+
+        var query = context.Request.Query;
+        var prefix = query["prefix"].ToString();
+        var delimiter = query["delimiter"].ToString() is { Length: > 0 } value ? value : null;
+        var startAfter = query["start-after"].ToString();
+        var continuationToken = query["continuation-token"].ToString();
+
+        var maxKeys = 1000;
+        if (query.ContainsKey("max-keys")
+            && (!int.TryParse(query["max-keys"], out maxKeys) || maxKeys < 0))
+        {
+            return new S3ErrorResult(S3Errors.InvalidArgument);
+        }
+
+        maxKeys = Math.Min(maxKeys, 1000);
+
+        var fromKey = "";
+        if (continuationToken.Length > 0)
+        {
+            try
+            {
+                fromKey = System.Text.Encoding.UTF8.GetString(
+                    Convert.FromBase64String(continuationToken));
+            }
+            catch (FormatException)
+            {
+                return new S3ErrorResult(S3Errors.InvalidArgument);
+            }
+        }
+        else if (startAfter.Length > 0)
+        {
+            fromKey = startAfter + "\0";
+        }
+
+        var listing = maxKeys == 0
+            ? new ObjectListing([], [], IsTruncated: false, null)
+            : await engine.ListObjectsAsync(
+                bucket, prefix, delimiter, fromKey, maxKeys, cancellationToken)
+                .ConfigureAwait(false);
+
+        var root = new XElement(S3Namespace + "ListBucketResult",
+            new XElement(S3Namespace + "Name", bucket),
+            new XElement(S3Namespace + "Prefix", prefix),
+            new XElement(S3Namespace + "MaxKeys", maxKeys),
+            new XElement(S3Namespace + "KeyCount",
+                listing.Objects.Count + listing.CommonPrefixes.Count),
+            new XElement(S3Namespace + "IsTruncated",
+                listing.IsTruncated ? "true" : "false"));
+        if (delimiter is not null)
+        {
+            root.Add(new XElement(S3Namespace + "Delimiter", delimiter));
+        }
+
+        if (startAfter.Length > 0)
+        {
+            root.Add(new XElement(S3Namespace + "StartAfter", startAfter));
+        }
+
+        if (continuationToken.Length > 0)
+        {
+            root.Add(new XElement(S3Namespace + "ContinuationToken", continuationToken));
+        }
+
+        if (listing.NextFromKey is not null)
+        {
+            root.Add(new XElement(S3Namespace + "NextContinuationToken",
+                Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(listing.NextFromKey))));
+        }
+
+        root.Add(listing.Objects.Select(record => new XElement(S3Namespace + "Contents",
+            new XElement(S3Namespace + "Key", record.Key),
+            new XElement(S3Namespace + "LastModified", FormatTimestamp(record.LastModified)),
+            new XElement(S3Namespace + "ETag", $"\"{record.ETag}\""),
+            new XElement(S3Namespace + "Size", record.Size),
+            new XElement(S3Namespace + "StorageClass", "STANDARD"))));
+        root.Add(listing.CommonPrefixes.Select(commonPrefix =>
+            new XElement(S3Namespace + "CommonPrefixes",
+                new XElement(S3Namespace + "Prefix", commonPrefix))));
+
+        return new S3XmlResult(
+            StatusCodes.Status200OK,
+            new XDocument(new XDeclaration("1.0", "UTF-8", standalone: null), root));
+    }
 
     private async Task<IResult> PutObjectAsync(
         HttpContext context, string bucket, string key, CancellationToken cancellationToken)

@@ -21,6 +21,11 @@ public static class S3Errors
         StatusCodes.Status400BadRequest,
         "The chunked request body ended before it was complete.");
 
+    public static S3Error InvalidArgument { get; } = new(
+        "InvalidArgument",
+        StatusCodes.Status400BadRequest,
+        "Invalid Argument.");
+
     public static S3Error InvalidBucketName { get; } = new(
         "InvalidBucketName",
         StatusCodes.Status400BadRequest,

@@ -149,6 +149,56 @@ public abstract class MetadataIndexContractTests
         Assert.Null(await Index.DeleteObjectAsync("alpha", "missing", Token));
     }
 
+    [Fact]
+    public async Task ScanObjects_ReturnsKeysInOrdinalOrderFromTheInclusiveStart()
+    {
+        await Create("alpha");
+        foreach (var key in new[] { "c", "a", "b" })
+        {
+            await Index.PutObjectAsync("alpha", Record(key, "blob-" + key), Token);
+        }
+
+        var all = await Index.ScanObjectsAsync("alpha", "", "", 10, Token);
+        var fromB = await Index.ScanObjectsAsync("alpha", "", "b", 10, Token);
+
+        Assert.Equal(["a", "b", "c"], all.Select(o => o.Key));
+        Assert.Equal(["b", "c"], fromB.Select(o => o.Key));
+    }
+
+    [Fact]
+    public async Task ScanObjects_ReturnsOnlyKeysUnderThePrefix()
+    {
+        await Create("alpha");
+        foreach (var key in new[] { "logs/1", "logs/2", "logs", "other" })
+        {
+            await Index.PutObjectAsync("alpha", Record(key, "blob"), Token);
+        }
+
+        var scanned = await Index.ScanObjectsAsync("alpha", "logs/", "", 10, Token);
+
+        Assert.Equal(["logs/1", "logs/2"], scanned.Select(o => o.Key));
+    }
+
+    [Fact]
+    public async Task ScanObjects_HonorsTheLimit()
+    {
+        await Create("alpha");
+        foreach (var key in new[] { "a", "b", "c" })
+        {
+            await Index.PutObjectAsync("alpha", Record(key, "blob"), Token);
+        }
+
+        var scanned = await Index.ScanObjectsAsync("alpha", "", "", 2, Token);
+
+        Assert.Equal(["a", "b"], scanned.Select(o => o.Key));
+    }
+
+    [Fact]
+    public async Task ScanObjects_OnAnUnknownBucket_ReturnsNothing()
+    {
+        Assert.Empty(await Index.ScanObjectsAsync("missing", "", "", 10, Token));
+    }
+
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     private static ObjectRecord Record(string key, string blobId) => new(

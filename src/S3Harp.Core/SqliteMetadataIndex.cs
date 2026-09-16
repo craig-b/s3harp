@@ -200,6 +200,41 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    public async Task<IReadOnlyList<ObjectRecord>> ScanObjectsAsync(
+        string bucket, string prefix, string fromKey, int limit,
+        CancellationToken cancellationToken)
+    {
+        var lowerBound = string.CompareOrdinal(fromKey, prefix) > 0 ? fromKey : prefix;
+        var upperBound = KeyRange.PrefixSuccessor(prefix);
+        var connection = OpenConnection();
+        await using (connection.ConfigureAwait(false))
+        {
+            var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT key, blob_id, size, etag, content_type, metadata, last_modified
+                FROM objects
+                WHERE bucket = $bucket AND key >= $lower AND ($upper IS NULL OR key < $upper)
+                ORDER BY key
+                LIMIT $limit
+                """;
+            command.Parameters.AddWithValue("$bucket", bucket);
+            command.Parameters.AddWithValue("$lower", lowerBound);
+            command.Parameters.AddWithValue("$upper", (object?)upperBound ?? DBNull.Value);
+            command.Parameters.AddWithValue("$limit", limit);
+            var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            await using (reader.ConfigureAwait(false))
+            {
+                var records = new List<ObjectRecord>();
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    records.Add(ReadObjectRecord(reader));
+                }
+
+                return records;
+            }
+        }
+    }
+
     public async Task<string?> DeleteObjectAsync(
         string bucket, string key, CancellationToken cancellationToken)
     {
