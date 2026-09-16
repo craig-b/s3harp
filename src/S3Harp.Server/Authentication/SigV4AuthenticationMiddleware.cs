@@ -1,4 +1,5 @@
 using System.Globalization;
+using S3Harp.Core;
 
 namespace S3Harp.Server.Authentication;
 
@@ -94,7 +95,7 @@ public sealed class SigV4AuthenticationMiddleware(
             _ => new Sha256VerifyingStream(request.Body, payloadHash),
         };
 
-        if (ChecksumAlgorithms.TryFindDeclared(request.Headers, out var algorithm, out var declared))
+        if (ChecksumHeaders.TryFindDeclared(request.Headers, out var algorithm, out var declared))
         {
             request.Body = new ChecksumVerifyingStream(
                 request.Body, ChecksumAlgorithms.Create(algorithm), declared);
@@ -108,7 +109,7 @@ public sealed class SigV4AuthenticationMiddleware(
     {
         string? trailer = headers["x-amz-trailer"];
         return trailer is not null
-            && ChecksumAlgorithms.TryParseHeaderName(trailer.Trim(), out var algorithm)
+            && ChecksumHeaders.TryParseHeaderName(trailer.Trim(), out var algorithm)
             ? algorithm
             : null;
     }

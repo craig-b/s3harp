@@ -1,4 +1,5 @@
 using System.Text;
+using S3Harp.Core;
 using S3Harp.Server.Authentication;
 using Xunit;
 

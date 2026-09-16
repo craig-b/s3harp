@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using S3Harp.Core;
 
 namespace S3Harp.Server.Authentication;
 
@@ -28,7 +29,7 @@ public sealed class SigV4ChunkedStream(
         trailerChecksum is { } algorithm ? ChecksumAlgorithms.Create(algorithm) : null;
 
     private readonly string? checksumTrailer =
-        trailerChecksum is { } named ? ChecksumAlgorithms.HeaderName(named) : null;
+        trailerChecksum is { } named ? ChecksumHeaders.HeaderName(named) : null;
 
     private string previousSignature = seedSignature;
     private byte[] currentChunk = [];

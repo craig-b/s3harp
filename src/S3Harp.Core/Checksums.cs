@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 
-namespace S3Harp.Server.Authentication;
+namespace S3Harp.Core;
 
 /// <summary>The checksum algorithms S3 lets a client attach to a payload.</summary>
 public enum ChecksumAlgorithm
@@ -12,66 +12,9 @@ public enum ChecksumAlgorithm
     Sha256,
 }
 
-/// <summary>
-/// Names the checksum algorithms by their <c>x-amz-checksum-*</c> headers and
-/// creates the incremental computation for each.
-/// </summary>
+/// <summary>Creates the incremental computation of each checksum algorithm.</summary>
 public static class ChecksumAlgorithms
 {
-    private const string HeaderPrefix = "x-amz-checksum-";
-
-    private static readonly (ChecksumAlgorithm Algorithm, string Suffix)[] Names =
-    [
-        (ChecksumAlgorithm.Crc32, "crc32"),
-        (ChecksumAlgorithm.Crc32C, "crc32c"),
-        (ChecksumAlgorithm.Crc64Nvme, "crc64nvme"),
-        (ChecksumAlgorithm.Sha1, "sha1"),
-        (ChecksumAlgorithm.Sha256, "sha256"),
-    ];
-
-    public static string HeaderName(ChecksumAlgorithm algorithm) =>
-        HeaderPrefix + Names.First(name => name.Algorithm == algorithm).Suffix;
-
-    public static bool TryParseHeaderName(string headerName, out ChecksumAlgorithm algorithm)
-    {
-        ArgumentNullException.ThrowIfNull(headerName);
-        foreach (var (candidate, suffix) in Names)
-        {
-            if (headerName.Length == HeaderPrefix.Length + suffix.Length
-                && headerName.StartsWith(HeaderPrefix, StringComparison.OrdinalIgnoreCase)
-                && headerName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-            {
-                algorithm = candidate;
-                return true;
-            }
-        }
-
-        algorithm = default;
-        return false;
-    }
-
-    /// <summary>
-    /// The checksum a request declares for its body in an <c>x-amz-checksum-*</c> header.
-    /// </summary>
-    public static bool TryFindDeclared(
-        IHeaderDictionary headers, out ChecksumAlgorithm algorithm, out string declared)
-    {
-        ArgumentNullException.ThrowIfNull(headers);
-        foreach (var (candidate, _) in Names)
-        {
-            if (headers.TryGetValue(HeaderName(candidate), out var value) && value.Count > 0)
-            {
-                algorithm = candidate;
-                declared = value.ToString().Trim();
-                return true;
-            }
-        }
-
-        algorithm = default;
-        declared = "";
-        return false;
-    }
-
     public static IncrementalChecksum Create(ChecksumAlgorithm algorithm) => algorithm switch
     {
         ChecksumAlgorithm.Crc32 => new CrcChecksum(CrcChecksum.Crc32Table, width: 32),

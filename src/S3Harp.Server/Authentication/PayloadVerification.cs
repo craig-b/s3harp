@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using S3Harp.Core;
 
 namespace S3Harp.Server.Authentication;
 
