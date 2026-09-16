@@ -38,12 +38,12 @@ public sealed class ConcurrencyStressTests : IDisposable
             using var content = new MemoryStream(Encoding.UTF8.GetBytes(body));
             return await engine.PutObjectAsync(
                 "alpha", "contested", content, null,
-                new Dictionary<string, string>(), CancellationToken.None);
+                new Dictionary<string, string>(), null, CancellationToken.None);
         }, Token)));
 
         Assert.All(outcomes, outcome =>
         {
-            Assert.True(outcome.BucketExists);
+            Assert.Equal(PutObjectStatus.Stored, outcome.Status);
             Assert.NotNull(outcome.ETag);
         });
         var download = await engine.GetObjectAsync("alpha", "contested", Token);
@@ -124,8 +124,8 @@ public sealed class ConcurrencyStressTests : IDisposable
     {
         using var content = new MemoryStream(Encoding.UTF8.GetBytes(body));
         var outcome = await engine.PutObjectAsync(
-            "alpha", key, content, null, new Dictionary<string, string>(), Token);
-        Assert.True(outcome.BucketExists);
+            "alpha", key, content, null, new Dictionary<string, string>(), null, Token);
+        Assert.Equal(PutObjectStatus.Stored, outcome.Status);
     }
 
     private static async Task<string> ReadContent(ObjectDownload download)

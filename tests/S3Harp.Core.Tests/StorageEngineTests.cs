@@ -42,7 +42,7 @@ public sealed class StorageEngineTests : IDisposable
 
         var result = await Put("alpha", "key", "hello world");
 
-        Assert.True(result.BucketExists);
+        Assert.Equal(PutObjectStatus.Stored, result.Status);
         Assert.Equal("5eb63bbbe01eeed093cb22bb8f5acdc3", result.ETag);
     }
 
@@ -60,11 +60,27 @@ public sealed class StorageEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task Put_WhoseConditionFails_ReportsItAndReclaimsTheWrittenBlob()
+    {
+        await CreateBucket("alpha");
+        await Put("alpha", "key", "first version");
+
+        var result = await Put(
+            "alpha", "key", "second version",
+            condition: new WriteCondition(MustNotMatch: ETagCondition.AnyObject));
+
+        Assert.Equal(PutObjectStatus.PreconditionFailed, result.Status);
+        Assert.Equal("first version", await ReadContent(
+            (await engine.GetObjectAsync("alpha", "key", Token))!));
+        Assert.Equal(1, CountBlobFiles());
+    }
+
+    [Fact]
     public async Task Put_IntoAMissingBucket_ReportsItAndStoresNothing()
     {
         var result = await Put("missing", "key", "content");
 
-        Assert.False(result.BucketExists);
+        Assert.Equal(PutObjectStatus.BucketMissing, result.Status);
         Assert.Equal(0, CountBlobFiles());
     }
 
@@ -97,12 +113,12 @@ public sealed class StorageEngineTests : IDisposable
 
     private async Task<PutObjectOutcome> Put(
         string bucket, string key, string content, string? contentType = null,
-        IReadOnlyDictionary<string, string>? metadata = null)
+        IReadOnlyDictionary<string, string>? metadata = null, WriteCondition? condition = null)
     {
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
         return await engine.PutObjectAsync(
             bucket, key, stream, contentType,
-            metadata ?? new Dictionary<string, string>(), Token);
+            metadata ?? new Dictionary<string, string>(), condition, Token);
     }
 
     private static async Task<string> ReadContent(ObjectDownload download)

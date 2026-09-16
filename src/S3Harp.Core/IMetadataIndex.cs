@@ -13,8 +13,73 @@ public sealed record ObjectRecord(
     IReadOnlyDictionary<string, string> Metadata,
     DateTimeOffset LastModified);
 
+/// <summary>Names the object at a key by ETag, or any object at the key when the ETag is null.</summary>
+public sealed record ETagCondition(string? ETag)
+{
+    public static ETagCondition AnyObject { get; } = new(ETag: null);
+
+    public bool Matches(ObjectRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        return ETag is null || string.Equals(ETag, record.ETag, StringComparison.Ordinal);
+    }
+}
+
+public enum WriteConditionResult
+{
+    Satisfied,
+    ObjectMissing,
+    PreconditionFailed,
+}
+
+/// <summary>
+/// What must be true of the object already at a key for a write to proceed:
+/// an object the write must replace, or one it must not.
+/// </summary>
+public sealed record WriteCondition(
+    ETagCondition? MustMatch = null, ETagCondition? MustNotMatch = null)
+{
+    public WriteConditionResult Check(ObjectRecord? existing)
+    {
+        if (MustMatch is not null)
+        {
+            if (existing is null)
+            {
+                return WriteConditionResult.ObjectMissing;
+            }
+
+            if (!MustMatch.Matches(existing))
+            {
+                return WriteConditionResult.PreconditionFailed;
+            }
+        }
+
+        return MustNotMatch is not null && existing is not null && MustNotMatch.Matches(existing)
+            ? WriteConditionResult.PreconditionFailed
+            : WriteConditionResult.Satisfied;
+    }
+}
+
+public enum PutObjectStatus
+{
+    Stored,
+    BucketMissing,
+    ObjectMissing,
+    PreconditionFailed,
+}
+
 /// <summary>The outcome of storing an object record.</summary>
-public sealed record PutObjectResult(bool BucketExists, string? ReplacedBlobId);
+public sealed record PutObjectResult(PutObjectStatus Status, string? ReplacedBlobId)
+{
+    public static PutObjectResult BucketMissing { get; } = new(PutObjectStatus.BucketMissing, null);
+
+    /// <summary>The refusal a failed write condition maps to.</summary>
+    public static PutObjectResult Refused(WriteConditionResult condition) => condition switch
+    {
+        WriteConditionResult.ObjectMissing => new(PutObjectStatus.ObjectMissing, null),
+        _ => new(PutObjectStatus.PreconditionFailed, null),
+    };
+}
 
 public enum DeleteBucketResult
 {
@@ -49,12 +114,33 @@ public sealed record PartRecord(int PartNumber, string BlobId, long Size, string
 /// <summary>The outcome of storing a part record.</summary>
 public sealed record PutPartResult(bool UploadExists, string? ReplacedBlobId);
 
+public enum CompleteUploadStatus
+{
+    Completed,
+    NoSuchUpload,
+    InvalidPart,
+    InvalidPartOrder,
+    ObjectMissing,
+    PreconditionFailed,
+}
+
 /// <summary>
-/// The outcome of completing an upload: the blob ids the completion released —
+/// The outcome of completing an upload: on completion, the blob ids it released —
 /// the parts and any object record the completion replaced.
 /// </summary>
 public sealed record CompleteUploadResult(
-    string? ReplacedBlobId, IReadOnlyList<string> PartBlobIds);
+    CompleteUploadStatus Status, string? ReplacedBlobId, IReadOnlyList<string> PartBlobIds)
+{
+    public static CompleteUploadResult NoSuchUpload { get; } =
+        new(CompleteUploadStatus.NoSuchUpload, null, []);
+
+    /// <summary>The refusal a failed write condition maps to.</summary>
+    public static CompleteUploadResult Refused(WriteConditionResult condition) => condition switch
+    {
+        WriteConditionResult.ObjectMissing => new(CompleteUploadStatus.ObjectMissing, null, []),
+        _ => new(CompleteUploadStatus.PreconditionFailed, null, []),
+    };
+}
 
 /// <summary>
 /// The metadata index: the authoritative record of buckets and the key → blob mapping.
@@ -78,11 +164,13 @@ public interface IMetadataIndex
     Task<DeleteBucketOutcome> DeleteBucketAsync(string name, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Stores the record atomically, replacing any record at the same key.
-    /// The result carries the replaced record's blob id so its file can be reclaimed.
+    /// Stores the record atomically, replacing any record at the same key when the
+    /// condition, if any, holds against that record. The result carries the
+    /// replaced record's blob id so its file can be reclaimed.
     /// </summary>
     Task<PutObjectResult> PutObjectAsync(
-        string bucket, ObjectRecord record, CancellationToken cancellationToken);
+        string bucket, ObjectRecord record, WriteCondition? condition,
+        CancellationToken cancellationToken);
 
     Task<ObjectRecord?> FindObjectAsync(
         string bucket, string key, CancellationToken cancellationToken);
@@ -121,10 +209,11 @@ public interface IMetadataIndex
 
     /// <summary>
     /// Atomically stores the assembled object record and removes the upload with its
-    /// parts; null when the upload is unknown.
+    /// parts, when the condition, if any, holds against the record already at the key.
+    /// A refused completion leaves the upload and its parts in place.
     /// </summary>
-    Task<CompleteUploadResult?> CompleteUploadAsync(
-        string bucket, string uploadId, ObjectRecord record,
+    Task<CompleteUploadResult> CompleteUploadAsync(
+        string bucket, string uploadId, ObjectRecord record, WriteCondition? condition,
         CancellationToken cancellationToken);
 
     /// <summary>

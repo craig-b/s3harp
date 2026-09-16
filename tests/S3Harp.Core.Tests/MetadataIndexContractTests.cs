@@ -82,7 +82,7 @@ public abstract class MetadataIndexContractTests
     public async Task DeletingABucketHoldingObjects_ReportsItNotEmpty()
     {
         await Create("alpha");
-        await Index.PutObjectAsync("alpha", Record("key", "blob-1"), Token);
+        await Index.PutObjectAsync("alpha", Record("key", "blob-1"), null, Token);
 
         Assert.Equal(
             DeleteBucketResult.NotEmpty, (await Index.DeleteBucketAsync("alpha", Token)).Status);
@@ -92,9 +92,9 @@ public abstract class MetadataIndexContractTests
     [Fact]
     public async Task PutObject_IntoAMissingBucket_IsRefused()
     {
-        var result = await Index.PutObjectAsync("missing", Record("key", "blob-1"), Token);
+        var result = await Index.PutObjectAsync("missing", Record("key", "blob-1"), null, Token);
 
-        Assert.False(result.BucketExists);
+        Assert.Equal(PutObjectStatus.BucketMissing, result.Status);
     }
 
     [Fact]
@@ -102,7 +102,7 @@ public abstract class MetadataIndexContractTests
     {
         await Create("alpha");
 
-        await Index.PutObjectAsync("alpha", Record("key", "blob-1"), Token);
+        await Index.PutObjectAsync("alpha", Record("key", "blob-1"), null, Token);
         var found = await Index.FindObjectAsync("alpha", "key", Token);
 
         Assert.NotNull(found);
@@ -119,11 +119,11 @@ public abstract class MetadataIndexContractTests
     public async Task PutObject_OverAnExistingKey_ReturnsTheReplacedBlobId()
     {
         await Create("alpha");
-        await Index.PutObjectAsync("alpha", Record("key", "blob-1"), Token);
+        await Index.PutObjectAsync("alpha", Record("key", "blob-1"), null, Token);
 
-        var result = await Index.PutObjectAsync("alpha", Record("key", "blob-2"), Token);
+        var result = await Index.PutObjectAsync("alpha", Record("key", "blob-2"), null, Token);
 
-        Assert.True(result.BucketExists);
+        Assert.Equal(PutObjectStatus.Stored, result.Status);
         Assert.Equal("blob-1", result.ReplacedBlobId);
         Assert.Equal("blob-2", (await Index.FindObjectAsync("alpha", "key", Token))?.BlobId);
     }
@@ -140,7 +140,7 @@ public abstract class MetadataIndexContractTests
     public async Task DeleteObject_ReturnsTheBlobIdAndRemovesTheRecord()
     {
         await Create("alpha");
-        await Index.PutObjectAsync("alpha", Record("key", "blob-1"), Token);
+        await Index.PutObjectAsync("alpha", Record("key", "blob-1"), null, Token);
 
         Assert.Equal("blob-1", await Index.DeleteObjectAsync("alpha", "key", Token));
         Assert.Null(await Index.FindObjectAsync("alpha", "key", Token));
@@ -160,7 +160,7 @@ public abstract class MetadataIndexContractTests
         await Create("alpha");
         foreach (var key in new[] { "c", "a", "b" })
         {
-            await Index.PutObjectAsync("alpha", Record(key, "blob-" + key), Token);
+            await Index.PutObjectAsync("alpha", Record(key, "blob-" + key), null, Token);
         }
 
         var all = await Index.ScanObjectsAsync("alpha", "", "", 10, Token);
@@ -176,7 +176,7 @@ public abstract class MetadataIndexContractTests
         await Create("alpha");
         foreach (var key in new[] { "logs/1", "logs/2", "logs", "other" })
         {
-            await Index.PutObjectAsync("alpha", Record(key, "blob"), Token);
+            await Index.PutObjectAsync("alpha", Record(key, "blob"), null, Token);
         }
 
         var scanned = await Index.ScanObjectsAsync("alpha", "logs/", "", 10, Token);
@@ -190,7 +190,7 @@ public abstract class MetadataIndexContractTests
         await Create("alpha");
         foreach (var key in new[] { "a", "b", "c" })
         {
-            await Index.PutObjectAsync("alpha", Record(key, "blob"), Token);
+            await Index.PutObjectAsync("alpha", Record(key, "blob"), null, Token);
         }
 
         var scanned = await Index.ScanObjectsAsync("alpha", "", "", 2, Token);
@@ -298,12 +298,12 @@ public abstract class MetadataIndexContractTests
     {
         await StartUpload("alpha", "u1");
         await Index.PutPartAsync("alpha", "key", "u1", Part(1, "blob-1"), Token);
-        await Index.PutObjectAsync("alpha", Record("key", "blob-old"), Token);
+        await Index.PutObjectAsync("alpha", Record("key", "blob-old"), null, Token);
 
         var result = await Index.CompleteUploadAsync(
-            "alpha", "u1", Record("key", "blob-final"), Token);
+            "alpha", "u1", Record("key", "blob-final"), null, Token);
 
-        Assert.NotNull(result);
+        Assert.Equal(CompleteUploadStatus.Completed, result.Status);
         Assert.Equal("blob-old", result.ReplacedBlobId);
         Assert.Equal(["blob-1"], result.PartBlobIds);
         Assert.Equal("blob-final", (await Index.FindObjectAsync("alpha", "key", Token))?.BlobId);
@@ -311,12 +311,59 @@ public abstract class MetadataIndexContractTests
     }
 
     [Fact]
+    public async Task PutObject_WhoseConditionTheExistingObjectFails_LeavesItUntouched()
+    {
+        await Create("alpha");
+        await Index.PutObjectAsync("alpha", Record("key", "blob-old"), null, Token);
+
+        var result = await Index.PutObjectAsync(
+            "alpha", Record("key", "blob-new"),
+            new WriteCondition(MustNotMatch: ETagCondition.AnyObject), Token);
+
+        Assert.Equal(PutObjectStatus.PreconditionFailed, result.Status);
+        Assert.Null(result.ReplacedBlobId);
+        Assert.Equal("blob-old", (await Index.FindObjectAsync("alpha", "key", Token))?.BlobId);
+    }
+
+    [Fact]
+    public async Task PutObject_RequiringAnObjectThatIsMissing_ReportsIt()
+    {
+        await Create("alpha");
+
+        var result = await Index.PutObjectAsync(
+            "alpha", Record("key", "blob-new"),
+            new WriteCondition(MustMatch: ETagCondition.AnyObject), Token);
+
+        Assert.Equal(PutObjectStatus.ObjectMissing, result.Status);
+        Assert.Null(await Index.FindObjectAsync("alpha", "key", Token));
+    }
+
+    [Fact]
+    public async Task CompleteUpload_WhoseConditionFails_KeepsTheUploadAndItsParts()
+    {
+        await StartUpload("alpha", "u1");
+        await Index.PutPartAsync("alpha", "key", "u1", Part(1, "blob-1"), Token);
+        await Index.PutObjectAsync("alpha", Record("key", "blob-old"), null, Token);
+
+        var result = await Index.CompleteUploadAsync(
+            "alpha", "u1", Record("key", "blob-final"),
+            new WriteCondition(MustNotMatch: ETagCondition.AnyObject), Token);
+
+        Assert.Equal(CompleteUploadStatus.PreconditionFailed, result.Status);
+        Assert.Equal("blob-old", (await Index.FindObjectAsync("alpha", "key", Token))?.BlobId);
+        Assert.NotNull(await Index.FindUploadAsync("alpha", "key", "u1", Token));
+        Assert.Single(await Index.ListPartsAsync("alpha", "key", "u1", Token));
+    }
+
+    [Fact]
     public async Task CompletingAnUnknownUpload_ReturnsNothing()
     {
         await Create("alpha");
 
-        Assert.Null(await Index.CompleteUploadAsync(
-            "alpha", "missing", Record("key", "blob"), Token));
+        var result = await Index.CompleteUploadAsync(
+            "alpha", "missing", Record("key", "blob"), null, Token);
+
+        Assert.Equal(CompleteUploadStatus.NoSuchUpload, result.Status);
     }
 
     [Fact]

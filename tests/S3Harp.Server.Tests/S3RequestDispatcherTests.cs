@@ -773,6 +773,65 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task PutObject_WithIfNoneMatchStar_RefusesToOverwrite()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/key", body: "first");
+
+        var context = await Dispatch(
+            "PUT", "/my-bucket/key", body: "second",
+            configure: request => request.Headers.IfNoneMatch = "*");
+
+        Assert.Equal(StatusCodes.Status412PreconditionFailed, context.Response.StatusCode);
+        Assert.Equal("PreconditionFailed", ReadErrorCode(context));
+        Assert.Equal("first", ReadBodyText(await Dispatch("GET", "/my-bucket/key")));
+    }
+
+    [Fact]
+    public async Task PutObject_WithIfMatch_OnAMissingKey_ReportsNoSuchKey()
+    {
+        await Dispatch("PUT", "/my-bucket");
+
+        var context = await Dispatch(
+            "PUT", "/my-bucket/key", body: "content",
+            configure: request => request.Headers.IfMatch = "*");
+
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        Assert.Equal("NoSuchKey", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task PutObject_WithAMatchingIfMatch_Overwrites()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/key", body: "hello world");
+
+        var context = await Dispatch(
+            "PUT", "/my-bucket/key", body: "second",
+            configure: request => request.Headers.IfMatch = "\"5eb63bbbe01eeed093cb22bb8f5acdc3\"");
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        Assert.Equal("second", ReadBodyText(await Dispatch("GET", "/my-bucket/key")));
+    }
+
+    [Fact]
+    public async Task CompleteUpload_WithIfNoneMatchStar_RefusesToOverwrite()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/key", body: "existing");
+        var uploadId = await Initiate("/my-bucket/key");
+        var etag = await UploadPart("/my-bucket/key", uploadId, 1, "part");
+
+        var context = await Dispatch(
+            "POST", "/my-bucket/key", query: $"?uploadId={uploadId}",
+            body: $"<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>{etag}</ETag></Part></CompleteMultipartUpload>",
+            configure: request => request.Headers.IfNoneMatch = "*");
+
+        Assert.Equal(StatusCodes.Status412PreconditionFailed, context.Response.StatusCode);
+        Assert.Equal("existing", ReadBodyText(await Dispatch("GET", "/my-bucket/key")));
+    }
+
+    [Fact]
     public async Task CopyingAMissingSource_ReportsNoSuchKey()
     {
         await Dispatch("PUT", "/my-bucket");

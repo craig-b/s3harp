@@ -433,20 +433,27 @@ public sealed class S3RequestDispatcher(
         {
             outcome = await engine.PutObjectAsync(
                 bucket, key, context.Request.Body, context.Request.ContentType,
-                ReadMetadataHeaders(context.Request), cancellationToken).ConfigureAwait(false);
+                ReadMetadataHeaders(context.Request),
+                WriteConditionHeaders.Parse(context.Request.Headers),
+                cancellationToken).ConfigureAwait(false);
         }
         catch (PayloadVerificationException exception)
         {
             return new S3ErrorResult(exception.Error);
         }
 
-        if (!outcome.BucketExists)
+        switch (outcome.Status)
         {
-            return new S3ErrorResult(S3Errors.NoSuchBucket);
+            case PutObjectStatus.BucketMissing:
+                return new S3ErrorResult(S3Errors.NoSuchBucket);
+            case PutObjectStatus.ObjectMissing:
+                return new S3ErrorResult(S3Errors.NoSuchKey);
+            case PutObjectStatus.PreconditionFailed:
+                return new S3ErrorResult(S3Errors.PreconditionFailed);
+            default:
+                context.Response.Headers.ETag = $"\"{outcome.ETag}\"";
+                return new S3StatusResult(StatusCodes.Status200OK);
         }
-
-        context.Response.Headers.ETag = $"\"{outcome.ETag}\"";
-        return new S3StatusResult(StatusCodes.Status200OK);
     }
 
     private async Task<IResult> GetObjectAsync(
@@ -717,13 +724,16 @@ public sealed class S3RequestDispatcher(
         }
 
         var outcome = await engine.CompleteUploadAsync(
-            bucket, key, context.Request.Query["uploadId"].ToString(), parts, cancellationToken)
+            bucket, key, context.Request.Query["uploadId"].ToString(), parts,
+            WriteConditionHeaders.Parse(context.Request.Headers), cancellationToken)
             .ConfigureAwait(false);
         return outcome.Status switch
         {
             CompleteUploadStatus.NoSuchUpload => new S3ErrorResult(S3Errors.NoSuchUpload),
             CompleteUploadStatus.InvalidPart => new S3ErrorResult(S3Errors.InvalidPart),
             CompleteUploadStatus.InvalidPartOrder => new S3ErrorResult(S3Errors.InvalidPartOrder),
+            CompleteUploadStatus.ObjectMissing => new S3ErrorResult(S3Errors.NoSuchKey),
+            CompleteUploadStatus.PreconditionFailed => new S3ErrorResult(S3Errors.PreconditionFailed),
             _ => new S3XmlResult(
                 StatusCodes.Status200OK,
                 new XDocument(

@@ -58,18 +58,25 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
     }
 
     public Task<PutObjectResult> PutObjectAsync(
-        string bucket, ObjectRecord record, CancellationToken cancellationToken)
+        string bucket, ObjectRecord record, WriteCondition? condition,
+        CancellationToken cancellationToken)
     {
         lock (gate)
         {
             if (!buckets.TryGetValue(bucket, out var state))
             {
-                return Task.FromResult(new PutObjectResult(BucketExists: false, null));
+                return Task.FromResult(PutObjectResult.BucketMissing);
             }
 
             state.Objects.TryGetValue(record.Key, out var replaced);
+            if (condition?.Check(replaced) is { } refusal
+                && refusal != WriteConditionResult.Satisfied)
+            {
+                return Task.FromResult(PutObjectResult.Refused(refusal));
+            }
+
             state.Objects[record.Key] = record;
-            return Task.FromResult(new PutObjectResult(BucketExists: true, replaced?.BlobId));
+            return Task.FromResult(new PutObjectResult(PutObjectStatus.Stored, replaced?.BlobId));
         }
     }
 
@@ -183,8 +190,8 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
         }
     }
 
-    public Task<CompleteUploadResult?> CompleteUploadAsync(
-        string bucket, string uploadId, ObjectRecord record,
+    public Task<CompleteUploadResult> CompleteUploadAsync(
+        string bucket, string uploadId, ObjectRecord record, WriteCondition? condition,
         CancellationToken cancellationToken)
     {
         lock (gate)
@@ -192,14 +199,22 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
             if (FindUploadState(bucket, record.Key, uploadId) is not { } upload
                 || !buckets.TryGetValue(bucket, out var state))
             {
-                return Task.FromResult<CompleteUploadResult?>(null);
+                return Task.FromResult(CompleteUploadResult.NoSuchUpload);
             }
 
             state.Objects.TryGetValue(record.Key, out var replaced);
+            if (condition?.Check(replaced) is { } refusal
+                && refusal != WriteConditionResult.Satisfied)
+            {
+                return Task.FromResult(CompleteUploadResult.Refused(refusal));
+            }
+
             state.Objects[record.Key] = record;
             state.Uploads.Remove(uploadId);
-            return Task.FromResult<CompleteUploadResult?>(new CompleteUploadResult(
-                replaced?.BlobId, [.. upload.Parts.Values.Select(p => p.BlobId)]));
+            return Task.FromResult(new CompleteUploadResult(
+                CompleteUploadStatus.Completed,
+                replaced?.BlobId,
+                [.. upload.Parts.Values.Select(p => p.BlobId)]));
         }
     }
 

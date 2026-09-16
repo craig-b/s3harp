@@ -159,6 +159,49 @@ public sealed class ObjectTests : IDisposable
     }
 
     [Fact]
+    public async Task PutObject_WithIfNoneMatchStar_CreatesOnceThenReportsPreconditionFailed()
+    {
+        using var s3 = await CreateClientWithBucket();
+        var request = new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "once.txt",
+            ContentBody = "first",
+            IfNoneMatch = "*",
+        };
+
+        await s3.PutObjectAsync(request, Token);
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
+            () => s3.PutObjectAsync(request, Token));
+
+        Assert.Equal(HttpStatusCode.PreconditionFailed, exception.StatusCode);
+        Assert.Equal("PreconditionFailed", exception.ErrorCode);
+    }
+
+    [Fact]
+    public async Task PutObject_WithAMismatchedIfMatch_ReportsPreconditionFailed()
+    {
+        using var s3 = await CreateClientWithBucket();
+        await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "guarded.txt",
+            ContentBody = "first",
+        }, Token);
+
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() => s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "guarded.txt",
+                ContentBody = "second",
+                IfMatch = "\"ABCORZ\"",
+            }, Token));
+
+        Assert.Equal("PreconditionFailed", exception.ErrorCode);
+    }
+
+    [Fact]
     public async Task PutObject_ReturnsTheMd5ETag()
     {
         using var s3 = await CreateClientWithBucket();

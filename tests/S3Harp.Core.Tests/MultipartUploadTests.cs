@@ -50,7 +50,7 @@ public sealed class MultipartUploadTests : IDisposable
         Assert.Equal(SecondPartETag, second);
 
         var outcome = await engine.CompleteUploadAsync(
-            "alpha", "key", uploadId, [(1, FirstPartETag), (2, SecondPartETag)], Token);
+            "alpha", "key", uploadId, [(1, FirstPartETag), (2, SecondPartETag)], null, Token);
 
         Assert.Equal(CompleteUploadStatus.Completed, outcome.Status);
         Assert.Equal(CombinedETag, outcome.ETag);
@@ -70,7 +70,7 @@ public sealed class MultipartUploadTests : IDisposable
         await UploadPart(uploadId, 2, "S3Harp!");
 
         await engine.CompleteUploadAsync(
-            "alpha", "key", uploadId, [(1, FirstPartETag), (2, SecondPartETag)], Token);
+            "alpha", "key", uploadId, [(1, FirstPartETag), (2, SecondPartETag)], null, Token);
 
         Assert.Equal(1, CountBlobFiles());
     }
@@ -82,7 +82,7 @@ public sealed class MultipartUploadTests : IDisposable
         await UploadPart(uploadId, 1, "Hello, ");
 
         var outcome = await engine.CompleteUploadAsync(
-            "alpha", "key", uploadId, [(1, SecondPartETag)], Token);
+            "alpha", "key", uploadId, [(1, SecondPartETag)], null, Token);
 
         Assert.Equal(CompleteUploadStatus.InvalidPart, outcome.Status);
     }
@@ -95,7 +95,7 @@ public sealed class MultipartUploadTests : IDisposable
         await UploadPart(uploadId, 2, "S3Harp!");
 
         var outcome = await engine.CompleteUploadAsync(
-            "alpha", "key", uploadId, [(2, SecondPartETag), (1, FirstPartETag)], Token);
+            "alpha", "key", uploadId, [(2, SecondPartETag), (1, FirstPartETag)], null, Token);
 
         Assert.Equal(CompleteUploadStatus.InvalidPartOrder, outcome.Status);
     }
@@ -106,9 +106,31 @@ public sealed class MultipartUploadTests : IDisposable
         await CreateBucket();
 
         var outcome = await engine.CompleteUploadAsync(
-            "alpha", "key", "missing", [(1, FirstPartETag)], Token);
+            "alpha", "key", "missing", [(1, FirstPartETag)], null, Token);
 
         Assert.Equal(CompleteUploadStatus.NoSuchUpload, outcome.Status);
+    }
+
+    [Fact]
+    public async Task CompletingAnUpload_WhoseConditionFails_KeepsTheUploadAndItsParts()
+    {
+        var uploadId = await StartUpload();
+        await UploadPart(uploadId, 1, "Hello, ");
+        using (var content = new MemoryStream(Encoding.UTF8.GetBytes("existing")))
+        {
+            await engine.PutObjectAsync(
+                "alpha", "key", content, null, new Dictionary<string, string>(), null, Token);
+        }
+
+        var outcome = await engine.CompleteUploadAsync(
+            "alpha", "key", uploadId, [(1, FirstPartETag)],
+            new WriteCondition(MustNotMatch: ETagCondition.AnyObject), Token);
+
+        Assert.Equal(CompleteUploadStatus.PreconditionFailed, outcome.Status);
+        Assert.Equal("existing", await ReadContent(
+            (await engine.GetObjectAsync("alpha", "key", Token))!));
+        Assert.Equal(2, CountBlobFiles());
+        Assert.Single(await index.ListPartsAsync("alpha", "key", uploadId, Token));
     }
 
     [Fact]
@@ -155,7 +177,7 @@ public sealed class MultipartUploadTests : IDisposable
         using (var content = new MemoryStream(Encoding.UTF8.GetBytes("hello world")))
         {
             await engine.PutObjectAsync("alpha", "src", content, "text/plain",
-                new Dictionary<string, string> { ["note"] = "kept" }, Token);
+                new Dictionary<string, string> { ["note"] = "kept" }, null, Token);
         }
 
         var copy = await engine.CopyObjectAsync("alpha", "src", "alpha", "dst", null, Token);
@@ -176,7 +198,7 @@ public sealed class MultipartUploadTests : IDisposable
         using (var content = new MemoryStream(Encoding.UTF8.GetBytes("hello world")))
         {
             await engine.PutObjectAsync("alpha", "src", content, "audio/mpeg",
-                new Dictionary<string, string> { ["note"] = "old" }, Token);
+                new Dictionary<string, string> { ["note"] = "old" }, null, Token);
         }
 
         var replacement = new ObjectAttributes(

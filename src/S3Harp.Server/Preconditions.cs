@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.Extensions.Primitives;
+using S3Harp.Core;
 
 namespace S3Harp.Server;
 
@@ -109,3 +110,33 @@ public static class Preconditions
     private static DateTimeOffset TruncateToSeconds(DateTimeOffset value) =>
         new(value.Year, value.Month, value.Day, value.Hour, value.Minute, value.Second, value.Offset);
 }
+
+/// <summary>
+/// Reads the <c>If-Match</c> / <c>If-None-Match</c> headers of a write as the
+/// condition on the object already at the key: <c>*</c> names any object,
+/// anything else names one by ETag.
+/// </summary>
+public static class WriteConditionHeaders
+{
+    public static WriteCondition? Parse(IHeaderDictionary headers)
+    {
+        ArgumentNullException.ThrowIfNull(headers);
+        var mustMatch = Condition(headers.IfMatch);
+        var mustNotMatch = Condition(headers.IfNoneMatch);
+        return mustMatch is null && mustNotMatch is null
+            ? null
+            : new WriteCondition(mustMatch, mustNotMatch);
+    }
+
+    private static ETagCondition? Condition(StringValues header)
+    {
+        if (header.Count == 0)
+        {
+            return null;
+        }
+
+        var value = header.ToString().Trim();
+        return value == "*" ? ETagCondition.AnyObject : new ETagCondition(value.Trim('"'));
+    }
+}
+

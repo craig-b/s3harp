@@ -14,7 +14,7 @@ public sealed record ObjectListing(
     string? NextFromKey);
 
 /// <summary>The outcome of storing an object.</summary>
-public sealed record PutObjectOutcome(bool BucketExists, string? ETag);
+public sealed record PutObjectOutcome(PutObjectStatus Status, string? ETag);
 
 /// <summary>The caller-supplied attributes of an object: its content type and user metadata.</summary>
 public sealed record ObjectAttributes(
@@ -22,14 +22,6 @@ public sealed record ObjectAttributes(
 
 /// <summary>The outcome of uploading a part.</summary>
 public sealed record UploadPartOutcome(bool UploadExists, string? ETag);
-
-public enum CompleteUploadStatus
-{
-    Completed,
-    NoSuchUpload,
-    InvalidPart,
-    InvalidPartOrder,
-}
 
 /// <summary>The outcome of completing a multipart upload.</summary>
 public sealed record CompleteUploadOutcome(CompleteUploadStatus Status, string? ETag);
@@ -49,18 +41,19 @@ public sealed class StorageEngine(IMetadataIndex index, BlobStore blobs, TimePro
         Stream content,
         string? contentType,
         IReadOnlyDictionary<string, string> metadata,
+        WriteCondition? condition,
         CancellationToken cancellationToken)
     {
         var write = await blobs.WriteAsync(content, cancellationToken).ConfigureAwait(false);
         var record = new ObjectRecord(
             key, write.BlobId, write.Size, write.ContentMd5Hex, contentType, metadata,
             timeProvider.GetUtcNow());
-        var stored = await index.PutObjectAsync(bucket, record, cancellationToken)
+        var stored = await index.PutObjectAsync(bucket, record, condition, cancellationToken)
             .ConfigureAwait(false);
-        if (!stored.BucketExists)
+        if (stored.Status != PutObjectStatus.Stored)
         {
             blobs.Delete(write.BlobId);
-            return new PutObjectOutcome(BucketExists: false, null);
+            return new PutObjectOutcome(stored.Status, null);
         }
 
         if (stored.ReplacedBlobId is not null)
@@ -68,7 +61,7 @@ public sealed class StorageEngine(IMetadataIndex index, BlobStore blobs, TimePro
             blobs.Delete(stored.ReplacedBlobId);
         }
 
-        return new PutObjectOutcome(BucketExists: true, write.ContentMd5Hex);
+        return new PutObjectOutcome(PutObjectStatus.Stored, write.ContentMd5Hex);
     }
 
     public async Task<ObjectDownload?> GetObjectAsync(
@@ -240,6 +233,7 @@ public sealed class StorageEngine(IMetadataIndex index, BlobStore blobs, TimePro
         string key,
         string uploadId,
         IReadOnlyList<(int PartNumber, string ETag)> requestedParts,
+        WriteCondition? condition,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(requestedParts);
@@ -285,12 +279,13 @@ public sealed class StorageEngine(IMetadataIndex index, BlobStore blobs, TimePro
         var record = new ObjectRecord(
             key, concatenated.BlobId, concatenated.Size, MultipartETag(assembled),
             upload.ContentType, upload.Metadata, timeProvider.GetUtcNow());
-        var completed = await index.CompleteUploadAsync(bucket, uploadId, record, cancellationToken)
+        var completed = await index
+            .CompleteUploadAsync(bucket, uploadId, record, condition, cancellationToken)
             .ConfigureAwait(false);
-        if (completed is null)
+        if (completed.Status != CompleteUploadStatus.Completed)
         {
             blobs.Delete(concatenated.BlobId);
-            return new CompleteUploadOutcome(CompleteUploadStatus.NoSuchUpload, null);
+            return new CompleteUploadOutcome(completed.Status, null);
         }
 
         foreach (var blobId in completed.PartBlobIds)
@@ -348,9 +343,9 @@ public sealed class StorageEngine(IMetadataIndex index, BlobStore blobs, TimePro
             Metadata = replacement?.Metadata ?? source.Metadata,
             LastModified = timeProvider.GetUtcNow(),
         };
-        var stored = await index.PutObjectAsync(destinationBucket, record, cancellationToken)
+        var stored = await index.PutObjectAsync(destinationBucket, record, null, cancellationToken)
             .ConfigureAwait(false);
-        if (!stored.BucketExists)
+        if (stored.Status != PutObjectStatus.Stored)
         {
             blobs.Delete(blobId);
             return null;

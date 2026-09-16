@@ -164,7 +164,8 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     }
 
     public async Task<PutObjectResult> PutObjectAsync(
-        string bucket, ObjectRecord record, CancellationToken cancellationToken)
+        string bucket, ObjectRecord record, WriteCondition? condition,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(record);
 
@@ -174,14 +175,14 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             var transaction = connection.BeginTransaction();
             await using (transaction.ConfigureAwait(false))
             {
-                var find = connection.CreateCommand();
-                find.Transaction = transaction;
-                find.CommandText =
-                    "SELECT blob_id FROM objects WHERE bucket = $bucket AND key = $key";
-                find.Parameters.AddWithValue("$bucket", bucket);
-                find.Parameters.AddWithValue("$key", record.Key);
-                var replaced = (string?)await find.ExecuteScalarAsync(cancellationToken)
+                var replaced = await FindObjectAsync(
+                    connection, transaction, bucket, record.Key, cancellationToken)
                     .ConfigureAwait(false);
+                if (condition?.Check(replaced) is { } refusal
+                    && refusal != WriteConditionResult.Satisfied)
+                {
+                    return PutObjectResult.Refused(refusal);
+                }
 
                 try
                 {
@@ -191,11 +192,11 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 catch (SqliteException exception)
                     when (exception.SqliteErrorCode == SqliteConstraintViolation)
                 {
-                    return new PutObjectResult(BucketExists: false, null);
+                    return PutObjectResult.BucketMissing;
                 }
 
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-                return new PutObjectResult(BucketExists: true, replaced);
+                return new PutObjectResult(PutObjectStatus.Stored, replaced?.BlobId);
             }
         }
     }
@@ -206,20 +207,32 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
         {
-            var command = connection.CreateCommand();
-            command.CommandText = """
-                SELECT key, blob_id, size, etag, content_type, metadata, last_modified
-                FROM objects WHERE bucket = $bucket AND key = $key
-                """;
-            command.Parameters.AddWithValue("$bucket", bucket);
-            command.Parameters.AddWithValue("$key", key);
-            var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            await using (reader.ConfigureAwait(false))
-            {
-                return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
-                    ? ReadObjectRecord(reader)
-                    : null;
-            }
+            return await FindObjectAsync(connection, transaction: null, bucket, key, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<ObjectRecord?> FindObjectAsync(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string bucket,
+        string key,
+        CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT key, blob_id, size, etag, content_type, metadata, last_modified
+            FROM objects WHERE bucket = $bucket AND key = $key
+            """;
+        command.Parameters.AddWithValue("$bucket", bucket);
+        command.Parameters.AddWithValue("$key", key);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using (reader.ConfigureAwait(false))
+        {
+            return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+                ? ReadObjectRecord(reader)
+                : null;
         }
     }
 
@@ -442,8 +455,8 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
-    public async Task<CompleteUploadResult?> CompleteUploadAsync(
-        string bucket, string uploadId, ObjectRecord record,
+    public async Task<CompleteUploadResult> CompleteUploadAsync(
+        string bucket, string uploadId, ObjectRecord record, WriteCondition? condition,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(record);
@@ -458,26 +471,26 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                         connection, transaction, bucket, record.Key, uploadId, cancellationToken)
                     .ConfigureAwait(false))
                 {
-                    return null;
+                    return CompleteUploadResult.NoSuchUpload;
+                }
+
+                var replaced = await FindObjectAsync(
+                    connection, transaction, bucket, record.Key, cancellationToken)
+                    .ConfigureAwait(false);
+                if (condition?.Check(replaced) is { } refusal
+                    && refusal != WriteConditionResult.Satisfied)
+                {
+                    return CompleteUploadResult.Refused(refusal);
                 }
 
                 var partBlobs = await DeleteUploadRowsAsync(
                     connection, transaction, uploadId, cancellationToken).ConfigureAwait(false);
-
-                var findReplaced = connection.CreateCommand();
-                findReplaced.Transaction = transaction;
-                findReplaced.CommandText =
-                    "SELECT blob_id FROM objects WHERE bucket = $bucket AND key = $key";
-                findReplaced.Parameters.AddWithValue("$bucket", bucket);
-                findReplaced.Parameters.AddWithValue("$key", record.Key);
-                var replaced = (string?)await findReplaced.ExecuteScalarAsync(cancellationToken)
-                    .ConfigureAwait(false);
-
                 await UpsertObjectAsync(connection, transaction, bucket, record, cancellationToken)
                     .ConfigureAwait(false);
 
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-                return new CompleteUploadResult(replaced, partBlobs);
+                return new CompleteUploadResult(
+                    CompleteUploadStatus.Completed, replaced?.BlobId, partBlobs);
             }
         }
     }
