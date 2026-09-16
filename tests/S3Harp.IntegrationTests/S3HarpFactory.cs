@@ -66,7 +66,8 @@ public sealed class S3HarpFactory : IDisposable
         {
             app = S3HarpApplication.Build(
             [
-                "--urls=http://127.0.0.1:0",
+                "--BIND=127.0.0.1",
+                "--PORT=0",
                 $"--ACCESS_KEY_ID={AccessKeyId}",
                 $"--SECRET_ACCESS_KEY={SecretAccessKey}",
                 $"--DATA_DIR={dataDirectory}",

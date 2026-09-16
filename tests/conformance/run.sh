@@ -36,7 +36,7 @@ mkdir -p "$data"
 S3HARP_ACCESS_KEY_ID=S3HARPCONFORMANCEKEY \
 S3HARP_SECRET_ACCESS_KEY=s3harpconformancesecrets3harpconformance \
 S3HARP_DATA_DIR="$data" \
-    "$server" --urls="http://127.0.0.1:$port" >"$work/server.log" 2>&1 &
+    "$server" --BIND=127.0.0.1 --PORT="$port" >"$work/server.log" 2>&1 &
 server_pid=$!
 trap 'kill "$server_pid" 2>/dev/null || true' EXIT
 

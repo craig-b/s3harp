@@ -51,13 +51,15 @@ S3Harp itself is the storage backend: objects are stored as plain files on the l
 
 ## Configuration
 
-Configuration uses the `S3HARP_` prefix for environment variables. The server authenticates every request with AWS Signature Version 4 against its root keypair, which it requires at startup:
+Configuration uses the `S3HARP_` prefix for environment variables; every setting also works as a command-line switch of the same name, such as `--PORT=9010`. The server authenticates every request with AWS Signature Version 4 against its root keypair, which it requires at startup. A setting that is missing or invalid stops the server with a message naming it.
 
 | Variable | Purpose |
 |---|---|
-| `S3HARP_ACCESS_KEY_ID` | The access key id clients sign requests with |
-| `S3HARP_SECRET_ACCESS_KEY` | The matching secret key |
-| `S3HARP_DATA_DIR` | The directory holding all stored data, including the metadata index |
+| `S3HARP_ACCESS_KEY_ID` | Required. The access key id clients sign requests with |
+| `S3HARP_SECRET_ACCESS_KEY` | Required. The matching secret key |
+| `S3HARP_DATA_DIR` | Required. The directory holding all stored data, including the metadata index |
+| `S3HARP_BIND` | The address to listen on; defaults to `127.0.0.1`, so set `0.0.0.0` to serve other machines |
+| `S3HARP_PORT` | The port to listen on; defaults to `9000`, the port local S3 tooling expects |
 | `S3HARP_DOMAIN` | The domain buckets are addressed under in virtual-hosted style; defaults to `localhost` |
 
 Buckets are reachable in both of S3's addressing styles: path style (`http://localhost:9000/my-bucket/key`) and virtual-hosted style (`http://my-bucket.localhost:9000/key`), which SDKs use unless told otherwise. Every `*.localhost` name resolves to the loopback address, so the default domain works without DNS setup; set `S3HARP_DOMAIN` when serving under another name.
