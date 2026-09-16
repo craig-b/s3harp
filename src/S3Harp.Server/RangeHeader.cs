@@ -1,0 +1,85 @@
+using System.Globalization;
+
+namespace S3Harp.Server;
+
+public enum RangeOutcome
+{
+    WholeObject,
+    Partial,
+    Unsatisfiable,
+}
+
+/// <summary>A resolved byte range within an object.</summary>
+public readonly record struct RangeEvaluation(RangeOutcome Outcome, long From, long To);
+
+/// <summary>
+/// Resolves an HTTP <c>Range</c> header against an object's size, following S3's
+/// reading: one satisfiable <c>bytes</c> range is served partially, a syntactically
+/// valid range beyond the object is unsatisfiable, and everything else — absent,
+/// malformed, or multi-range headers — serves the whole object.
+/// </summary>
+public static class RangeHeader
+{
+    private const string Prefix = "bytes=";
+
+    public static RangeEvaluation Evaluate(string? header, long objectSize)
+    {
+        if (string.IsNullOrEmpty(header)
+            || !header.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)
+            || header.Contains(',', StringComparison.Ordinal))
+        {
+            return new RangeEvaluation(RangeOutcome.WholeObject, 0, 0);
+        }
+
+        var range = header.AsSpan(Prefix.Length);
+        var separator = range.IndexOf('-');
+        if (separator < 0)
+        {
+            return new RangeEvaluation(RangeOutcome.WholeObject, 0, 0);
+        }
+
+        var firstPart = range[..separator];
+        var secondPart = range[(separator + 1)..];
+        if (firstPart.IsEmpty)
+        {
+            // A suffix range: the last N bytes of the object.
+            if (!TryParse(secondPart, out var suffixLength))
+            {
+                return new RangeEvaluation(RangeOutcome.WholeObject, 0, 0);
+            }
+
+            return suffixLength == 0 || objectSize == 0
+                ? new RangeEvaluation(RangeOutcome.Unsatisfiable, 0, 0)
+                : new RangeEvaluation(
+                    RangeOutcome.Partial, Math.Max(0, objectSize - suffixLength), objectSize - 1);
+        }
+
+        if (!TryParse(firstPart, out var from))
+        {
+            return new RangeEvaluation(RangeOutcome.WholeObject, 0, 0);
+        }
+
+        var to = objectSize - 1;
+        if (!secondPart.IsEmpty)
+        {
+            if (!TryParse(secondPart, out var requestedTo))
+            {
+                return new RangeEvaluation(RangeOutcome.WholeObject, 0, 0);
+            }
+
+            if (requestedTo < from)
+            {
+                return new RangeEvaluation(RangeOutcome.WholeObject, 0, 0);
+            }
+
+            to = Math.Min(requestedTo, objectSize - 1);
+        }
+
+        return from >= objectSize
+            ? new RangeEvaluation(RangeOutcome.Unsatisfiable, 0, 0)
+            : new RangeEvaluation(RangeOutcome.Partial, from, to);
+    }
+
+    private static bool TryParse(ReadOnlySpan<char> value, out long parsed) =>
+        long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out parsed);
+}

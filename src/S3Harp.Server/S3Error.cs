@@ -71,6 +71,11 @@ public static class S3Errors
         StatusCodes.Status400BadRequest,
         "The list of parts was not in ascending order. Parts must be ordered by part number.");
 
+    public static S3Error InvalidRange { get; } = new(
+        "InvalidRange",
+        StatusCodes.Status416RangeNotSatisfiable,
+        "The requested range is not satisfiable.");
+
     public static S3Error MalformedXML { get; } = new(
         "MalformedXML",
         StatusCodes.Status400BadRequest,

@@ -87,6 +87,59 @@ public sealed class ObjectTests : IDisposable
     }
 
     [Fact]
+    public async Task RangedGet_ReturnsExactlyTheRequestedSlice()
+    {
+        using var s3 = await CreateClientWithBucket();
+        var content = RandomNumberGenerator.GetBytes(300 * 1024);
+        await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "ranged.bin",
+            InputStream = new MemoryStream(content),
+        }, Token);
+
+        using var response = await s3.GetObjectAsync(new GetObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "ranged.bin",
+            ByteRange = new ByteRange(0, 99),
+        }, Token);
+
+        Assert.Equal(HttpStatusCode.PartialContent, response.HttpStatusCode);
+        Assert.Equal(100, response.ContentLength);
+        using var received = new MemoryStream();
+        await response.ResponseStream.CopyToAsync(received, Token);
+        Assert.Equal(content[..100], received.ToArray());
+    }
+
+    [Fact]
+    public async Task ParallelStyleRangedDownload_ReassemblesTheExactObject()
+    {
+        using var s3 = await CreateClientWithBucket();
+        var content = RandomNumberGenerator.GetBytes(300 * 1024);
+        await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "chunked-download.bin",
+            InputStream = new MemoryStream(content),
+        }, Token);
+
+        using var reassembled = new MemoryStream();
+        foreach (var (from, to) in new[] { (0L, 149_999L), (150_000L, 307_199L) })
+        {
+            using var response = await s3.GetObjectAsync(new GetObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "chunked-download.bin",
+                ByteRange = new ByteRange(from, to),
+            }, Token);
+            await response.ResponseStream.CopyToAsync(reassembled, Token);
+        }
+
+        Assert.Equal(content, reassembled.ToArray());
+    }
+
+    [Fact]
     public async Task HeadObject_ReportsSizeAndETag()
     {
         using var s3 = await CreateClientWithBucket();

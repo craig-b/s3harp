@@ -69,10 +69,10 @@ public sealed class S3RequestDispatcher(
             ("PUT", not "", not null) =>
                 await PutObjectAsync(context, bucket, key, cancellationToken).ConfigureAwait(false),
             ("GET", not "", not null) =>
-                await GetObjectAsync(bucket, key, includeContent: true, cancellationToken)
+                await GetObjectAsync(context, bucket, key, includeContent: true, cancellationToken)
                     .ConfigureAwait(false),
             ("HEAD", not "", not null) =>
-                await GetObjectAsync(bucket, key, includeContent: false, cancellationToken)
+                await GetObjectAsync(context, bucket, key, includeContent: false, cancellationToken)
                     .ConfigureAwait(false),
             ("DELETE", not "", not null) =>
                 await DeleteObjectAsync(bucket, key, cancellationToken).ConfigureAwait(false),
@@ -260,7 +260,8 @@ public sealed class S3RequestDispatcher(
     }
 
     private async Task<IResult> GetObjectAsync(
-        string bucket, string key, bool includeContent, CancellationToken cancellationToken)
+        HttpContext context, string bucket, string key, bool includeContent,
+        CancellationToken cancellationToken)
     {
         if (!await index.BucketExistsAsync(bucket, cancellationToken).ConfigureAwait(false))
         {
@@ -274,13 +275,21 @@ public sealed class S3RequestDispatcher(
             return new S3ErrorResult(S3Errors.NoSuchKey);
         }
 
+        var range = RangeHeader.Evaluate(
+            context.Request.Headers.Range.ToString(), download.Record.Size);
+        if (range.Outcome == RangeOutcome.Unsatisfiable)
+        {
+            await download.Content.DisposeAsync().ConfigureAwait(false);
+            return new S3ErrorResult(S3Errors.InvalidRange);
+        }
+
         if (includeContent)
         {
-            return new S3ObjectResult(download.Record, download.Content);
+            return new S3ObjectResult(download.Record, download.Content, range);
         }
 
         await download.Content.DisposeAsync().ConfigureAwait(false);
-        return new S3ObjectResult(download.Record, content: null);
+        return new S3ObjectResult(download.Record, content: null, range);
     }
 
     private async Task<IResult> DeleteObjectAsync(

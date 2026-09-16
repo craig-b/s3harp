@@ -417,6 +417,62 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task GetObject_WithARange_ServesTheSliceAs206()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/greeting.txt", body: "hello world");
+
+        var context = await Dispatch("GET", "/my-bucket/greeting.txt",
+            configure: request => request.Headers.Range = "bytes=0-4");
+
+        Assert.Equal(StatusCodes.Status206PartialContent, context.Response.StatusCode);
+        Assert.Equal("hello", ReadBodyText(context));
+        Assert.Equal(5, context.Response.ContentLength);
+        Assert.Equal("bytes 0-4/11", context.Response.Headers.ContentRange);
+        Assert.Equal("\"5eb63bbbe01eeed093cb22bb8f5acdc3\"", context.Response.Headers.ETag);
+    }
+
+    [Fact]
+    public async Task GetObject_WithASuffixRange_ServesTheTail()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/greeting.txt", body: "hello world");
+
+        var context = await Dispatch("GET", "/my-bucket/greeting.txt",
+            configure: request => request.Headers.Range = "bytes=-5");
+
+        Assert.Equal(StatusCodes.Status206PartialContent, context.Response.StatusCode);
+        Assert.Equal("world", ReadBodyText(context));
+        Assert.Equal("bytes 6-10/11", context.Response.Headers.ContentRange);
+    }
+
+    [Fact]
+    public async Task GetObject_WithAnUnsatisfiableRange_ReportsInvalidRange()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/greeting.txt", body: "hello world");
+
+        var context = await Dispatch("GET", "/my-bucket/greeting.txt",
+            configure: request => request.Headers.Range = "bytes=999-");
+
+        Assert.Equal(StatusCodes.Status416RangeNotSatisfiable, context.Response.StatusCode);
+        Assert.Equal("InvalidRange", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task GetObject_WithAMalformedRange_ServesTheWholeObject()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/greeting.txt", body: "hello world");
+
+        var context = await Dispatch("GET", "/my-bucket/greeting.txt",
+            configure: request => request.Headers.Range = "bytes=nonsense");
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        Assert.Equal("hello world", ReadBodyText(context));
+    }
+
+    [Fact]
     public async Task GetObject_WithAnUnknownKey_ReportsNoSuchKey()
     {
         await Dispatch("PUT", "/my-bucket");
