@@ -37,8 +37,9 @@ public sealed class ConcurrencyStressTests : IDisposable
         {
             using var content = new MemoryStream(Encoding.UTF8.GetBytes(body));
             return await engine.PutObjectAsync(
-                "alpha", "contested", content, null,
-                new Dictionary<string, string>(), null, CancellationToken.None);
+                "alpha", "contested", content,
+                new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()),
+                null, CancellationToken.None);
         }, Token)));
 
         Assert.All(outcomes, outcome =>
@@ -91,7 +92,8 @@ public sealed class ConcurrencyStressTests : IDisposable
     {
         await CreateBucket();
         var uploadId = await engine.InitiateUploadAsync(
-            "alpha", "assembled", null, new Dictionary<string, string>(), Token);
+            "alpha", "assembled",
+            new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()), Token);
         Assert.NotNull(uploadId);
 
         var outcomes = await Task.WhenAll(Enumerable.Range(0, WriterCount)
@@ -124,7 +126,8 @@ public sealed class ConcurrencyStressTests : IDisposable
     {
         using var content = new MemoryStream(Encoding.UTF8.GetBytes(body));
         var outcome = await engine.PutObjectAsync(
-            "alpha", key, content, null, new Dictionary<string, string>(), null, Token);
+            "alpha", key, content,
+            new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()), null, Token);
         Assert.Equal(PutObjectStatus.Stored, outcome.Status);
     }
 

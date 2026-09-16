@@ -202,6 +202,33 @@ public sealed class ObjectTests : IDisposable
     }
 
     [Fact]
+    public async Task PutThenHead_RoundtripsTheStandardContentHeaders()
+    {
+        using var s3 = await CreateClientWithBucket();
+        var expires = new DateTime(2026, 12, 25, 0, 0, 0, DateTimeKind.Utc);
+        var request = new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "report.txt.gz",
+            ContentBody = "content",
+        };
+        request.Headers.CacheControl = "public, max-age=14400";
+        request.Headers.ContentDisposition = "attachment; filename=report.txt";
+        request.Headers.ContentEncoding = "gzip";
+        request.Headers.ContentLanguage = "en-GB";
+        request.Headers.Expires = expires;
+
+        await s3.PutObjectAsync(request, Token);
+        var head = await s3.GetObjectMetadataAsync(Bucket, "report.txt.gz", Token);
+
+        Assert.Equal("public, max-age=14400", head.Headers.CacheControl);
+        Assert.Equal("attachment; filename=report.txt", head.Headers.ContentDisposition);
+        Assert.Equal("gzip", head.Headers.ContentEncoding);
+        Assert.Equal("en-GB", head.Headers.ContentLanguage);
+        Assert.Equal("Fri, 25 Dec 2026 00:00:00 GMT", head.ExpiresString);
+    }
+
+    [Fact]
     public async Task PutObject_ReturnsTheMd5ETag()
     {
         using var s3 = await CreateClientWithBucket();

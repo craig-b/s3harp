@@ -832,6 +832,43 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task PutObject_StoresTheContentHeaders_AndHeadReplaysThem()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch(
+            "PUT", "/my-bucket/key", body: "hello",
+            configure: request =>
+            {
+                request.Headers.CacheControl = "public, max-age=14400";
+                request.Headers.ContentDisposition = "attachment; filename=key.txt";
+                request.Headers.ContentEncoding = "gzip, aws-chunked";
+                request.Headers.ContentLanguage = "en-GB";
+                request.Headers.Expires = "Thu, 01 Jan 2026 00:00:00 GMT";
+            });
+
+        var head = await Dispatch("HEAD", "/my-bucket/key");
+
+        Assert.Equal("public, max-age=14400", head.Response.Headers.CacheControl);
+        Assert.Equal("attachment; filename=key.txt", head.Response.Headers.ContentDisposition);
+        Assert.Equal("gzip", head.Response.Headers.ContentEncoding);
+        Assert.Equal("en-GB", head.Response.Headers.ContentLanguage);
+        Assert.Equal("Thu, 01 Jan 2026 00:00:00 GMT", head.Response.Headers.Expires);
+    }
+
+    [Fact]
+    public async Task PutObject_WithOnlyAwsChunkedEncoding_StoresNoContentEncoding()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch(
+            "PUT", "/my-bucket/key", body: "hello",
+            configure: request => request.Headers.ContentEncoding = "aws-chunked");
+
+        var head = await Dispatch("HEAD", "/my-bucket/key");
+
+        Assert.False(head.Response.Headers.ContainsKey("Content-Encoding"));
+    }
+
+    [Fact]
     public async Task CopyingAMissingSource_ReportsNoSuchKey()
     {
         await Dispatch("PUT", "/my-bucket");

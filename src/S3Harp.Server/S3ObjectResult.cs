@@ -35,6 +35,7 @@ public sealed class S3ObjectResult(
                 $"bytes {contentRange.From}-{contentRange.To}/{record.Size}";
         }
 
+        WriteContentHeaders(response.Headers, record.ContentHeaders);
         foreach (var (name, value) in record.Metadata)
         {
             response.Headers["x-amz-meta-" + name] = value;
@@ -58,6 +59,34 @@ public sealed class S3ObjectResult(
                 await content.CopyToAsync(response.Body, httpContext.RequestAborted)
                     .ConfigureAwait(false);
             }
+        }
+    }
+
+    private static void WriteContentHeaders(IHeaderDictionary headers, ContentHeaders content)
+    {
+        if (content.CacheControl is not null)
+        {
+            headers.CacheControl = content.CacheControl;
+        }
+
+        if (content.ContentDisposition is not null)
+        {
+            headers.ContentDisposition = content.ContentDisposition;
+        }
+
+        if (content.ContentEncoding is not null)
+        {
+            headers.ContentEncoding = content.ContentEncoding;
+        }
+
+        if (content.ContentLanguage is not null)
+        {
+            headers.ContentLanguage = content.ContentLanguage;
+        }
+
+        if (content.Expires is not null)
+        {
+            headers.Expires = content.Expires;
         }
     }
 

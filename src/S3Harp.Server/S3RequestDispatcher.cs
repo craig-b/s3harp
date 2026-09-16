@@ -16,8 +16,6 @@ public sealed class S3RequestDispatcher(
     RootCredentials credentials,
     TimeProvider timeProvider)
 {
-    private const string MetadataHeaderPrefix = "x-amz-meta-";
-
     /// <summary>The version id S3 assigns to objects in unversioned buckets.</summary>
     private const string NullVersionId = "null";
 
@@ -432,8 +430,7 @@ public sealed class S3RequestDispatcher(
         try
         {
             outcome = await engine.PutObjectAsync(
-                bucket, key, context.Request.Body, context.Request.ContentType,
-                ReadMetadataHeaders(context.Request),
+                bucket, key, context.Request.Body, RequestAttributes.Read(context.Request),
                 WriteConditionHeaders.Parse(context.Request.Headers),
                 cancellationToken).ConfigureAwait(false);
         }
@@ -638,8 +635,8 @@ public sealed class S3RequestDispatcher(
         }
 
         var uploadId = await engine.InitiateUploadAsync(
-            bucket, key, context.Request.ContentType, ReadMetadataHeaders(context.Request),
-            cancellationToken).ConfigureAwait(false);
+            bucket, key, RequestAttributes.Read(context.Request), cancellationToken)
+            .ConfigureAwait(false);
         if (uploadId is null)
         {
             return new S3ErrorResult(S3Errors.NoSuchBucket);
@@ -805,10 +802,7 @@ public sealed class S3RequestDispatcher(
             StringComparison.OrdinalIgnoreCase);
         var outcome = await engine.CopyObjectAsync(
             sourceBucket, sourceKey, bucket, key,
-            replace
-                ? new ObjectAttributes(
-                    context.Request.ContentType, ReadMetadataHeaders(context.Request))
-                : null,
+            replace ? RequestAttributes.Read(context.Request) : null,
             cancellationToken).ConfigureAwait(false);
         if (outcome is null)
         {
@@ -835,21 +829,6 @@ public sealed class S3RequestDispatcher(
     /// <summary>URL-encodes a key for <c>encoding-type=url</c>, keeping the slashes S3 leaves literal.</summary>
     private static string UrlEncodeKey(string value) =>
         string.Join('/', value.Split('/').Select(Uri.EscapeDataString));
-
-    private static Dictionary<string, string> ReadMetadataHeaders(HttpRequest request)
-    {
-        var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var header in request.Headers)
-        {
-            if (header.Key.StartsWith(MetadataHeaderPrefix, StringComparison.OrdinalIgnoreCase))
-            {
-                metadata[header.Key[MetadataHeaderPrefix.Length..].ToLowerInvariant()] =
-                    header.Value.ToString();
-            }
-        }
-
-        return metadata;
-    }
 
     private static string FormatTimestamp(DateTimeOffset timestamp) =>
         timestamp.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);

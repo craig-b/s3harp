@@ -10,7 +10,7 @@ Working now, each proven by integration tests driving the real AWS SDK:
 
 - AWS Signature Version 4 on every request — header verification plus chunked payload signing, including the trailer variants current SDKs send by default
 - Bucket create, list, head, and delete
-- Object PUT, GET, HEAD, and DELETE with ETags, content types, and `x-amz-meta-*` metadata, stored durably (temp file → fsync → rename)
+- Object PUT, GET, HEAD, and DELETE with ETags, content types, the standard content headers (`Cache-Control`, `Content-Disposition`, `Content-Encoding`, `Content-Language`, `Expires`), and `x-amz-meta-*` metadata, stored durably (temp file → fsync → rename)
 - Range GETs (`206 Partial Content`), so parallel ranged downloads — the AWS CLI's default for large files — reassemble exactly
 - Conditional GET and HEAD (`If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since`) answering `304` or `412`, and the matching `x-amz-copy-source-if-*` conditions on CopyObject
 - Conditional writes: `If-None-Match: *` creates only when the key is free, and `If-Match` overwrites only the ETag it names, on PutObject and CompleteMultipartUpload alike, checked atomically in the metadata index

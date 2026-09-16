@@ -90,6 +90,33 @@ public abstract class MetadataIndexContractTests
     }
 
     [Fact]
+    public async Task StoredObject_KeepsItsContentHeaders()
+    {
+        await Create("alpha");
+        var headers = new ContentHeaders(
+            CacheControl: "max-age=60", ContentDisposition: "attachment",
+            ContentEncoding: "gzip", ContentLanguage: "en", Expires: "Thu, 01 Jan 2026 00:00:00 GMT");
+
+        await Index.PutObjectAsync(
+            "alpha", Record("key", "blob-1") with { ContentHeaders = headers }, null, Token);
+
+        Assert.Equal(headers, (await Index.FindObjectAsync("alpha", "key", Token))?.ContentHeaders);
+    }
+
+    [Fact]
+    public async Task Upload_KeepsItsContentHeaders()
+    {
+        await Create("alpha");
+        var headers = new ContentHeaders(ContentEncoding: "gzip");
+
+        await Index.TryCreateUploadAsync(
+            "alpha", Upload("u1") with { ContentHeaders = headers }, Token);
+
+        Assert.Equal(headers, (await Index.FindUploadAsync("alpha", "key", "u1", Token))?.ContentHeaders);
+        Assert.Equal(headers, Assert.Single(await Index.ListUploadsAsync("alpha", Token)).ContentHeaders);
+    }
+
+    [Fact]
     public async Task PutObject_IntoAMissingBucket_IsRefused()
     {
         var result = await Index.PutObjectAsync("missing", Record("key", "blob-1"), null, Token);
@@ -416,7 +443,7 @@ public abstract class MetadataIndexContractTests
     private static MultipartUpload Upload(string uploadId) => UploadFor("key", uploadId);
 
     private static MultipartUpload UploadFor(string key, string uploadId) => new(
-        uploadId, key, "text/plain",
+        uploadId, key, "text/plain", ContentHeaders.None,
         new Dictionary<string, string> { ["meta-1"] = "value-1" }, CreationTime);
 
     private static PartRecord Part(int number, string blobId) =>
@@ -424,6 +451,7 @@ public abstract class MetadataIndexContractTests
 
     private static ObjectRecord Record(string key, string blobId) => new(
         key, blobId, Size: 3, ETag: "etag-hex", ContentType: "text/plain",
+        ContentHeaders: ContentHeaders.None,
         Metadata: new Dictionary<string, string> { ["meta-1"] = "value-1" },
         LastModified: CreationTime);
 
@@ -451,6 +479,52 @@ public sealed class SqliteMetadataIndexTests : MetadataIndexContractTests, IDisp
     }
 
     protected override IMetadataIndex Index => index;
+
+    [Fact]
+    public async Task OpensADatabaseCreatedBeforeContentHeadersExisted()
+    {
+        index.Dispose();
+        File.Delete(databasePath);
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={databasePath}"))
+        {
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE buckets (name TEXT PRIMARY KEY, created_at TEXT NOT NULL);
+                CREATE TABLE objects (
+                    bucket TEXT NOT NULL REFERENCES buckets(name), key TEXT NOT NULL,
+                    blob_id TEXT NOT NULL, size INTEGER NOT NULL, etag TEXT NOT NULL,
+                    content_type TEXT, metadata TEXT NOT NULL, last_modified TEXT NOT NULL,
+                    PRIMARY KEY (bucket, key)) WITHOUT ROWID;
+                CREATE TABLE uploads (
+                    upload_id TEXT PRIMARY KEY, bucket TEXT NOT NULL REFERENCES buckets(name),
+                    key TEXT NOT NULL, content_type TEXT, metadata TEXT NOT NULL,
+                    initiated_at TEXT NOT NULL);
+                CREATE TABLE parts (
+                    upload_id TEXT NOT NULL REFERENCES uploads(upload_id),
+                    part_number INTEGER NOT NULL, blob_id TEXT NOT NULL, size INTEGER NOT NULL,
+                    etag TEXT NOT NULL, PRIMARY KEY (upload_id, part_number)) WITHOUT ROWID;
+                INSERT INTO buckets VALUES ('alpha', '2026-09-16T12:00:00.000Z');
+                INSERT INTO objects VALUES
+                    ('alpha', 'old', 'blob-1', 3, 'etag-hex', 'text/plain', '{}', '2026-09-16T12:00:00.000Z');
+                """;
+            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        using var upgraded = new SqliteMetadataIndex(databasePath);
+
+        var old = await upgraded.FindObjectAsync("alpha", "old", TestContext.Current.CancellationToken);
+        Assert.Equal(ContentHeaders.None, old?.ContentHeaders);
+        var stored = await upgraded.PutObjectAsync(
+            "alpha",
+            new ObjectRecord(
+                "new", "blob-2", Size: 3, ETag: "etag-hex", ContentType: null,
+                ContentHeaders: new ContentHeaders(ContentEncoding: "gzip"),
+                Metadata: new Dictionary<string, string>(), LastModified: DateTimeOffset.UnixEpoch),
+            null, TestContext.Current.CancellationToken);
+        Assert.Equal(PutObjectStatus.Stored, stored.Status);
+        Assert.Equal("gzip", (await upgraded.FindObjectAsync("alpha", "new", TestContext.Current.CancellationToken))?.ContentHeaders.ContentEncoding);
+    }
 
     public void Dispose()
     {

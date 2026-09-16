@@ -118,7 +118,9 @@ public sealed class ObjectListingTests : IDisposable
         {
             using var content = new MemoryStream(Encoding.UTF8.GetBytes(key));
             await engine.PutObjectAsync(
-                "alpha", key, content, null, new Dictionary<string, string>(), null, Token);
+                "alpha", key, content,
+                new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()),
+                null, Token);
         }
     }
 

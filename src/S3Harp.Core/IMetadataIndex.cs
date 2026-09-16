@@ -10,8 +10,23 @@ public sealed record ObjectRecord(
     long Size,
     string ETag,
     string? ContentType,
+    ContentHeaders ContentHeaders,
     IReadOnlyDictionary<string, string> Metadata,
     DateTimeOffset LastModified);
+
+/// <summary>
+/// The standard HTTP content headers stored with an object and replayed on
+/// every GET and HEAD, alongside its content type.
+/// </summary>
+public sealed record ContentHeaders(
+    string? CacheControl = null,
+    string? ContentDisposition = null,
+    string? ContentEncoding = null,
+    string? ContentLanguage = null,
+    string? Expires = null)
+{
+    public static ContentHeaders None { get; } = new();
+}
 
 /// <summary>Names the object at a key by ETag, or any object at the key when the ETag is null.</summary>
 public sealed record ETagCondition(string? ETag)
@@ -105,6 +120,7 @@ public sealed record MultipartUpload(
     string UploadId,
     string Key,
     string? ContentType,
+    ContentHeaders ContentHeaders,
     IReadOnlyDictionary<string, string> Metadata,
     DateTimeOffset InitiatedAt);
 

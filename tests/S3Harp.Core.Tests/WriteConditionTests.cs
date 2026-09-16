@@ -5,7 +5,7 @@ namespace S3Harp.Core.Tests;
 public sealed class WriteConditionTests
 {
     private static readonly ObjectRecord Existing = new(
-        "key", "blob", Size: 3, ETag: "etag-hex", ContentType: null,
+        "key", "blob", Size: 3, ETag: "etag-hex", ContentType: null, ContentHeaders: ContentHeaders.None,
         Metadata: new Dictionary<string, string>(), LastModified: DateTimeOffset.UnixEpoch);
 
     [Fact]

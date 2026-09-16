@@ -35,6 +35,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 content_type TEXT,
                 metadata TEXT NOT NULL,
                 last_modified TEXT NOT NULL,
+                content_headers TEXT NOT NULL DEFAULT '{}',
                 PRIMARY KEY (bucket, key)
             ) WITHOUT ROWID;
             CREATE TABLE IF NOT EXISTS uploads (
@@ -43,7 +44,8 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 key TEXT NOT NULL,
                 content_type TEXT,
                 metadata TEXT NOT NULL,
-                initiated_at TEXT NOT NULL
+                initiated_at TEXT NOT NULL,
+                content_headers TEXT NOT NULL DEFAULT '{}'
             );
             CREATE TABLE IF NOT EXISTS parts (
                 upload_id TEXT NOT NULL REFERENCES uploads(upload_id),
@@ -55,6 +57,26 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             ) WITHOUT ROWID;
             """;
         command.ExecuteNonQuery();
+
+        // Databases created before content headers existed gain the column in place.
+        EnsureColumn(connection, "objects", "content_headers", "TEXT NOT NULL DEFAULT '{}'");
+        EnsureColumn(connection, "uploads", "content_headers", "TEXT NOT NULL DEFAULT '{}'");
+    }
+
+    private static void EnsureColumn(
+        SqliteConnection connection, string table, string column, string definition)
+    {
+        using var probe = connection.CreateCommand();
+        probe.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = $column";
+        probe.Parameters.AddWithValue("$column", column);
+        if ((long)probe.ExecuteScalar()! > 0)
+        {
+            return;
+        }
+
+        using var alter = connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition}";
+        alter.ExecuteNonQuery();
     }
 
     public async Task<bool> TryCreateBucketAsync(
@@ -222,7 +244,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT key, blob_id, size, etag, content_type, metadata, last_modified
+            SELECT key, blob_id, size, etag, content_type, metadata, last_modified, content_headers
             FROM objects WHERE bucket = $bucket AND key = $key
             """;
         command.Parameters.AddWithValue("$bucket", bucket);
@@ -247,7 +269,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         {
             var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT key, blob_id, size, etag, content_type, metadata, last_modified
+                SELECT key, blob_id, size, etag, content_type, metadata, last_modified, content_headers
                 FROM objects
                 WHERE bucket = $bucket AND key >= $lower AND ($upper IS NULL OR key < $upper)
                 ORDER BY key
@@ -297,8 +319,11 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         {
             var command = connection.CreateCommand();
             command.CommandText = """
-                INSERT INTO uploads (upload_id, bucket, key, content_type, metadata, initiated_at)
-                VALUES ($upload_id, $bucket, $key, $content_type, $metadata, $initiated_at)
+                INSERT INTO uploads
+                    (upload_id, bucket, key, content_type, metadata, initiated_at, content_headers)
+                VALUES
+                    ($upload_id, $bucket, $key, $content_type, $metadata, $initiated_at,
+                     $content_headers)
                 """;
             command.Parameters.AddWithValue("$upload_id", upload.UploadId);
             command.Parameters.AddWithValue("$bucket", bucket);
@@ -306,6 +331,8 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             command.Parameters.AddWithValue(
                 "$content_type", (object?)upload.ContentType ?? DBNull.Value);
             command.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(upload.Metadata));
+            command.Parameters.AddWithValue(
+                "$content_headers", WriteContentHeaders(upload.ContentHeaders));
             command.Parameters.AddWithValue("$initiated_at", FormatTimestamp(upload.InitiatedAt));
             try
             {
@@ -335,6 +362,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                         uploadId,
                         key,
                         reader.IsDBNull(0) ? null : reader.GetString(0),
+                        ReadContentHeaders(reader.GetString(3)),
                         JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(1))!,
                         ParseTimestamp(reader.GetString(2)))
                     : null;
@@ -431,7 +459,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         {
             var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT upload_id, key, content_type, metadata, initiated_at
+                SELECT upload_id, key, content_type, metadata, initiated_at, content_headers
                 FROM uploads WHERE bucket = $bucket
                 ORDER BY key, upload_id
                 """;
@@ -446,6 +474,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                         reader.GetString(0),
                         reader.GetString(1),
                         reader.IsDBNull(2) ? null : reader.GetString(2),
+                        ReadContentHeaders(reader.GetString(5)),
                         JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(3))!,
                         ParseTimestamp(reader.GetString(4))));
                 }
@@ -525,7 +554,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     {
         var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT content_type, metadata, initiated_at
+            SELECT content_type, metadata, initiated_at, content_headers
             FROM uploads
             WHERE upload_id = $upload_id AND bucket = $bucket AND key = $key
             """;
@@ -564,15 +593,18 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         upsert.Transaction = transaction;
         upsert.CommandText = """
             INSERT INTO objects
-                (bucket, key, blob_id, size, etag, content_type, metadata, last_modified)
+                (bucket, key, blob_id, size, etag, content_type, metadata, last_modified,
+                 content_headers)
             VALUES
-                ($bucket, $key, $blob_id, $size, $etag, $content_type, $metadata, $last_modified)
+                ($bucket, $key, $blob_id, $size, $etag, $content_type, $metadata, $last_modified,
+                 $content_headers)
             ON CONFLICT (bucket, key) DO UPDATE SET
                 blob_id = excluded.blob_id,
                 size = excluded.size,
                 etag = excluded.etag,
                 content_type = excluded.content_type,
                 metadata = excluded.metadata,
+                content_headers = excluded.content_headers,
                 last_modified = excluded.last_modified
             """;
         upsert.Parameters.AddWithValue("$bucket", bucket);
@@ -583,6 +615,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         upsert.Parameters.AddWithValue("$content_type", (object?)record.ContentType ?? DBNull.Value);
         upsert.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(record.Metadata));
         upsert.Parameters.AddWithValue("$last_modified", FormatTimestamp(record.LastModified));
+        upsert.Parameters.AddWithValue("$content_headers", WriteContentHeaders(record.ContentHeaders));
         await upsert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -630,8 +663,20 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         reader.GetInt64(2),
         reader.GetString(3),
         reader.IsDBNull(4) ? null : reader.GetString(4),
+        ReadContentHeaders(reader.GetString(7)),
         JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(5))!,
         ParseTimestamp(reader.GetString(6)));
+
+    private static readonly JsonSerializerOptions ContentHeadersJson = new()
+    {
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    private static string WriteContentHeaders(ContentHeaders headers) =>
+        JsonSerializer.Serialize(headers, ContentHeadersJson);
+
+    private static ContentHeaders ReadContentHeaders(string json) =>
+        JsonSerializer.Deserialize<ContentHeaders>(json, ContentHeadersJson) ?? ContentHeaders.None;
 
     private static string FormatTimestamp(DateTimeOffset timestamp) =>
         timestamp.ToString("O", CultureInfo.InvariantCulture);

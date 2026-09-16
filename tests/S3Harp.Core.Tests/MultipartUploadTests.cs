@@ -28,7 +28,9 @@ public sealed class MultipartUploadTests : IDisposable
         await CreateBucket();
 
         var uploadId = await engine.InitiateUploadAsync(
-            "alpha", "key", "text/plain", new Dictionary<string, string>(), Token);
+            "alpha", "key",
+            new ObjectAttributes("text/plain", ContentHeaders.None, new Dictionary<string, string>()),
+            Token);
 
         Assert.False(string.IsNullOrEmpty(uploadId));
     }
@@ -37,7 +39,8 @@ public sealed class MultipartUploadTests : IDisposable
     public async Task InitiateUpload_IntoAMissingBucket_ReportsIt()
     {
         Assert.Null(await engine.InitiateUploadAsync(
-            "missing", "key", null, new Dictionary<string, string>(), Token));
+            "missing", "key",
+            new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()), Token));
     }
 
     [Fact]
@@ -119,7 +122,9 @@ public sealed class MultipartUploadTests : IDisposable
         using (var content = new MemoryStream(Encoding.UTF8.GetBytes("existing")))
         {
             await engine.PutObjectAsync(
-                "alpha", "key", content, null, new Dictionary<string, string>(), null, Token);
+                "alpha", "key", content,
+                new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()),
+                null, Token);
         }
 
         var outcome = await engine.CompleteUploadAsync(
@@ -176,8 +181,9 @@ public sealed class MultipartUploadTests : IDisposable
         await CreateBucket();
         using (var content = new MemoryStream(Encoding.UTF8.GetBytes("hello world")))
         {
-            await engine.PutObjectAsync("alpha", "src", content, "text/plain",
-                new Dictionary<string, string> { ["note"] = "kept" }, null, Token);
+            await engine.PutObjectAsync("alpha", "src", content,
+                new ObjectAttributes("text/plain", ContentHeaders.None,
+                    new Dictionary<string, string> { ["note"] = "kept" }), null, Token);
         }
 
         var copy = await engine.CopyObjectAsync("alpha", "src", "alpha", "dst", null, Token);
@@ -197,19 +203,41 @@ public sealed class MultipartUploadTests : IDisposable
         await CreateBucket();
         using (var content = new MemoryStream(Encoding.UTF8.GetBytes("hello world")))
         {
-            await engine.PutObjectAsync("alpha", "src", content, "audio/mpeg",
-                new Dictionary<string, string> { ["note"] = "old" }, null, Token);
+            await engine.PutObjectAsync("alpha", "src", content,
+                new ObjectAttributes("audio/mpeg", ContentHeaders.None,
+                    new Dictionary<string, string> { ["note"] = "old" }), null, Token);
         }
 
         var replacement = new ObjectAttributes(
-            "audio/ogg", new Dictionary<string, string> { ["note"] = "new" });
+            "audio/ogg", new ContentHeaders(ContentLanguage: "eo"),
+            new Dictionary<string, string> { ["note"] = "new" });
         await engine.CopyObjectAsync("alpha", "src", "alpha", "dst", replacement, Token);
 
         var download = await engine.GetObjectAsync("alpha", "dst", Token);
         Assert.NotNull(download);
         await download.Content.DisposeAsync();
         Assert.Equal("audio/ogg", download.Record.ContentType);
+        Assert.Equal("eo", download.Record.ContentHeaders.ContentLanguage);
         Assert.Equal("new", download.Record.Metadata["note"]);
+    }
+
+    [Fact]
+    public async Task CompletedUpload_CarriesTheUploadsContentHeaders()
+    {
+        await CreateBucket();
+        var headers = new ContentHeaders(CacheControl: "no-cache", ContentEncoding: "gzip");
+        var uploadId = await engine.InitiateUploadAsync(
+            "alpha", "key",
+            new ObjectAttributes("text/plain", headers, new Dictionary<string, string>()), Token);
+        Assert.NotNull(uploadId);
+        await UploadPart(uploadId, 1, "Hello, ");
+
+        await engine.CompleteUploadAsync("alpha", "key", uploadId, [(1, FirstPartETag)], null, Token);
+
+        var download = await engine.GetObjectAsync("alpha", "key", Token);
+        Assert.NotNull(download);
+        await download.Content.DisposeAsync();
+        Assert.Equal(headers, download.Record.ContentHeaders);
     }
 
     [Fact]
@@ -231,8 +259,9 @@ public sealed class MultipartUploadTests : IDisposable
     {
         await CreateBucket();
         var uploadId = await engine.InitiateUploadAsync(
-            "alpha", "key", "text/plain",
-            new Dictionary<string, string> { ["note"] = "from-test" }, Token);
+            "alpha", "key",
+            new ObjectAttributes("text/plain", ContentHeaders.None,
+                new Dictionary<string, string> { ["note"] = "from-test" }), Token);
         Assert.NotNull(uploadId);
         return uploadId;
     }

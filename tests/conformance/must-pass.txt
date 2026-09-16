@@ -176,6 +176,7 @@ s3tests/functional/test_s3.py::test_multipart_upload_multiple_sizes
 s3tests/functional/test_s3.py::test_multipart_upload_overwrite_existing_object
 s3tests/functional/test_s3.py::test_multipart_upload_resend_part
 s3tests/functional/test_s3.py::test_object_anon_put
+s3tests/functional/test_s3.py::test_object_content_encoding_aws_chunked
 s3tests/functional/test_s3.py::test_object_copy_16m
 s3tests/functional/test_s3.py::test_object_copy_bucket_not_found
 s3tests/functional/test_s3.py::test_object_copy_canned_acl
@@ -203,7 +204,9 @@ s3tests/functional/test_s3.py::test_object_requestid_matches_header_on_error
 s3tests/functional/test_s3.py::test_object_set_get_metadata_none_to_empty
 s3tests/functional/test_s3.py::test_object_set_get_metadata_none_to_good
 s3tests/functional/test_s3.py::test_object_set_get_metadata_overwrite_to_empty
+s3tests/functional/test_s3.py::test_object_write_cache_control
 s3tests/functional/test_s3.py::test_object_write_check_etag
+s3tests/functional/test_s3.py::test_object_write_expires
 s3tests/functional/test_s3.py::test_object_write_file
 s3tests/functional/test_s3.py::test_object_write_read_update_read_delete
 s3tests/functional/test_s3.py::test_object_write_to_nonexist_bucket

@@ -16,9 +16,9 @@ public sealed record ObjectListing(
 /// <summary>The outcome of storing an object.</summary>
 public sealed record PutObjectOutcome(PutObjectStatus Status, string? ETag);
 
-/// <summary>The caller-supplied attributes of an object: its content type and user metadata.</summary>
+/// <summary>The caller-supplied attributes of an object: content type, content headers, and user metadata.</summary>
 public sealed record ObjectAttributes(
-    string? ContentType, IReadOnlyDictionary<string, string> Metadata);
+    string? ContentType, ContentHeaders ContentHeaders, IReadOnlyDictionary<string, string> Metadata);
 
 /// <summary>The outcome of uploading a part.</summary>
 public sealed record UploadPartOutcome(bool UploadExists, string? ETag);
@@ -39,15 +39,16 @@ public sealed class StorageEngine(IMetadataIndex index, BlobStore blobs, TimePro
         string bucket,
         string key,
         Stream content,
-        string? contentType,
-        IReadOnlyDictionary<string, string> metadata,
+        ObjectAttributes attributes,
         WriteCondition? condition,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(attributes);
+
         var write = await blobs.WriteAsync(content, cancellationToken).ConfigureAwait(false);
         var record = new ObjectRecord(
-            key, write.BlobId, write.Size, write.ContentMd5Hex, contentType, metadata,
-            timeProvider.GetUtcNow());
+            key, write.BlobId, write.Size, write.ContentMd5Hex, attributes.ContentType,
+            attributes.ContentHeaders, attributes.Metadata, timeProvider.GetUtcNow());
         var stored = await index.PutObjectAsync(bucket, record, condition, cancellationToken)
             .ConfigureAwait(false);
         if (stored.Status != PutObjectStatus.Stored)
@@ -189,12 +190,14 @@ public sealed class StorageEngine(IMetadataIndex index, BlobStore blobs, TimePro
     public async Task<string?> InitiateUploadAsync(
         string bucket,
         string key,
-        string? contentType,
-        IReadOnlyDictionary<string, string> metadata,
+        ObjectAttributes attributes,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(attributes);
+
         var upload = new MultipartUpload(
-            Guid.NewGuid().ToString("N"), key, contentType, metadata, timeProvider.GetUtcNow());
+            Guid.NewGuid().ToString("N"), key, attributes.ContentType, attributes.ContentHeaders,
+            attributes.Metadata, timeProvider.GetUtcNow());
         return await index.TryCreateUploadAsync(bucket, upload, cancellationToken)
             .ConfigureAwait(false)
             ? upload.UploadId
@@ -278,7 +281,7 @@ public sealed class StorageEngine(IMetadataIndex index, BlobStore blobs, TimePro
             [.. assembled.Select(p => p.BlobId)], cancellationToken).ConfigureAwait(false);
         var record = new ObjectRecord(
             key, concatenated.BlobId, concatenated.Size, MultipartETag(assembled),
-            upload.ContentType, upload.Metadata, timeProvider.GetUtcNow());
+            upload.ContentType, upload.ContentHeaders, upload.Metadata, timeProvider.GetUtcNow());
         var completed = await index
             .CompleteUploadAsync(bucket, uploadId, record, condition, cancellationToken)
             .ConfigureAwait(false);
@@ -340,6 +343,7 @@ public sealed class StorageEngine(IMetadataIndex index, BlobStore blobs, TimePro
             Key = destinationKey,
             BlobId = blobId,
             ContentType = replacement is null ? source.ContentType : replacement.ContentType,
+            ContentHeaders = replacement?.ContentHeaders ?? source.ContentHeaders,
             Metadata = replacement?.Metadata ?? source.Metadata,
             LastModified = timeProvider.GetUtcNow(),
         };

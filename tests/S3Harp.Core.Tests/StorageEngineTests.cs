@@ -117,8 +117,9 @@ public sealed class StorageEngineTests : IDisposable
     {
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
         return await engine.PutObjectAsync(
-            bucket, key, stream, contentType,
-            metadata ?? new Dictionary<string, string>(), condition, Token);
+            bucket, key, stream,
+            new ObjectAttributes(contentType, ContentHeaders.None, metadata ?? new Dictionary<string, string>()),
+            condition, Token);
     }
 
     private static async Task<string> ReadContent(ObjectDownload download)
