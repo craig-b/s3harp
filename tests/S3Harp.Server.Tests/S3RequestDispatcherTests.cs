@@ -225,6 +225,89 @@ public sealed class S3RequestDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task DeleteObjects_RemovesEveryListedKey()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/one.txt", body: "1");
+        await Dispatch("PUT", "/my-bucket/two.txt", body: "2");
+        await Dispatch("PUT", "/my-bucket/keep.txt", body: "3");
+
+        var context = await Dispatch("POST", "/my-bucket", query: "?delete", body: """
+            <Delete>
+              <Object><Key>one.txt</Key></Object>
+              <Object><Key>two.txt</Key></Object>
+              <Object><Key>never-existed.txt</Key></Object>
+            </Delete>
+            """);
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        var result = ReadBody(context).Root;
+        Assert.Equal(S3Namespace + "DeleteResult", result?.Name);
+        Assert.Equal(
+            ["never-existed.txt", "one.txt", "two.txt"],
+            result!.Elements(S3Namespace + "Deleted")
+                .Select(d => d.Element(S3Namespace + "Key")?.Value)
+                .Order(StringComparer.Ordinal));
+        Assert.Equal("NoSuchKey", ReadErrorCode(await Dispatch("GET", "/my-bucket/one.txt")));
+        Assert.Equal(
+            StatusCodes.Status200OK,
+            (await Dispatch("GET", "/my-bucket/keep.txt")).Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteObjects_InQuietMode_ReportsNothingForSuccesses()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/one.txt", body: "1");
+
+        var context = await Dispatch("POST", "/my-bucket", query: "?delete", body: """
+            <Delete>
+              <Quiet>true</Quiet>
+              <Object><Key>one.txt</Key></Object>
+            </Delete>
+            """);
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        Assert.Empty(ReadBody(context).Root!.Elements(S3Namespace + "Deleted"));
+        Assert.Equal("NoSuchKey", ReadErrorCode(await Dispatch("GET", "/my-bucket/one.txt")));
+    }
+
+    [Fact]
+    public async Task DeleteObjects_OnAnUnknownBucket_ReportsNoSuchBucket()
+    {
+        var context = await Dispatch("POST", "/my-bucket", query: "?delete",
+            body: "<Delete><Object><Key>k</Key></Object></Delete>");
+
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        Assert.Equal("NoSuchBucket", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task DeleteObjects_WithAMalformedBody_ReportsMalformedXml()
+    {
+        await Dispatch("PUT", "/my-bucket");
+
+        var context = await Dispatch("POST", "/my-bucket", query: "?delete", body: "not xml");
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("MalformedXML", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task DeleteObjects_WithMoreThanAThousandKeys_ReportsMalformedXml()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var objects = string.Concat(
+            Enumerable.Range(0, 1001).Select(i => $"<Object><Key>k{i}</Key></Object>"));
+
+        var context = await Dispatch(
+            "POST", "/my-bucket", query: "?delete", body: $"<Delete>{objects}</Delete>");
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("MalformedXML", ReadErrorCode(context));
+    }
+
+    [Fact]
     public async Task MultipartLifecycle_AssemblesThePartsIntoTheObject()
     {
         await Dispatch("PUT", "/my-bucket");

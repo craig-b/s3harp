@@ -175,6 +175,38 @@ public sealed class ObjectTests : IDisposable
     }
 
     [Fact]
+    public async Task BatchDelete_RemovesEveryListedKeyInOneRequest()
+    {
+        using var s3 = await CreateClientWithBucket();
+        foreach (var key in new[] { "one.txt", "two.txt", "keep.txt" })
+        {
+            await s3.PutObjectAsync(new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = key,
+                ContentBody = key,
+            }, Token);
+        }
+
+        var response = await s3.DeleteObjectsAsync(new DeleteObjectsRequest
+        {
+            BucketName = Bucket,
+            Objects =
+            [
+                new KeyVersion { Key = "one.txt" },
+                new KeyVersion { Key = "two.txt" },
+                new KeyVersion { Key = "never-existed.txt" },
+            ],
+        }, Token);
+
+        Assert.Equal(3, response.DeletedObjects?.Count);
+        Assert.Empty(response.DeleteErrors ?? []);
+        var remaining = await s3.ListObjectsV2Async(
+            new ListObjectsV2Request { BucketName = Bucket }, Token);
+        Assert.Equal(["keep.txt"], (remaining.S3Objects ?? []).Select(o => o.Key));
+    }
+
+    [Fact]
     public async Task DeletingABucketHoldingObjects_ThrowsBucketNotEmpty()
     {
         using var s3 = await CreateClientWithBucket();

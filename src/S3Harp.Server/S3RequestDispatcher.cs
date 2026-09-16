@@ -23,7 +23,7 @@ public sealed class S3RequestDispatcher(
     /// <summary>Query markers selecting S3 subresources and operations S3Harp will grow into.</summary>
     private static readonly string[] SubresourceMarkers =
     [
-        "acl", "cors", "delete", "lifecycle", "location", "policy",
+        "acl", "cors", "lifecycle", "location", "policy",
         "tagging", "versioning", "versions", "website",
     ];
 
@@ -50,6 +50,8 @@ public sealed class S3RequestDispatcher(
                 await HeadBucketAsync(bucket, cancellationToken).ConfigureAwait(false),
             ("DELETE", not "", null) =>
                 await DeleteBucketAsync(bucket, cancellationToken).ConfigureAwait(false),
+            ("POST", not "", null) when query.ContainsKey("delete") =>
+                await DeleteObjectsAsync(context, bucket, cancellationToken).ConfigureAwait(false),
             ("POST", not "", not null) when query.ContainsKey("uploads") =>
                 await InitiateUploadAsync(context, bucket, key, cancellationToken)
                     .ConfigureAwait(false),
@@ -302,6 +304,56 @@ public sealed class S3RequestDispatcher(
 
         await engine.DeleteObjectAsync(bucket, key, cancellationToken).ConfigureAwait(false);
         return new S3StatusResult(StatusCodes.Status204NoContent);
+    }
+
+    private async Task<IResult> DeleteObjectsAsync(
+        HttpContext context, string bucket, CancellationToken cancellationToken)
+    {
+        const int maxKeysPerRequest = 1000;
+        if (!await index.BucketExistsAsync(bucket, cancellationToken).ConfigureAwait(false))
+        {
+            return new S3ErrorResult(S3Errors.NoSuchBucket);
+        }
+
+        List<string> keys;
+        bool quiet;
+        try
+        {
+            var document = await XDocument.LoadAsync(
+                context.Request.Body, LoadOptions.None, cancellationToken).ConfigureAwait(false);
+            keys = [.. document.Root!
+                .Elements().Where(e => e.Name.LocalName == "Object")
+                .Select(o => o.Elements().First(e => e.Name.LocalName == "Key").Value)];
+            quiet = string.Equals(
+                document.Root.Elements().FirstOrDefault(e => e.Name.LocalName == "Quiet")?.Value,
+                "true", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception exception) when (
+            exception is System.Xml.XmlException or InvalidOperationException
+                or NullReferenceException)
+        {
+            return new S3ErrorResult(S3Errors.MalformedXML);
+        }
+
+        if (keys.Count > maxKeysPerRequest)
+        {
+            return new S3ErrorResult(S3Errors.MalformedXML);
+        }
+
+        var result = new XElement(S3Namespace + "DeleteResult");
+        foreach (var key in keys)
+        {
+            await engine.DeleteObjectAsync(bucket, key, cancellationToken).ConfigureAwait(false);
+            if (!quiet)
+            {
+                result.Add(new XElement(S3Namespace + "Deleted",
+                    new XElement(S3Namespace + "Key", key)));
+            }
+        }
+
+        return new S3XmlResult(
+            StatusCodes.Status200OK,
+            new XDocument(new XDeclaration("1.0", "UTF-8", standalone: null), result));
     }
 
     private async Task<IResult> InitiateUploadAsync(
