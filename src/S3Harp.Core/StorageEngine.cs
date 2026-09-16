@@ -70,9 +70,26 @@ public sealed class StorageEngine(IMetadataIndex index, BlobStore blobs, TimePro
     public async Task<ObjectDownload?> GetObjectAsync(
         string bucket, string key, CancellationToken cancellationToken)
     {
-        var record = await index.FindObjectAsync(bucket, key, cancellationToken)
-            .ConfigureAwait(false);
-        return record is null ? null : new ObjectDownload(record, blobs.OpenRead(record.BlobId));
+        const int maxAttempts = 5;
+        for (var attempt = 1; ; attempt++)
+        {
+            var record = await index.FindObjectAsync(bucket, key, cancellationToken)
+                .ConfigureAwait(false);
+            if (record is null)
+            {
+                return null;
+            }
+
+            try
+            {
+                return new ObjectDownload(record, blobs.OpenRead(record.BlobId));
+            }
+            catch (FileNotFoundException) when (attempt < maxAttempts)
+            {
+                // A concurrent overwrite or delete reclaimed this blob between the
+                // index read and the open; the fresh lookup sees the outcome.
+            }
+        }
     }
 
     public async Task<ObjectListing> ListObjectsAsync(
