@@ -218,10 +218,160 @@ public sealed class S3RequestDispatcherTests : IDisposable
     [Fact]
     public async Task SubresourceOperations_ReportNotImplemented()
     {
-        var context = await Dispatch("POST", "/my-bucket/my-key", query: "?uploads");
+        var context = await Dispatch("PUT", "/my-bucket", query: "?versioning");
 
         Assert.Equal(StatusCodes.Status501NotImplemented, context.Response.StatusCode);
         Assert.Equal("NotImplemented", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task MultipartLifecycle_AssemblesThePartsIntoTheObject()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate("/my-bucket/assembled.txt");
+        var firstETag = await UploadPart("/my-bucket/assembled.txt", uploadId, 1, "Hello, ");
+        var secondETag = await UploadPart("/my-bucket/assembled.txt", uploadId, 2, "S3Harp!");
+
+        var complete = await Dispatch(
+            "POST", "/my-bucket/assembled.txt",
+            query: $"?uploadId={uploadId}",
+            body: $"""
+                <CompleteMultipartUpload>
+                  <Part><PartNumber>1</PartNumber><ETag>{firstETag}</ETag></Part>
+                  <Part><PartNumber>2</PartNumber><ETag>{secondETag}</ETag></Part>
+                </CompleteMultipartUpload>
+                """);
+
+        Assert.Equal(StatusCodes.Status200OK, complete.Response.StatusCode);
+        var result = ReadBody(complete).Root;
+        Assert.Equal(S3Namespace + "CompleteMultipartUploadResult", result?.Name);
+        Assert.Equal(
+            "\"3c4e718dd79097f10b153c92cfded190-2\"",
+            result?.Element(S3Namespace + "ETag")?.Value);
+        var download = await Dispatch("GET", "/my-bucket/assembled.txt");
+        Assert.Equal("Hello, S3Harp!", ReadBodyText(download));
+    }
+
+    [Fact]
+    public async Task CompletingAnUnknownUpload_ReportsNoSuchUpload()
+    {
+        await Dispatch("PUT", "/my-bucket");
+
+        var context = await Dispatch(
+            "POST", "/my-bucket/key", query: "?uploadId=missing",
+            body: "<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>x</ETag></Part></CompleteMultipartUpload>");
+
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        Assert.Equal("NoSuchUpload", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task CompletingWithAMalformedBody_ReportsMalformedXml()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate("/my-bucket/key");
+
+        var context = await Dispatch(
+            "POST", "/my-bucket/key", query: $"?uploadId={uploadId}", body: "not xml at all");
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("MalformedXML", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task UploadPartWithAnInvalidPartNumber_ReportsInvalidArgument()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate("/my-bucket/key");
+
+        var context = await Dispatch(
+            "PUT", "/my-bucket/key",
+            query: $"?partNumber=0&uploadId={uploadId}", body: "data");
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("InvalidArgument", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task AbortedUpload_StopsAcceptingParts()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate("/my-bucket/key");
+
+        var abort = await Dispatch(
+            "DELETE", "/my-bucket/key", query: $"?uploadId={uploadId}");
+        var part = await Dispatch(
+            "PUT", "/my-bucket/key", query: $"?partNumber=1&uploadId={uploadId}", body: "data");
+
+        Assert.Equal(StatusCodes.Status204NoContent, abort.Response.StatusCode);
+        Assert.Equal(StatusCodes.Status404NotFound, part.Response.StatusCode);
+        Assert.Equal("NoSuchUpload", ReadErrorCode(part));
+    }
+
+    [Fact]
+    public async Task UploadPartCopy_ReportsNotImplemented()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate("/my-bucket/key");
+
+        var context = await Dispatch(
+            "PUT", "/my-bucket/key",
+            query: $"?partNumber=1&uploadId={uploadId}",
+            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/other");
+
+        Assert.Equal(StatusCodes.Status501NotImplemented, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CopiedObject_ServesTheSameContent()
+    {
+        await Dispatch("PUT", "/my-bucket");
+        await Dispatch("PUT", "/my-bucket/src.txt", body: "hello world");
+
+        var copy = await Dispatch(
+            "PUT", "/my-bucket/dst.txt",
+            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/src.txt");
+
+        Assert.Equal(StatusCodes.Status200OK, copy.Response.StatusCode);
+        var result = ReadBody(copy).Root;
+        Assert.Equal(S3Namespace + "CopyObjectResult", result?.Name);
+        Assert.Equal(
+            "\"5eb63bbbe01eeed093cb22bb8f5acdc3\"",
+            result?.Element(S3Namespace + "ETag")?.Value);
+        Assert.Equal("hello world", ReadBodyText(await Dispatch("GET", "/my-bucket/dst.txt")));
+    }
+
+    [Fact]
+    public async Task CopyingAMissingSource_ReportsNoSuchKey()
+    {
+        await Dispatch("PUT", "/my-bucket");
+
+        var context = await Dispatch(
+            "PUT", "/my-bucket/dst.txt",
+            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/missing");
+
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        Assert.Equal("NoSuchKey", ReadErrorCode(context));
+    }
+
+    private async Task<string> Initiate(string path)
+    {
+        var context = await Dispatch("POST", path, query: "?uploads");
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        var uploadId = ReadBody(context).Root?.Element(S3Namespace + "UploadId")?.Value;
+        Assert.False(string.IsNullOrEmpty(uploadId));
+        return uploadId;
+    }
+
+    private async Task<string> UploadPart(
+        string path, string uploadId, int number, string content)
+    {
+        var context = await Dispatch(
+            "PUT", path, query: $"?partNumber={number}&uploadId={uploadId}", body: content);
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        var etag = context.Response.Headers.ETag.ToString();
+        Assert.False(string.IsNullOrEmpty(etag));
+        return etag;
     }
 
     [Fact]

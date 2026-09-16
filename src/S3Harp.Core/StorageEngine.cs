@@ -16,6 +16,23 @@ public sealed record ObjectListing(
 /// <summary>The outcome of storing an object.</summary>
 public sealed record PutObjectOutcome(bool BucketExists, string? ETag);
 
+/// <summary>The outcome of uploading a part.</summary>
+public sealed record UploadPartOutcome(bool UploadExists, string? ETag);
+
+public enum CompleteUploadStatus
+{
+    Completed,
+    NoSuchUpload,
+    InvalidPart,
+    InvalidPartOrder,
+}
+
+/// <summary>The outcome of completing a multipart upload.</summary>
+public sealed record CompleteUploadOutcome(CompleteUploadStatus Status, string? ETag);
+
+/// <summary>The outcome of a server-side object copy.</summary>
+public sealed record CopyObjectOutcome(string ETag, DateTimeOffset LastModified);
+
 /// <summary>
 /// The storage engine: coordinates the blob store and the metadata index so the
 /// pair always agree, including reclaiming blob files their records release.
@@ -137,6 +154,192 @@ public sealed class StorageEngine(IMetadataIndex index, BlobStore blobs, TimePro
         {
             blobs.Delete(blobId);
         }
+    }
+
+    public async Task<string?> InitiateUploadAsync(
+        string bucket,
+        string key,
+        string? contentType,
+        IReadOnlyDictionary<string, string> metadata,
+        CancellationToken cancellationToken)
+    {
+        var upload = new MultipartUpload(
+            Guid.NewGuid().ToString("N"), key, contentType, metadata, timeProvider.GetUtcNow());
+        return await index.TryCreateUploadAsync(bucket, upload, cancellationToken)
+            .ConfigureAwait(false)
+            ? upload.UploadId
+            : null;
+    }
+
+    public async Task<UploadPartOutcome> UploadPartAsync(
+        string bucket,
+        string key,
+        string uploadId,
+        int partNumber,
+        Stream content,
+        CancellationToken cancellationToken)
+    {
+        var write = await blobs.WriteAsync(content, cancellationToken).ConfigureAwait(false);
+        var stored = await index.PutPartAsync(
+            bucket, key, uploadId,
+            new PartRecord(partNumber, write.BlobId, write.Size, write.ContentMd5Hex),
+            cancellationToken).ConfigureAwait(false);
+        if (!stored.UploadExists)
+        {
+            blobs.Delete(write.BlobId);
+            return new UploadPartOutcome(UploadExists: false, null);
+        }
+
+        if (stored.ReplacedBlobId is not null)
+        {
+            blobs.Delete(stored.ReplacedBlobId);
+        }
+
+        return new UploadPartOutcome(UploadExists: true, write.ContentMd5Hex);
+    }
+
+    public async Task<CompleteUploadOutcome> CompleteUploadAsync(
+        string bucket,
+        string key,
+        string uploadId,
+        IReadOnlyList<(int PartNumber, string ETag)> requestedParts,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(requestedParts);
+
+        var upload = await index.FindUploadAsync(bucket, key, uploadId, cancellationToken)
+            .ConfigureAwait(false);
+        if (upload is null)
+        {
+            return new CompleteUploadOutcome(CompleteUploadStatus.NoSuchUpload, null);
+        }
+
+        for (var i = 1; i < requestedParts.Count; i++)
+        {
+            if (requestedParts[i].PartNumber <= requestedParts[i - 1].PartNumber)
+            {
+                return new CompleteUploadOutcome(CompleteUploadStatus.InvalidPartOrder, null);
+            }
+        }
+
+        var storedParts = (await index
+            .ListPartsAsync(bucket, key, uploadId, cancellationToken).ConfigureAwait(false))
+            .ToDictionary(p => p.PartNumber);
+        var assembled = new List<PartRecord>(requestedParts.Count);
+        foreach (var (partNumber, requestedETag) in requestedParts)
+        {
+            if (!storedParts.TryGetValue(partNumber, out var part)
+                || !string.Equals(
+                    part.ETag, requestedETag.Trim('"'), StringComparison.OrdinalIgnoreCase))
+            {
+                return new CompleteUploadOutcome(CompleteUploadStatus.InvalidPart, null);
+            }
+
+            assembled.Add(part);
+        }
+
+        if (assembled.Count == 0)
+        {
+            return new CompleteUploadOutcome(CompleteUploadStatus.InvalidPart, null);
+        }
+
+        var concatenated = await blobs.ConcatenateAsync(
+            [.. assembled.Select(p => p.BlobId)], cancellationToken).ConfigureAwait(false);
+        var record = new ObjectRecord(
+            key, concatenated.BlobId, concatenated.Size, MultipartETag(assembled),
+            upload.ContentType, upload.Metadata, timeProvider.GetUtcNow());
+        var completed = await index.CompleteUploadAsync(bucket, uploadId, record, cancellationToken)
+            .ConfigureAwait(false);
+        if (completed is null)
+        {
+            blobs.Delete(concatenated.BlobId);
+            return new CompleteUploadOutcome(CompleteUploadStatus.NoSuchUpload, null);
+        }
+
+        foreach (var blobId in completed.PartBlobIds)
+        {
+            blobs.Delete(blobId);
+        }
+
+        if (completed.ReplacedBlobId is not null)
+        {
+            blobs.Delete(completed.ReplacedBlobId);
+        }
+
+        return new CompleteUploadOutcome(CompleteUploadStatus.Completed, record.ETag);
+    }
+
+    public async Task<bool> AbortUploadAsync(
+        string bucket, string key, string uploadId, CancellationToken cancellationToken)
+    {
+        var partBlobs = await index.DeleteUploadAsync(bucket, key, uploadId, cancellationToken)
+            .ConfigureAwait(false);
+        if (partBlobs is null)
+        {
+            return false;
+        }
+
+        foreach (var blobId in partBlobs)
+        {
+            blobs.Delete(blobId);
+        }
+
+        return true;
+    }
+
+    public async Task<CopyObjectOutcome?> CopyObjectAsync(
+        string sourceBucket,
+        string sourceKey,
+        string destinationBucket,
+        string destinationKey,
+        IReadOnlyDictionary<string, string>? metadataOverride,
+        CancellationToken cancellationToken)
+    {
+        var source = await index.FindObjectAsync(sourceBucket, sourceKey, cancellationToken)
+            .ConfigureAwait(false);
+        if (source is null)
+        {
+            return null;
+        }
+
+        var blobId = await blobs.CopyAsync(source.BlobId, cancellationToken).ConfigureAwait(false);
+        var record = source with
+        {
+            Key = destinationKey,
+            BlobId = blobId,
+            Metadata = metadataOverride ?? source.Metadata,
+            LastModified = timeProvider.GetUtcNow(),
+        };
+        var stored = await index.PutObjectAsync(destinationBucket, record, cancellationToken)
+            .ConfigureAwait(false);
+        if (!stored.BucketExists)
+        {
+            blobs.Delete(blobId);
+            return null;
+        }
+
+        if (stored.ReplacedBlobId is not null)
+        {
+            blobs.Delete(stored.ReplacedBlobId);
+        }
+
+        return new CopyObjectOutcome(record.ETag, record.LastModified);
+    }
+
+    private static string MultipartETag(List<PartRecord> parts)
+    {
+        var combined = new byte[parts.Count * 16];
+        for (var i = 0; i < parts.Count; i++)
+        {
+            Convert.FromHexString(parts[i].ETag).CopyTo(combined, i * 16);
+        }
+
+        // The multipart ETag is S3's MD5-of-part-MD5s format; a protocol artifact,
+        // carrying no security claim.
+#pragma warning disable CA5351
+        var hash = System.Security.Cryptography.MD5.HashData(combined);
+#pragma warning restore CA5351
+        return $"{Convert.ToHexStringLower(hash)}-{parts.Count}";
     }
 
     private static string? FindGroupPrefix(string key, string prefix, string? delimiter)

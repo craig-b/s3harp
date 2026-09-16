@@ -24,7 +24,7 @@ public sealed class S3RequestDispatcher(
     private static readonly string[] SubresourceMarkers =
     [
         "acl", "cors", "delete", "lifecycle", "location", "policy",
-        "tagging", "uploadId", "uploads", "versioning", "versions", "website",
+        "tagging", "versioning", "versions", "website",
     ];
 
     public async Task<IResult> DispatchAsync(HttpContext context)
@@ -38,10 +38,11 @@ public sealed class S3RequestDispatcher(
 
         var (bucket, key) = ParsePath(context.Request.Path.Value ?? "/");
         var cancellationToken = context.RequestAborted;
+        var query = context.Request.Query;
         return (context.Request.Method, bucket, key) switch
         {
             ("GET", "", null) => await ListBucketsAsync(cancellationToken).ConfigureAwait(false),
-            ("GET", not "", null) when context.Request.Query["list-type"] == "2" =>
+            ("GET", not "", null) when query["list-type"] == "2" =>
                 await ListObjectsV2Async(context, bucket, cancellationToken).ConfigureAwait(false),
             ("PUT", not "", null) =>
                 await CreateBucketAsync(context, bucket, cancellationToken).ConfigureAwait(false),
@@ -49,6 +50,22 @@ public sealed class S3RequestDispatcher(
                 await HeadBucketAsync(bucket, cancellationToken).ConfigureAwait(false),
             ("DELETE", not "", null) =>
                 await DeleteBucketAsync(bucket, cancellationToken).ConfigureAwait(false),
+            ("POST", not "", not null) when query.ContainsKey("uploads") =>
+                await InitiateUploadAsync(context, bucket, key, cancellationToken)
+                    .ConfigureAwait(false),
+            ("POST", not "", not null) when query.ContainsKey("uploadId") =>
+                await CompleteUploadAsync(context, bucket, key, cancellationToken)
+                    .ConfigureAwait(false),
+            ("PUT", not "", not null) when query.ContainsKey("uploadId") =>
+                await UploadPartAsync(context, bucket, key, cancellationToken)
+                    .ConfigureAwait(false),
+            ("DELETE", not "", not null) when query.ContainsKey("uploadId") =>
+                await AbortUploadAsync(bucket, key, query["uploadId"].ToString(), cancellationToken)
+                    .ConfigureAwait(false),
+            ("PUT", not "", not null)
+                when context.Request.Headers.ContainsKey("x-amz-copy-source") =>
+                await CopyObjectAsync(context, bucket, key, cancellationToken)
+                    .ConfigureAwait(false),
             ("PUT", not "", not null) =>
                 await PutObjectAsync(context, bucket, key, cancellationToken).ConfigureAwait(false),
             ("GET", not "", not null) =>
@@ -276,6 +293,178 @@ public sealed class S3RequestDispatcher(
 
         await engine.DeleteObjectAsync(bucket, key, cancellationToken).ConfigureAwait(false);
         return new S3StatusResult(StatusCodes.Status204NoContent);
+    }
+
+    private async Task<IResult> InitiateUploadAsync(
+        HttpContext context, string bucket, string key, CancellationToken cancellationToken)
+    {
+        if (!await index.BucketExistsAsync(bucket, cancellationToken).ConfigureAwait(false))
+        {
+            return new S3ErrorResult(S3Errors.NoSuchBucket);
+        }
+
+        var uploadId = await engine.InitiateUploadAsync(
+            bucket, key, context.Request.ContentType, ReadMetadataHeaders(context.Request),
+            cancellationToken).ConfigureAwait(false);
+        if (uploadId is null)
+        {
+            return new S3ErrorResult(S3Errors.NoSuchBucket);
+        }
+
+        return new S3XmlResult(
+            StatusCodes.Status200OK,
+            new XDocument(
+                new XDeclaration("1.0", "UTF-8", standalone: null),
+                new XElement(S3Namespace + "InitiateMultipartUploadResult",
+                    new XElement(S3Namespace + "Bucket", bucket),
+                    new XElement(S3Namespace + "Key", key),
+                    new XElement(S3Namespace + "UploadId", uploadId))));
+    }
+
+    private async Task<IResult> UploadPartAsync(
+        HttpContext context, string bucket, string key, CancellationToken cancellationToken)
+    {
+        if (context.Request.Headers.ContainsKey("x-amz-copy-source"))
+        {
+            return new S3ErrorResult(S3Errors.NotImplemented);
+        }
+
+        if (!int.TryParse(context.Request.Query["partNumber"], out var partNumber)
+            || partNumber is < 1 or > 10_000)
+        {
+            return new S3ErrorResult(S3Errors.InvalidArgument);
+        }
+
+        if (!await index.BucketExistsAsync(bucket, cancellationToken).ConfigureAwait(false))
+        {
+            return new S3ErrorResult(S3Errors.NoSuchBucket);
+        }
+
+        UploadPartOutcome outcome;
+        try
+        {
+            outcome = await engine.UploadPartAsync(
+                bucket, key, context.Request.Query["uploadId"].ToString(), partNumber,
+                context.Request.Body, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PayloadVerificationException exception)
+        {
+            return new S3ErrorResult(exception.Error);
+        }
+
+        if (!outcome.UploadExists)
+        {
+            return new S3ErrorResult(S3Errors.NoSuchUpload);
+        }
+
+        context.Response.Headers.ETag = $"\"{outcome.ETag}\"";
+        return new S3StatusResult(StatusCodes.Status200OK);
+    }
+
+    private async Task<IResult> CompleteUploadAsync(
+        HttpContext context, string bucket, string key, CancellationToken cancellationToken)
+    {
+        if (!await index.BucketExistsAsync(bucket, cancellationToken).ConfigureAwait(false))
+        {
+            return new S3ErrorResult(S3Errors.NoSuchBucket);
+        }
+
+        List<(int PartNumber, string ETag)> parts;
+        try
+        {
+            var document = await XDocument.LoadAsync(
+                context.Request.Body, LoadOptions.None, cancellationToken).ConfigureAwait(false);
+            parts = [.. document.Root!
+                .Elements().Where(e => e.Name.LocalName == "Part")
+                .Select(part => (
+                    int.Parse(
+                        part.Elements().First(e => e.Name.LocalName == "PartNumber").Value,
+                        CultureInfo.InvariantCulture),
+                    part.Elements().First(e => e.Name.LocalName == "ETag").Value))];
+        }
+        catch (Exception exception) when (
+            exception is System.Xml.XmlException or InvalidOperationException
+                or FormatException or NullReferenceException)
+        {
+            return new S3ErrorResult(S3Errors.MalformedXML);
+        }
+
+        var outcome = await engine.CompleteUploadAsync(
+            bucket, key, context.Request.Query["uploadId"].ToString(), parts, cancellationToken)
+            .ConfigureAwait(false);
+        return outcome.Status switch
+        {
+            CompleteUploadStatus.NoSuchUpload => new S3ErrorResult(S3Errors.NoSuchUpload),
+            CompleteUploadStatus.InvalidPart => new S3ErrorResult(S3Errors.InvalidPart),
+            CompleteUploadStatus.InvalidPartOrder => new S3ErrorResult(S3Errors.InvalidPartOrder),
+            _ => new S3XmlResult(
+                StatusCodes.Status200OK,
+                new XDocument(
+                    new XDeclaration("1.0", "UTF-8", standalone: null),
+                    new XElement(S3Namespace + "CompleteMultipartUploadResult",
+                        new XElement(S3Namespace + "Location", $"/{bucket}/{key}"),
+                        new XElement(S3Namespace + "Bucket", bucket),
+                        new XElement(S3Namespace + "Key", key),
+                        new XElement(S3Namespace + "ETag", $"\"{outcome.ETag}\"")))),
+        };
+    }
+
+    private async Task<IResult> AbortUploadAsync(
+        string bucket, string key, string uploadId, CancellationToken cancellationToken)
+    {
+        if (!await index.BucketExistsAsync(bucket, cancellationToken).ConfigureAwait(false))
+        {
+            return new S3ErrorResult(S3Errors.NoSuchBucket);
+        }
+
+        return await engine.AbortUploadAsync(bucket, key, uploadId, cancellationToken)
+            .ConfigureAwait(false)
+            ? new S3StatusResult(StatusCodes.Status204NoContent)
+            : new S3ErrorResult(S3Errors.NoSuchUpload);
+    }
+
+    private async Task<IResult> CopyObjectAsync(
+        HttpContext context, string bucket, string key, CancellationToken cancellationToken)
+    {
+        if (!await index.BucketExistsAsync(bucket, cancellationToken).ConfigureAwait(false))
+        {
+            return new S3ErrorResult(S3Errors.NoSuchBucket);
+        }
+
+        var source = Uri.UnescapeDataString(
+            context.Request.Headers["x-amz-copy-source"].ToString()).TrimStart('/');
+        var separator = source.IndexOf('/', StringComparison.Ordinal);
+        if (separator <= 0 || separator == source.Length - 1)
+        {
+            return new S3ErrorResult(S3Errors.InvalidArgument);
+        }
+
+        var sourceBucket = source[..separator];
+        var sourceKey = source[(separator + 1)..];
+        if (!await index.BucketExistsAsync(sourceBucket, cancellationToken).ConfigureAwait(false))
+        {
+            return new S3ErrorResult(S3Errors.NoSuchBucket);
+        }
+
+        var replaceMetadata = string.Equals(
+            context.Request.Headers["x-amz-metadata-directive"], "REPLACE",
+            StringComparison.OrdinalIgnoreCase);
+        var outcome = await engine.CopyObjectAsync(
+            sourceBucket, sourceKey, bucket, key,
+            replaceMetadata ? ReadMetadataHeaders(context.Request) : null,
+            cancellationToken).ConfigureAwait(false);
+        if (outcome is null)
+        {
+            return new S3ErrorResult(S3Errors.NoSuchKey);
+        }
+
+        return new S3XmlResult(
+            StatusCodes.Status200OK,
+            new XDocument(
+                new XDeclaration("1.0", "UTF-8", standalone: null),
+                new XElement(S3Namespace + "CopyObjectResult",
+                    new XElement(S3Namespace + "ETag", $"\"{outcome.ETag}\""),
+                    new XElement(S3Namespace + "LastModified", FormatTimestamp(outcome.LastModified)))));
     }
 
     private static Dictionary<string, string> ReadMetadataHeaders(HttpRequest request)

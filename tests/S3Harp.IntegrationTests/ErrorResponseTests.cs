@@ -14,8 +14,7 @@ public sealed class ErrorResponseTests : IDisposable
         using var s3 = factory.CreateS3Client();
 
         var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
-            () => s3.InitiateMultipartUploadAsync(
-                "demo", "object-key", TestContext.Current.CancellationToken));
+            () => s3.GetBucketVersioningAsync("demo", TestContext.Current.CancellationToken));
 
         Assert.Equal("NotImplemented", exception.ErrorCode);
         Assert.Equal(HttpStatusCode.NotImplemented, exception.StatusCode);

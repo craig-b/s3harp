@@ -61,6 +61,26 @@ public static class S3Errors
         StatusCodes.Status403Forbidden,
         "The AWS access key Id you provided does not exist in our records.");
 
+    public static S3Error InvalidPart { get; } = new(
+        "InvalidPart",
+        StatusCodes.Status400BadRequest,
+        "One or more of the specified parts could not be found or did not match its entity tag.");
+
+    public static S3Error InvalidPartOrder { get; } = new(
+        "InvalidPartOrder",
+        StatusCodes.Status400BadRequest,
+        "The list of parts was not in ascending order. Parts must be ordered by part number.");
+
+    public static S3Error MalformedXML { get; } = new(
+        "MalformedXML",
+        StatusCodes.Status400BadRequest,
+        "The XML you provided was not well-formed.");
+
+    public static S3Error NoSuchUpload { get; } = new(
+        "NoSuchUpload",
+        StatusCodes.Status404NotFound,
+        "The specified multipart upload does not exist.");
+
     public static S3Error MissingContentSha256 { get; } = new(
         "InvalidRequest",
         StatusCodes.Status400BadRequest,

@@ -199,7 +199,143 @@ public abstract class MetadataIndexContractTests
         Assert.Empty(await Index.ScanObjectsAsync("missing", "", "", 10, Token));
     }
 
+    [Fact]
+    public async Task CreateUpload_IntoAMissingBucket_IsRefused()
+    {
+        Assert.False(await Index.TryCreateUploadAsync("missing", Upload("u1"), Token));
+    }
+
+    [Fact]
+    public async Task CreatedUpload_IsFindableWithItsFields()
+    {
+        await Create("alpha");
+
+        Assert.True(await Index.TryCreateUploadAsync("alpha", Upload("u1"), Token));
+        var found = await Index.FindUploadAsync("alpha", "key", "u1", Token);
+
+        Assert.NotNull(found);
+        Assert.Equal("u1", found.UploadId);
+        Assert.Equal("key", found.Key);
+        Assert.Equal("text/plain", found.ContentType);
+        Assert.Equal("value-1", found.Metadata["meta-1"]);
+        Assert.Equal(CreationTime, found.InitiatedAt);
+    }
+
+    [Fact]
+    public async Task FindingAnUnknownUpload_ReturnsNothing()
+    {
+        await Create("alpha");
+
+        Assert.Null(await Index.FindUploadAsync("alpha", "key", "missing", Token));
+    }
+
+    [Fact]
+    public async Task Parts_ListInPartNumberOrder()
+    {
+        await StartUpload("alpha", "u1");
+
+        await Index.PutPartAsync("alpha", "key", "u1", Part(2, "blob-2"), Token);
+        await Index.PutPartAsync("alpha", "key", "u1", Part(1, "blob-1"), Token);
+        var parts = await Index.ListPartsAsync("alpha", "key", "u1", Token);
+
+        Assert.Equal([1, 2], parts.Select(p => p.PartNumber));
+        Assert.Equal(["blob-1", "blob-2"], parts.Select(p => p.BlobId));
+        Assert.Equal(3, parts[0].Size);
+        Assert.Equal("part-etag", parts[0].ETag);
+    }
+
+    [Fact]
+    public async Task PutPart_ReplacingAPartNumber_ReturnsTheReplacedBlobId()
+    {
+        await StartUpload("alpha", "u1");
+        await Index.PutPartAsync("alpha", "key", "u1", Part(1, "blob-old"), Token);
+
+        var result = await Index.PutPartAsync("alpha", "key", "u1", Part(1, "blob-new"), Token);
+
+        Assert.True(result.UploadExists);
+        Assert.Equal("blob-old", result.ReplacedBlobId);
+    }
+
+    [Fact]
+    public async Task PutPart_OnAnUnknownUpload_IsRefused()
+    {
+        await Create("alpha");
+
+        var result = await Index.PutPartAsync("alpha", "key", "missing", Part(1, "blob"), Token);
+
+        Assert.False(result.UploadExists);
+    }
+
+    [Fact]
+    public async Task DeleteUpload_ReturnsThePartBlobIdsAndRemovesEverything()
+    {
+        await StartUpload("alpha", "u1");
+        await Index.PutPartAsync("alpha", "key", "u1", Part(1, "blob-1"), Token);
+        await Index.PutPartAsync("alpha", "key", "u1", Part(2, "blob-2"), Token);
+
+        var blobIds = await Index.DeleteUploadAsync("alpha", "key", "u1", Token);
+
+        Assert.NotNull(blobIds);
+        Assert.Equal(["blob-1", "blob-2"], blobIds.Order(StringComparer.Ordinal));
+        Assert.Null(await Index.FindUploadAsync("alpha", "key", "u1", Token));
+    }
+
+    [Fact]
+    public async Task DeletingAnUnknownUpload_ReturnsNothing()
+    {
+        await Create("alpha");
+
+        Assert.Null(await Index.DeleteUploadAsync("alpha", "key", "missing", Token));
+    }
+
+    [Fact]
+    public async Task CompleteUpload_StoresTheObjectAndRemovesTheUpload()
+    {
+        await StartUpload("alpha", "u1");
+        await Index.PutPartAsync("alpha", "key", "u1", Part(1, "blob-1"), Token);
+        await Index.PutObjectAsync("alpha", Record("key", "blob-old"), Token);
+
+        var result = await Index.CompleteUploadAsync(
+            "alpha", "u1", Record("key", "blob-final"), Token);
+
+        Assert.NotNull(result);
+        Assert.Equal("blob-old", result.ReplacedBlobId);
+        Assert.Equal(["blob-1"], result.PartBlobIds);
+        Assert.Equal("blob-final", (await Index.FindObjectAsync("alpha", "key", Token))?.BlobId);
+        Assert.Null(await Index.FindUploadAsync("alpha", "key", "u1", Token));
+    }
+
+    [Fact]
+    public async Task CompletingAnUnknownUpload_ReturnsNothing()
+    {
+        await Create("alpha");
+
+        Assert.Null(await Index.CompleteUploadAsync(
+            "alpha", "missing", Record("key", "blob"), Token));
+    }
+
+    [Fact]
+    public async Task DeletingABucketWithAnActiveUpload_ReportsItNotEmpty()
+    {
+        await StartUpload("alpha", "u1");
+
+        Assert.Equal(DeleteBucketResult.NotEmpty, await Index.DeleteBucketAsync("alpha", Token));
+    }
+
     private static CancellationToken Token => TestContext.Current.CancellationToken;
+
+    private async Task StartUpload(string bucket, string uploadId)
+    {
+        await Create(bucket);
+        Assert.True(await Index.TryCreateUploadAsync(bucket, Upload(uploadId), Token));
+    }
+
+    private static MultipartUpload Upload(string uploadId) => new(
+        uploadId, "key", "text/plain",
+        new Dictionary<string, string> { ["meta-1"] = "value-1" }, CreationTime);
+
+    private static PartRecord Part(int number, string blobId) =>
+        new(number, blobId, Size: 3, ETag: "part-etag");
 
     private static ObjectRecord Record(string key, string blobId) => new(
         key, blobId, Size: 3, ETag: "etag-hex", ContentType: "text/plain",

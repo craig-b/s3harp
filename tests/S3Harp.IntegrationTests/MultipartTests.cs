@@ -1,0 +1,117 @@
+using System.Security.Cryptography;
+using Amazon.S3;
+using Amazon.S3.Model;
+using Xunit;
+
+namespace S3Harp.IntegrationTests;
+
+public sealed class MultipartTests : IDisposable
+{
+    private const string Bucket = "multipart-bucket";
+
+    private readonly S3HarpFactory factory = new();
+
+    [Fact]
+    public async Task MultipartUpload_AssemblesThePartsIntoTheObject()
+    {
+        using var s3 = await CreateClientWithBucket();
+        var firstPart = RandomNumberGenerator.GetBytes(5 * 1024 * 1024);
+        var secondPart = RandomNumberGenerator.GetBytes(64 * 1024);
+
+        var initiate = await s3.InitiateMultipartUploadAsync(new InitiateMultipartUploadRequest
+        {
+            BucketName = Bucket,
+            Key = "assembled.bin",
+            ContentType = "application/x-s3harp",
+            Metadata = { ["note"] = "multipart" },
+        }, Token);
+        var uploaded = new List<PartETag>();
+        foreach (var (bytes, number) in new[] { (firstPart, 1), (secondPart, 2) })
+        {
+            var part = await s3.UploadPartAsync(new UploadPartRequest
+            {
+                BucketName = Bucket,
+                Key = "assembled.bin",
+                UploadId = initiate.UploadId,
+                PartNumber = number,
+                InputStream = new MemoryStream(bytes),
+            }, Token);
+            uploaded.Add(new PartETag(number, part.ETag));
+        }
+
+        var completed = await s3.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
+        {
+            BucketName = Bucket,
+            Key = "assembled.bin",
+            UploadId = initiate.UploadId,
+            PartETags = uploaded,
+        }, Token);
+
+        Assert.EndsWith("-2\"", completed.ETag, StringComparison.Ordinal);
+        using var response = await s3.GetObjectAsync(Bucket, "assembled.bin", Token);
+        using var received = new MemoryStream();
+        await response.ResponseStream.CopyToAsync(received, Token);
+        Assert.Equal([.. firstPart, .. secondPart], received.ToArray());
+        Assert.Equal("application/x-s3harp", response.Headers.ContentType);
+        Assert.Equal("multipart", response.Metadata["note"]);
+    }
+
+    [Fact]
+    public async Task AbortedUpload_RefusesCompletion()
+    {
+        using var s3 = await CreateClientWithBucket();
+        var initiate = await s3.InitiateMultipartUploadAsync(Bucket, "doomed.bin", Token);
+        var part = await s3.UploadPartAsync(new UploadPartRequest
+        {
+            BucketName = Bucket,
+            Key = "doomed.bin",
+            UploadId = initiate.UploadId,
+            PartNumber = 1,
+            InputStream = new MemoryStream(new byte[1024]),
+        }, Token);
+
+        await s3.AbortMultipartUploadAsync(Bucket, "doomed.bin", initiate.UploadId, Token);
+
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
+            () => s3.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
+            {
+                BucketName = Bucket,
+                Key = "doomed.bin",
+                UploadId = initiate.UploadId,
+                PartETags = [new PartETag(1, part.ETag)],
+            }, Token));
+        Assert.Equal("NoSuchUpload", exception.ErrorCode);
+    }
+
+    [Fact]
+    public async Task CopiedObject_MatchesTheSourceContentAndETag()
+    {
+        using var s3 = await CreateClientWithBucket();
+        await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = Bucket,
+            Key = "src.txt",
+            ContentBody = "hello world",
+            Metadata = { ["note"] = "kept" },
+        }, Token);
+
+        var copy = await s3.CopyObjectAsync(Bucket, "src.txt", Bucket, "dst.txt", Token);
+
+        Assert.Equal("\"5eb63bbbe01eeed093cb22bb8f5acdc3\"", copy.ETag);
+        using var response = await s3.GetObjectAsync(Bucket, "dst.txt", Token);
+        using var reader = new StreamReader(response.ResponseStream);
+        Assert.Equal("hello world", await reader.ReadToEndAsync(Token));
+        Assert.Equal("kept", response.Metadata["note"]);
+    }
+
+    public void Dispose() => factory.Dispose();
+
+    private static CancellationToken Token => TestContext.Current.CancellationToken;
+
+    private async Task<AmazonS3Client> CreateClientWithBucket()
+    {
+        var s3 = factory.CreateS3Client();
+        await s3.PutBucketAsync(new PutBucketRequest { BucketName = Bucket }, Token);
+        return s3;
+    }
+}

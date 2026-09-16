@@ -84,12 +84,91 @@ public sealed class BlobStore
             file.Flush(flushToDisk: true);
         }
 
+        Publish(blobId, uploadPath);
+        return new BlobWriteResult(blobId, size, Convert.ToHexStringLower(md5.GetHashAndReset()));
+    }
+
+    private void Publish(string blobId, string uploadPath)
+    {
         var finalPath = PathFor(blobId);
         Directory.CreateDirectory(Path.GetDirectoryName(finalPath)!);
         File.Move(uploadPath, finalPath);
         DurableFile.FlushDirectory(Path.GetDirectoryName(finalPath)!);
+    }
 
-        return new BlobWriteResult(blobId, size, Convert.ToHexStringLower(md5.GetHashAndReset()));
+    /// <summary>The outcome of assembling blobs into one: the new blob and its size.</summary>
+    public sealed record BlobConcatResult(string BlobId, long Size);
+
+    /// <summary>
+    /// Assembles the blobs, in order, into a new blob. On reflink-capable
+    /// filesystems the parts' blocks are shared rather than rewritten.
+    /// </summary>
+    public Task<BlobConcatResult> ConcatenateAsync(
+        IReadOnlyList<string> blobIds, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(blobIds);
+        return Task.Run(() => Concatenate(blobIds, cancellationToken), cancellationToken);
+    }
+
+    private BlobConcatResult Concatenate(
+        IReadOnlyList<string> blobIds, CancellationToken cancellationToken)
+    {
+        var blobId = Guid.NewGuid().ToString("N");
+        var uploadPath = Path.Combine(uploadsDirectory, blobId);
+        try
+        {
+            long size = 0;
+            using (var destination = File.OpenHandle(
+                uploadPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+            {
+                foreach (var sourceId in blobIds)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    using var source = File.OpenHandle(PathFor(sourceId), options: FileOptions.None);
+                    var length = RandomAccess.GetLength(source);
+                    FileRange.Copy(source, 0, destination, size, length);
+                    size += length;
+                }
+
+                RandomAccess.FlushToDisk(destination);
+            }
+
+            Publish(blobId, uploadPath);
+            return new BlobConcatResult(blobId, size);
+        }
+        catch
+        {
+            File.Delete(uploadPath);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Copies a blob under a new id. The runtime's file copy uses block cloning
+    /// where the filesystem offers it.
+    /// </summary>
+    public async Task<string> CopyAsync(string blobId, CancellationToken cancellationToken)
+    {
+        var newBlobId = Guid.NewGuid().ToString("N");
+        var uploadPath = Path.Combine(uploadsDirectory, newBlobId);
+        try
+        {
+            await Task.Run(
+                () =>
+                {
+                    File.Copy(PathFor(blobId), uploadPath);
+                    using var handle = File.OpenHandle(uploadPath, access: FileAccess.ReadWrite);
+                    RandomAccess.FlushToDisk(handle);
+                },
+                cancellationToken).ConfigureAwait(false);
+            Publish(newBlobId, uploadPath);
+            return newBlobId;
+        }
+        catch
+        {
+            File.Delete(uploadPath);
+            throw;
+        }
     }
 
     public Stream OpenRead(string blobId) => new FileStream(

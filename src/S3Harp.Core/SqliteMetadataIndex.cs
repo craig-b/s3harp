@@ -37,6 +37,22 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 last_modified TEXT NOT NULL,
                 PRIMARY KEY (bucket, key)
             ) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS uploads (
+                upload_id TEXT PRIMARY KEY,
+                bucket TEXT NOT NULL REFERENCES buckets(name),
+                key TEXT NOT NULL,
+                content_type TEXT,
+                metadata TEXT NOT NULL,
+                initiated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS parts (
+                upload_id TEXT NOT NULL REFERENCES uploads(upload_id),
+                part_number INTEGER NOT NULL,
+                blob_id TEXT NOT NULL,
+                size INTEGER NOT NULL,
+                etag TEXT NOT NULL,
+                PRIMARY KEY (upload_id, part_number)
+            ) WITHOUT ROWID;
             """;
         command.ExecuteNonQuery();
     }
@@ -135,35 +151,10 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 var replaced = (string?)await find.ExecuteScalarAsync(cancellationToken)
                     .ConfigureAwait(false);
 
-                var upsert = connection.CreateCommand();
-                upsert.Transaction = transaction;
-                upsert.CommandText = """
-                    INSERT INTO objects
-                        (bucket, key, blob_id, size, etag, content_type, metadata, last_modified)
-                    VALUES
-                        ($bucket, $key, $blob_id, $size, $etag, $content_type, $metadata, $last_modified)
-                    ON CONFLICT (bucket, key) DO UPDATE SET
-                        blob_id = excluded.blob_id,
-                        size = excluded.size,
-                        etag = excluded.etag,
-                        content_type = excluded.content_type,
-                        metadata = excluded.metadata,
-                        last_modified = excluded.last_modified
-                    """;
-                upsert.Parameters.AddWithValue("$bucket", bucket);
-                upsert.Parameters.AddWithValue("$key", record.Key);
-                upsert.Parameters.AddWithValue("$blob_id", record.BlobId);
-                upsert.Parameters.AddWithValue("$size", record.Size);
-                upsert.Parameters.AddWithValue("$etag", record.ETag);
-                upsert.Parameters.AddWithValue(
-                    "$content_type", (object?)record.ContentType ?? DBNull.Value);
-                upsert.Parameters.AddWithValue(
-                    "$metadata", JsonSerializer.Serialize(record.Metadata));
-                upsert.Parameters.AddWithValue(
-                    "$last_modified", FormatTimestamp(record.LastModified));
                 try
                 {
-                    await upsert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                    await UpsertObjectAsync(connection, transaction, bucket, record, cancellationToken)
+                        .ConfigureAwait(false);
                 }
                 catch (SqliteException exception)
                     when (exception.SqliteErrorCode == SqliteConstraintViolation)
@@ -251,7 +242,301 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    public async Task<bool> TryCreateUploadAsync(
+        string bucket, MultipartUpload upload, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(upload);
+
+        var connection = OpenConnection();
+        await using (connection.ConfigureAwait(false))
+        {
+            var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO uploads (upload_id, bucket, key, content_type, metadata, initiated_at)
+                VALUES ($upload_id, $bucket, $key, $content_type, $metadata, $initiated_at)
+                """;
+            command.Parameters.AddWithValue("$upload_id", upload.UploadId);
+            command.Parameters.AddWithValue("$bucket", bucket);
+            command.Parameters.AddWithValue("$key", upload.Key);
+            command.Parameters.AddWithValue(
+                "$content_type", (object?)upload.ContentType ?? DBNull.Value);
+            command.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(upload.Metadata));
+            command.Parameters.AddWithValue("$initiated_at", FormatTimestamp(upload.InitiatedAt));
+            try
+            {
+                return await command.ExecuteNonQueryAsync(cancellationToken)
+                    .ConfigureAwait(false) == 1;
+            }
+            catch (SqliteException exception)
+                when (exception.SqliteErrorCode == SqliteConstraintViolation)
+            {
+                return false;
+            }
+        }
+    }
+
+    public async Task<MultipartUpload?> FindUploadAsync(
+        string bucket, string key, string uploadId, CancellationToken cancellationToken)
+    {
+        var connection = OpenConnection();
+        await using (connection.ConfigureAwait(false))
+        {
+            var command = CreateFindUploadCommand(connection, bucket, key, uploadId);
+            var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            await using (reader.ConfigureAwait(false))
+            {
+                return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+                    ? new MultipartUpload(
+                        uploadId,
+                        key,
+                        reader.IsDBNull(0) ? null : reader.GetString(0),
+                        JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(1))!,
+                        ParseTimestamp(reader.GetString(2)))
+                    : null;
+            }
+        }
+    }
+
+    public async Task<PutPartResult> PutPartAsync(
+        string bucket, string key, string uploadId, PartRecord part,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(part);
+
+        var connection = OpenConnection();
+        await using (connection.ConfigureAwait(false))
+        {
+            var transaction = connection.BeginTransaction();
+            await using (transaction.ConfigureAwait(false))
+            {
+                if (!await UploadExistsAsync(connection, transaction, bucket, key, uploadId, cancellationToken)
+                    .ConfigureAwait(false))
+                {
+                    return new PutPartResult(UploadExists: false, null);
+                }
+
+                var find = connection.CreateCommand();
+                find.Transaction = transaction;
+                find.CommandText =
+                    "SELECT blob_id FROM parts WHERE upload_id = $upload_id AND part_number = $number";
+                find.Parameters.AddWithValue("$upload_id", uploadId);
+                find.Parameters.AddWithValue("$number", part.PartNumber);
+                var replaced = (string?)await find.ExecuteScalarAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+                var upsert = connection.CreateCommand();
+                upsert.Transaction = transaction;
+                upsert.CommandText = """
+                    INSERT INTO parts (upload_id, part_number, blob_id, size, etag)
+                    VALUES ($upload_id, $number, $blob_id, $size, $etag)
+                    ON CONFLICT (upload_id, part_number) DO UPDATE SET
+                        blob_id = excluded.blob_id, size = excluded.size, etag = excluded.etag
+                    """;
+                upsert.Parameters.AddWithValue("$upload_id", uploadId);
+                upsert.Parameters.AddWithValue("$number", part.PartNumber);
+                upsert.Parameters.AddWithValue("$blob_id", part.BlobId);
+                upsert.Parameters.AddWithValue("$size", part.Size);
+                upsert.Parameters.AddWithValue("$etag", part.ETag);
+                await upsert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return new PutPartResult(UploadExists: true, replaced);
+            }
+        }
+    }
+
+    public async Task<IReadOnlyList<PartRecord>> ListPartsAsync(
+        string bucket, string key, string uploadId, CancellationToken cancellationToken)
+    {
+        var connection = OpenConnection();
+        await using (connection.ConfigureAwait(false))
+        {
+            var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT p.part_number, p.blob_id, p.size, p.etag
+                FROM parts p
+                JOIN uploads u ON u.upload_id = p.upload_id
+                WHERE u.upload_id = $upload_id AND u.bucket = $bucket AND u.key = $key
+                ORDER BY p.part_number
+                """;
+            command.Parameters.AddWithValue("$upload_id", uploadId);
+            command.Parameters.AddWithValue("$bucket", bucket);
+            command.Parameters.AddWithValue("$key", key);
+            var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            await using (reader.ConfigureAwait(false))
+            {
+                var parts = new List<PartRecord>();
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    parts.Add(new PartRecord(
+                        reader.GetInt32(0), reader.GetString(1),
+                        reader.GetInt64(2), reader.GetString(3)));
+                }
+
+                return parts;
+            }
+        }
+    }
+
+    public async Task<CompleteUploadResult?> CompleteUploadAsync(
+        string bucket, string uploadId, ObjectRecord record,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+
+        var connection = OpenConnection();
+        await using (connection.ConfigureAwait(false))
+        {
+            var transaction = connection.BeginTransaction();
+            await using (transaction.ConfigureAwait(false))
+            {
+                if (!await UploadExistsAsync(
+                        connection, transaction, bucket, record.Key, uploadId, cancellationToken)
+                    .ConfigureAwait(false))
+                {
+                    return null;
+                }
+
+                var partBlobs = await DeleteUploadRowsAsync(
+                    connection, transaction, uploadId, cancellationToken).ConfigureAwait(false);
+
+                var findReplaced = connection.CreateCommand();
+                findReplaced.Transaction = transaction;
+                findReplaced.CommandText =
+                    "SELECT blob_id FROM objects WHERE bucket = $bucket AND key = $key";
+                findReplaced.Parameters.AddWithValue("$bucket", bucket);
+                findReplaced.Parameters.AddWithValue("$key", record.Key);
+                var replaced = (string?)await findReplaced.ExecuteScalarAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+                await UpsertObjectAsync(connection, transaction, bucket, record, cancellationToken)
+                    .ConfigureAwait(false);
+
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return new CompleteUploadResult(replaced, partBlobs);
+            }
+        }
+    }
+
+    public async Task<IReadOnlyList<string>?> DeleteUploadAsync(
+        string bucket, string key, string uploadId, CancellationToken cancellationToken)
+    {
+        var connection = OpenConnection();
+        await using (connection.ConfigureAwait(false))
+        {
+            var transaction = connection.BeginTransaction();
+            await using (transaction.ConfigureAwait(false))
+            {
+                if (!await UploadExistsAsync(connection, transaction, bucket, key, uploadId, cancellationToken)
+                    .ConfigureAwait(false))
+                {
+                    return null;
+                }
+
+                var partBlobs = await DeleteUploadRowsAsync(
+                    connection, transaction, uploadId, cancellationToken).ConfigureAwait(false);
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return partBlobs;
+            }
+        }
+    }
+
     public void Dispose() => SqliteConnection.ClearPool(new SqliteConnection(connectionString));
+
+    private static SqliteCommand CreateFindUploadCommand(
+        SqliteConnection connection, string bucket, string key, string uploadId)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT content_type, metadata, initiated_at
+            FROM uploads
+            WHERE upload_id = $upload_id AND bucket = $bucket AND key = $key
+            """;
+        command.Parameters.AddWithValue("$upload_id", uploadId);
+        command.Parameters.AddWithValue("$bucket", bucket);
+        command.Parameters.AddWithValue("$key", key);
+        return command;
+    }
+
+    private static async Task<bool> UploadExistsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string bucket,
+        string key,
+        string uploadId,
+        CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            "SELECT 1 FROM uploads WHERE upload_id = $upload_id AND bucket = $bucket AND key = $key";
+        command.Parameters.AddWithValue("$upload_id", uploadId);
+        command.Parameters.AddWithValue("$bucket", bucket);
+        command.Parameters.AddWithValue("$key", key);
+        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
+    }
+
+    private static async Task UpsertObjectAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string bucket,
+        ObjectRecord record,
+        CancellationToken cancellationToken)
+    {
+        var upsert = connection.CreateCommand();
+        upsert.Transaction = transaction;
+        upsert.CommandText = """
+            INSERT INTO objects
+                (bucket, key, blob_id, size, etag, content_type, metadata, last_modified)
+            VALUES
+                ($bucket, $key, $blob_id, $size, $etag, $content_type, $metadata, $last_modified)
+            ON CONFLICT (bucket, key) DO UPDATE SET
+                blob_id = excluded.blob_id,
+                size = excluded.size,
+                etag = excluded.etag,
+                content_type = excluded.content_type,
+                metadata = excluded.metadata,
+                last_modified = excluded.last_modified
+            """;
+        upsert.Parameters.AddWithValue("$bucket", bucket);
+        upsert.Parameters.AddWithValue("$key", record.Key);
+        upsert.Parameters.AddWithValue("$blob_id", record.BlobId);
+        upsert.Parameters.AddWithValue("$size", record.Size);
+        upsert.Parameters.AddWithValue("$etag", record.ETag);
+        upsert.Parameters.AddWithValue("$content_type", (object?)record.ContentType ?? DBNull.Value);
+        upsert.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(record.Metadata));
+        upsert.Parameters.AddWithValue("$last_modified", FormatTimestamp(record.LastModified));
+        await upsert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<IReadOnlyList<string>> DeleteUploadRowsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string uploadId,
+        CancellationToken cancellationToken)
+    {
+        var deleteParts = connection.CreateCommand();
+        deleteParts.Transaction = transaction;
+        deleteParts.CommandText =
+            "DELETE FROM parts WHERE upload_id = $upload_id RETURNING blob_id";
+        deleteParts.Parameters.AddWithValue("$upload_id", uploadId);
+        var partBlobs = new List<string>();
+        var reader = await deleteParts.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using (reader.ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                partBlobs.Add(reader.GetString(0));
+            }
+        }
+
+        var deleteUpload = connection.CreateCommand();
+        deleteUpload.Transaction = transaction;
+        deleteUpload.CommandText = "DELETE FROM uploads WHERE upload_id = $upload_id";
+        deleteUpload.Parameters.AddWithValue("$upload_id", uploadId);
+        await deleteUpload.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return partBlobs;
+    }
 
     private static ObjectRecord ReadObjectRecord(SqliteDataReader reader) => new(
         reader.GetString(0),

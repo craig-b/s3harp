@@ -23,6 +23,27 @@ public enum DeleteBucketResult
     NotEmpty,
 }
 
+/// <summary>An in-progress multipart upload.</summary>
+public sealed record MultipartUpload(
+    string UploadId,
+    string Key,
+    string? ContentType,
+    IReadOnlyDictionary<string, string> Metadata,
+    DateTimeOffset InitiatedAt);
+
+/// <summary>A part uploaded into a multipart upload.</summary>
+public sealed record PartRecord(int PartNumber, string BlobId, long Size, string ETag);
+
+/// <summary>The outcome of storing a part record.</summary>
+public sealed record PutPartResult(bool UploadExists, string? ReplacedBlobId);
+
+/// <summary>
+/// The outcome of completing an upload: the blob ids the completion released —
+/// the parts and any object record the completion replaced.
+/// </summary>
+public sealed record CompleteUploadResult(
+    string? ReplacedBlobId, IReadOnlyList<string> PartBlobIds);
+
 /// <summary>
 /// The metadata index: the authoritative record of buckets and the key → blob mapping.
 /// Implementations guarantee atomicity per operation and name-ordered listings.
@@ -62,4 +83,35 @@ public interface IMetadataIndex
     /// <summary>Removes the record, returning its blob id; null when the key is unknown.</summary>
     Task<string?> DeleteObjectAsync(
         string bucket, string key, CancellationToken cancellationToken);
+
+    /// <summary>Registers the upload; reports false when the bucket is unknown.</summary>
+    Task<bool> TryCreateUploadAsync(
+        string bucket, MultipartUpload upload, CancellationToken cancellationToken);
+
+    Task<MultipartUpload?> FindUploadAsync(
+        string bucket, string key, string uploadId, CancellationToken cancellationToken);
+
+    /// <summary>Stores the part atomically, replacing any part with the same number.</summary>
+    Task<PutPartResult> PutPartAsync(
+        string bucket, string key, string uploadId, PartRecord part,
+        CancellationToken cancellationToken);
+
+    /// <summary>The upload's parts, ordered by part number.</summary>
+    Task<IReadOnlyList<PartRecord>> ListPartsAsync(
+        string bucket, string key, string uploadId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Atomically stores the assembled object record and removes the upload with its
+    /// parts; null when the upload is unknown.
+    /// </summary>
+    Task<CompleteUploadResult?> CompleteUploadAsync(
+        string bucket, string uploadId, ObjectRecord record,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Removes the upload and its parts, returning the part blob ids; null when the
+    /// upload is unknown.
+    /// </summary>
+    Task<IReadOnlyList<string>?> DeleteUploadAsync(
+        string bucket, string key, string uploadId, CancellationToken cancellationToken);
 }

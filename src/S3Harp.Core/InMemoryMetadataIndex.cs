@@ -43,7 +43,7 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
                 return Task.FromResult(DeleteBucketResult.NotFound);
             }
 
-            if (bucket.Objects.Count > 0)
+            if (bucket.Objects.Count > 0 || bucket.Uploads.Count > 0)
             {
                 return Task.FromResult(DeleteBucketResult.NotEmpty);
             }
@@ -116,10 +116,112 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
         }
     }
 
+    public Task<bool> TryCreateUploadAsync(
+        string bucket, MultipartUpload upload, CancellationToken cancellationToken)
+    {
+        lock (gate)
+        {
+            return Task.FromResult(
+                buckets.TryGetValue(bucket, out var state)
+                && state.Uploads.TryAdd(upload.UploadId, new UploadState(upload)));
+        }
+    }
+
+    public Task<MultipartUpload?> FindUploadAsync(
+        string bucket, string key, string uploadId, CancellationToken cancellationToken)
+    {
+        lock (gate)
+        {
+            return Task.FromResult(FindUploadState(bucket, key, uploadId)?.Info);
+        }
+    }
+
+    public Task<PutPartResult> PutPartAsync(
+        string bucket, string key, string uploadId, PartRecord part,
+        CancellationToken cancellationToken)
+    {
+        lock (gate)
+        {
+            if (FindUploadState(bucket, key, uploadId) is not { } upload)
+            {
+                return Task.FromResult(new PutPartResult(UploadExists: false, null));
+            }
+
+            upload.Parts.TryGetValue(part.PartNumber, out var replaced);
+            upload.Parts[part.PartNumber] = part;
+            return Task.FromResult(new PutPartResult(UploadExists: true, replaced?.BlobId));
+        }
+    }
+
+    public Task<IReadOnlyList<PartRecord>> ListPartsAsync(
+        string bucket, string key, string uploadId, CancellationToken cancellationToken)
+    {
+        lock (gate)
+        {
+            return Task.FromResult<IReadOnlyList<PartRecord>>(
+                FindUploadState(bucket, key, uploadId) is { } upload
+                    ? [.. upload.Parts.Values]
+                    : []);
+        }
+    }
+
+    public Task<CompleteUploadResult?> CompleteUploadAsync(
+        string bucket, string uploadId, ObjectRecord record,
+        CancellationToken cancellationToken)
+    {
+        lock (gate)
+        {
+            if (FindUploadState(bucket, record.Key, uploadId) is not { } upload
+                || !buckets.TryGetValue(bucket, out var state))
+            {
+                return Task.FromResult<CompleteUploadResult?>(null);
+            }
+
+            state.Objects.TryGetValue(record.Key, out var replaced);
+            state.Objects[record.Key] = record;
+            state.Uploads.Remove(uploadId);
+            return Task.FromResult<CompleteUploadResult?>(new CompleteUploadResult(
+                replaced?.BlobId, [.. upload.Parts.Values.Select(p => p.BlobId)]));
+        }
+    }
+
+    public Task<IReadOnlyList<string>?> DeleteUploadAsync(
+        string bucket, string key, string uploadId, CancellationToken cancellationToken)
+    {
+        lock (gate)
+        {
+            if (FindUploadState(bucket, key, uploadId) is not { } upload
+                || !buckets.TryGetValue(bucket, out var state))
+            {
+                return Task.FromResult<IReadOnlyList<string>?>(null);
+            }
+
+            state.Uploads.Remove(uploadId);
+            return Task.FromResult<IReadOnlyList<string>?>(
+                [.. upload.Parts.Values.Select(p => p.BlobId)]);
+        }
+    }
+
+    private UploadState? FindUploadState(string bucket, string key, string uploadId) =>
+        buckets.TryGetValue(bucket, out var state)
+        && state.Uploads.TryGetValue(uploadId, out var upload)
+        && string.Equals(upload.Info.Key, key, StringComparison.Ordinal)
+            ? upload
+            : null;
+
     private sealed class BucketState(BucketInfo info)
     {
         public BucketInfo Info { get; } = info;
 
         public Dictionary<string, ObjectRecord> Objects { get; } = new(StringComparer.Ordinal);
+
+        public Dictionary<string, UploadState> Uploads { get; } = new(StringComparer.Ordinal);
+    }
+
+    private sealed class UploadState(MultipartUpload info)
+    {
+        public MultipartUpload Info { get; } = info;
+
+        public SortedDictionary<int, PartRecord> Parts { get; } = [];
     }
 }

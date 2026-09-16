@@ -57,6 +57,35 @@ public sealed class BlobStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task ConcatenatedBlobs_ReadBackAsTheJoinedContent()
+    {
+        var first = await Write(Encoding.UTF8.GetBytes("Hello, "));
+        var second = await Write(Encoding.UTF8.GetBytes("S3Harp!"));
+
+        var result = await store.ConcatenateAsync([first.BlobId, second.BlobId], Token);
+
+        Assert.Equal(14, result.Size);
+        using var reader = store.OpenRead(result.BlobId);
+        using var decoded = new MemoryStream();
+        await reader.CopyToAsync(decoded, Token);
+        Assert.Equal("Hello, S3Harp!", Encoding.UTF8.GetString(decoded.ToArray()));
+    }
+
+    [Fact]
+    public async Task CopiedBlob_ReadsBackIdenticalUnderANewId()
+    {
+        var original = await Write(Encoding.UTF8.GetBytes("copy me"));
+
+        var copyId = await store.CopyAsync(original.BlobId, Token);
+
+        Assert.NotEqual(original.BlobId, copyId);
+        using var reader = store.OpenRead(copyId);
+        using var decoded = new MemoryStream();
+        await reader.CopyToAsync(decoded, Token);
+        Assert.Equal("copy me", Encoding.UTF8.GetString(decoded.ToArray()));
+    }
+
+    [Fact]
     public async Task FailedWrite_LeavesNoFilesBehind()
     {
         await Assert.ThrowsAsync<InvalidDataException>(
