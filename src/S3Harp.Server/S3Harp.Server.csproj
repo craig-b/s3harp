@@ -9,8 +9,4 @@
     <ProjectReference Include="..\S3Harp.Core\S3Harp.Core.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <InternalsVisibleTo Include="S3Harp.IntegrationTests" />
-  </ItemGroup>
-
 </Project>
