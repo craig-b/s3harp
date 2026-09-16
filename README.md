@@ -13,6 +13,7 @@ Working now, each proven by integration tests driving the real AWS SDK:
 - Object PUT, GET, HEAD, and DELETE with ETags, content types, and `x-amz-meta-*` metadata, stored durably (temp file → fsync → rename)
 - Range GETs (`206 Partial Content`), so parallel ranged downloads — the AWS CLI's default for large files — reassemble exactly
 - Batch delete (`DeleteObjects`), up to 1000 keys per request with quiet-mode support
+- Presigned URLs — SDK-generated time-limited GET/PUT links work from any plain HTTP client, with expiry enforced
 - ListObjectsV2 with prefixes, delimiter grouping into common prefixes, `start-after`, and continuation-token pagination
 - Multipart uploads — initiate, upload parts, complete, abort — with S3's multipart ETag format; part assembly goes through `copy_file_range`, so reflink-capable filesystems share blocks instead of rewriting them
 - Server-side CopyObject, with metadata copied or replaced per the metadata directive

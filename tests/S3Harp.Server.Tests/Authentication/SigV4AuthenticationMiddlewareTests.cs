@@ -137,6 +137,93 @@ public sealed class SigV4AuthenticationMiddlewareTests
             () => context.Request.Body.CopyToAsync(sink, TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    public async Task ValidPresignedRequest_ReachesTheNextMiddleware()
+    {
+        var context = CreatePresignedContext(AccessKeyId, SecretAccessKey);
+
+        (_, var nextCalled) = await RunMiddleware(context);
+
+        Assert.True(nextCalled());
+    }
+
+    [Fact]
+    public async Task ExpiredPresignedRequest_IsRejectedAsAccessDenied()
+    {
+        var context = CreatePresignedContext(
+            AccessKeyId, SecretAccessKey, signedAt: Now.AddMinutes(-10), expires: 60);
+
+        (context, var nextCalled) = await RunMiddleware(context);
+
+        Assert.False(nextCalled());
+        Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+        Assert.Equal("AccessDenied", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task PresignedRequestWithAWrongSecret_IsRejectedAsSignatureDoesNotMatch()
+    {
+        var context = CreatePresignedContext(AccessKeyId, "a-different-secret");
+
+        (context, var nextCalled) = await RunMiddleware(context);
+
+        Assert.False(nextCalled());
+        Assert.Equal("SignatureDoesNotMatch", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task PresignedRequestWithAnUnknownAccessKey_IsRejected()
+    {
+        var context = CreatePresignedContext("UNKNOWNACCESSKEY", SecretAccessKey);
+
+        (context, var nextCalled) = await RunMiddleware(context);
+
+        Assert.False(nextCalled());
+        Assert.Equal("InvalidAccessKeyId", ReadErrorCode(context));
+    }
+
+    [Fact]
+    public async Task PresignedRequestWithAnInvalidExpires_IsRejected()
+    {
+        var context = CreatePresignedContext(AccessKeyId, SecretAccessKey, expires: 0);
+
+        (context, var nextCalled) = await RunMiddleware(context);
+
+        Assert.False(nextCalled());
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("AuthorizationQueryParametersError", ReadErrorCode(context));
+    }
+
+    private static DefaultHttpContext CreatePresignedContext(
+        string accessKeyId,
+        string secretAccessKey,
+        DateTimeOffset? signedAt = null,
+        long expires = 300)
+    {
+        var context = CreateContext();
+        var timestamp = (signedAt ?? Now).ToString(
+            "yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
+        var scope = new CredentialScope(timestamp[..8], "us-east-1", "s3");
+
+        var canonicalQuery =
+            "X-Amz-Algorithm=AWS4-HMAC-SHA256" +
+            $"&X-Amz-Credential={Uri.EscapeDataString($"{accessKeyId}/{scope}")}" +
+            $"&X-Amz-Date={timestamp}" +
+            $"&X-Amz-Expires={expires}" +
+            "&X-Amz-SignedHeaders=host";
+        var canonicalRequest =
+            $"GET\n/demo\n{canonicalQuery}\nhost:localhost\n\nhost\nUNSIGNED-PAYLOAD";
+        var signature = SigV4Signer.SignCanonicalRequest(
+            SigV4Signer.DeriveSigningKey(secretAccessKey, scope), scope, timestamp,
+            canonicalRequest);
+
+        var fullQuery = $"{canonicalQuery}&X-Amz-Signature={signature}";
+        context.Features.GetRequiredFeature<IHttpRequestFeature>().RawTarget =
+            $"/demo?{fullQuery}";
+        context.Request.QueryString = new QueryString($"?{fullQuery}");
+        return context;
+    }
+
     private static string HeaderSignature(DefaultHttpContext context)
     {
         var parsed = SigV4AuthorizationHeader.TryParse(

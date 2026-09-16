@@ -19,6 +19,12 @@ public sealed class SigV4AuthenticationMiddleware(
         string? authorization = request.Headers.Authorization;
         if (string.IsNullOrEmpty(authorization))
         {
+            if (request.Query.ContainsKey("X-Amz-Algorithm"))
+            {
+                await AuthenticatePresignedAsync(context).ConfigureAwait(false);
+                return;
+            }
+
             await Reject(context, S3Errors.AccessDenied).ConfigureAwait(false);
             return;
         }
@@ -87,6 +93,63 @@ public sealed class SigV4AuthenticationMiddleware(
                 signedTrailer: true),
             _ => new Sha256VerifyingStream(request.Body, payloadHash),
         };
+
+        await next(context).ConfigureAwait(false);
+    }
+
+    private async Task AuthenticatePresignedAsync(HttpContext context)
+    {
+        const long maxExpirySeconds = 604_800;
+        var request = context.Request;
+        var query = request.Query;
+
+        var credentialParts = query["X-Amz-Credential"].ToString().Split('/');
+        var signedHeaderList = query["X-Amz-SignedHeaders"].ToString()
+            .Split(';', StringSplitOptions.RemoveEmptyEntries);
+        if (query["X-Amz-Algorithm"] != "AWS4-HMAC-SHA256"
+            || credentialParts is not [var accessKeyId, var date, var region, var service, "aws4_request"]
+            || accessKeyId.Length == 0
+            || signedHeaderList.Length == 0
+            || !long.TryParse(query["X-Amz-Expires"], out var expiresSeconds)
+            || expiresSeconds is < 1 or > maxExpirySeconds)
+        {
+            await Reject(context, S3Errors.AuthorizationQueryParametersError).ConfigureAwait(false);
+            return;
+        }
+
+        var timestamp = query["X-Amz-Date"].ToString();
+        if (!DateTimeOffset.TryParseExact(
+                timestamp, TimestampFormat, CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var signedAt))
+        {
+            await Reject(context, S3Errors.AuthorizationQueryParametersError).ConfigureAwait(false);
+            return;
+        }
+
+        if (timeProvider.GetUtcNow() > signedAt.AddSeconds(expiresSeconds))
+        {
+            await Reject(context, S3Errors.PresignedRequestExpired).ConfigureAwait(false);
+            return;
+        }
+
+        var secretAccessKey = credentials.FindSecretKey(accessKeyId);
+        if (secretAccessKey is null)
+        {
+            await Reject(context, S3Errors.InvalidAccessKeyId).ConfigureAwait(false);
+            return;
+        }
+
+        var scope = new CredentialScope(date, region, service);
+        var canonicalRequest = CanonicalRequest.Build(
+            request, signedHeaderList, "UNSIGNED-PAYLOAD", omitSignatureParameter: true);
+        var expected = SigV4Signer.SignCanonicalRequest(
+            SigV4Signer.DeriveSigningKey(secretAccessKey, scope), scope, timestamp,
+            canonicalRequest);
+        if (!SigV4Signer.SignaturesEqual(expected, query["X-Amz-Signature"].ToString()))
+        {
+            await Reject(context, S3Errors.SignatureDoesNotMatch).ConfigureAwait(false);
+            return;
+        }
 
         await next(context).ConfigureAwait(false);
     }

@@ -11,6 +11,16 @@ public static class S3Errors
         StatusCodes.Status403Forbidden,
         "Access Denied.");
 
+    public static S3Error AuthorizationQueryParametersError { get; } = new(
+        "AuthorizationQueryParametersError",
+        StatusCodes.Status400BadRequest,
+        "The query-string authentication parameters are invalid.");
+
+    public static S3Error PresignedRequestExpired { get; } = new(
+        "AccessDenied",
+        StatusCodes.Status403Forbidden,
+        "Request has expired.");
+
     public static S3Error BucketAlreadyOwnedByYou { get; } = new(
         "BucketAlreadyOwnedByYou",
         StatusCodes.Status409Conflict,

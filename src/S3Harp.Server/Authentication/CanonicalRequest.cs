@@ -8,7 +8,10 @@ namespace S3Harp.Server.Authentication;
 public static class CanonicalRequest
 {
     public static string Build(
-        HttpRequest request, IReadOnlyList<string> signedHeaders, string payloadHash)
+        HttpRequest request,
+        IReadOnlyList<string> signedHeaders,
+        string payloadHash,
+        bool omitSignatureParameter = false)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(signedHeaders);
@@ -17,7 +20,7 @@ public static class CanonicalRequest
         var builder = new StringBuilder()
             .Append(request.Method).Append('\n')
             .Append(path).Append('\n')
-            .Append(CanonicalizeQuery(query)).Append('\n');
+            .Append(CanonicalizeQuery(query, omitSignatureParameter)).Append('\n');
 
         var orderedHeaders = signedHeaders.OrderBy(h => h, StringComparer.Ordinal).ToArray();
         foreach (var name in orderedHeaders)
@@ -49,7 +52,7 @@ public static class CanonicalRequest
             : (rawTarget[..separator], rawTarget[(separator + 1)..]);
     }
 
-    private static string CanonicalizeQuery(string query)
+    private static string CanonicalizeQuery(string query, bool omitSignatureParameter)
     {
         var parameters = query
             .Split('&', StringSplitOptions.RemoveEmptyEntries)
@@ -60,6 +63,8 @@ public static class CanonicalRequest
                     ? (Name: parameter, Value: string.Empty)
                     : (Name: parameter[..separator], Value: parameter[(separator + 1)..]);
             })
+            .Where(p => !omitSignatureParameter
+                || !string.Equals(p.Name, "X-Amz-Signature", StringComparison.Ordinal))
             .OrderBy(p => p.Name, StringComparer.Ordinal)
             .ThenBy(p => p.Value, StringComparer.Ordinal)
             .Select(p => $"{p.Name}={p.Value}");
