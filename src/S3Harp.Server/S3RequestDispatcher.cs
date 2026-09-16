@@ -147,7 +147,7 @@ public sealed class S3RequestDispatcher(
 
     private async Task<IResult> DeleteBucketAsync(
         string bucket, CancellationToken cancellationToken) =>
-        await index.DeleteBucketAsync(bucket, cancellationToken).ConfigureAwait(false) switch
+        await engine.DeleteBucketAsync(bucket, cancellationToken).ConfigureAwait(false) switch
         {
             DeleteBucketResult.Deleted => new S3StatusResult(StatusCodes.Status204NoContent),
             DeleteBucketResult.NotEmpty => new S3ErrorResult(S3Errors.BucketNotEmpty),

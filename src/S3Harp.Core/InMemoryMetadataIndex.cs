@@ -33,23 +33,27 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
         }
     }
 
-    public Task<DeleteBucketResult> DeleteBucketAsync(
+    public Task<DeleteBucketOutcome> DeleteBucketAsync(
         string name, CancellationToken cancellationToken)
     {
         lock (gate)
         {
             if (!buckets.TryGetValue(name, out var bucket))
             {
-                return Task.FromResult(DeleteBucketResult.NotFound);
+                return Task.FromResult(DeleteBucketOutcome.NotFound);
             }
 
-            if (bucket.Objects.Count > 0 || bucket.Uploads.Count > 0)
+            if (bucket.Objects.Count > 0)
             {
-                return Task.FromResult(DeleteBucketResult.NotEmpty);
+                return Task.FromResult(DeleteBucketOutcome.NotEmpty);
             }
 
             buckets.Remove(name);
-            return Task.FromResult(DeleteBucketResult.Deleted);
+            var partBlobs = bucket.Uploads.Values
+                .SelectMany(upload => upload.Parts.Values)
+                .Select(part => part.BlobId)
+                .ToList();
+            return Task.FromResult(new DeleteBucketOutcome(DeleteBucketResult.Deleted, partBlobs));
         }
     }
 

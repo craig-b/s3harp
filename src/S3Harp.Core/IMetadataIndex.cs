@@ -23,6 +23,18 @@ public enum DeleteBucketResult
     NotEmpty,
 }
 
+/// <summary>
+/// The outcome of deleting a bucket: on success, the part blob ids of the
+/// in-progress uploads the deletion aborted, so their files can be reclaimed.
+/// </summary>
+public sealed record DeleteBucketOutcome(
+    DeleteBucketResult Status, IReadOnlyList<string> ReleasedBlobIds)
+{
+    public static DeleteBucketOutcome NotFound { get; } = new(DeleteBucketResult.NotFound, []);
+
+    public static DeleteBucketOutcome NotEmpty { get; } = new(DeleteBucketResult.NotEmpty, []);
+}
+
 /// <summary>An in-progress multipart upload.</summary>
 public sealed record MultipartUpload(
     string UploadId,
@@ -59,8 +71,11 @@ public interface IMetadataIndex
     /// <summary>All buckets, ordered by name (ordinal).</summary>
     Task<IReadOnlyList<BucketInfo>> ListBucketsAsync(CancellationToken cancellationToken);
 
-    /// <summary>Deletes the bucket when it exists and holds zero objects.</summary>
-    Task<DeleteBucketResult> DeleteBucketAsync(string name, CancellationToken cancellationToken);
+    /// <summary>
+    /// Deletes the bucket when it exists and holds zero objects, aborting any
+    /// in-progress uploads atomically with the deletion.
+    /// </summary>
+    Task<DeleteBucketOutcome> DeleteBucketAsync(string name, CancellationToken cancellationToken);
 
     /// <summary>
     /// Stores the record atomically, replacing any record at the same key.

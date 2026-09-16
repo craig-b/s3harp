@@ -125,6 +125,19 @@ public sealed class MultipartUploadTests : IDisposable
     }
 
     [Fact]
+    public async Task DeletingABucket_AbortsItsUploadsAndRemovesTheirParts()
+    {
+        var uploadId = await StartUpload();
+        await UploadPart(uploadId, 1, "Hello, ");
+        await UploadPart(uploadId, 2, "S3Harp!");
+
+        Assert.Equal(DeleteBucketResult.Deleted, await engine.DeleteBucketAsync("alpha", Token));
+
+        Assert.Equal(0, CountBlobFiles());
+        Assert.False(await index.BucketExistsAsync("alpha", Token));
+    }
+
+    [Fact]
     public async Task UploadPart_OnAnUnknownUpload_ReportsIt()
     {
         await CreateBucket();

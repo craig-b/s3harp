@@ -108,25 +108,57 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
-    public async Task<DeleteBucketResult> DeleteBucketAsync(
+    public async Task<DeleteBucketOutcome> DeleteBucketAsync(
         string name, CancellationToken cancellationToken)
     {
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
         {
-            var command = connection.CreateCommand();
-            command.CommandText = "DELETE FROM buckets WHERE name = $name";
-            command.Parameters.AddWithValue("$name", name);
-            try
+            var transaction = connection.BeginTransaction();
+            await using (transaction.ConfigureAwait(false))
             {
-                var deleted = await command.ExecuteNonQueryAsync(cancellationToken)
+                var deleteParts = connection.CreateCommand();
+                deleteParts.Transaction = transaction;
+                deleteParts.CommandText = """
+                    DELETE FROM parts
+                    WHERE upload_id IN (SELECT upload_id FROM uploads WHERE bucket = $name)
+                    RETURNING blob_id
+                    """;
+                deleteParts.Parameters.AddWithValue("$name", name);
+                var partBlobs = await ReadStringsAsync(deleteParts, cancellationToken)
                     .ConfigureAwait(false);
-                return deleted == 1 ? DeleteBucketResult.Deleted : DeleteBucketResult.NotFound;
-            }
-            catch (SqliteException exception)
-                when (exception.SqliteErrorCode == SqliteConstraintViolation)
-            {
-                return DeleteBucketResult.NotEmpty;
+
+                var deleteUploads = connection.CreateCommand();
+                deleteUploads.Transaction = transaction;
+                deleteUploads.CommandText = "DELETE FROM uploads WHERE bucket = $name";
+                deleteUploads.Parameters.AddWithValue("$name", name);
+                await deleteUploads.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+                var deleteBucket = connection.CreateCommand();
+                deleteBucket.Transaction = transaction;
+                deleteBucket.CommandText = "DELETE FROM buckets WHERE name = $name";
+                deleteBucket.Parameters.AddWithValue("$name", name);
+                int deleted;
+                try
+                {
+                    deleted = await deleteBucket.ExecuteNonQueryAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (SqliteException exception)
+                    when (exception.SqliteErrorCode == SqliteConstraintViolation)
+                {
+                    // Objects still reference the bucket; the transaction rolls back
+                    // with the uploads intact.
+                    return DeleteBucketOutcome.NotEmpty;
+                }
+
+                if (deleted == 0)
+                {
+                    return DeleteBucketOutcome.NotFound;
+                }
+
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return new DeleteBucketOutcome(DeleteBucketResult.Deleted, partBlobs);
             }
         }
     }
@@ -552,15 +584,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         deleteParts.CommandText =
             "DELETE FROM parts WHERE upload_id = $upload_id RETURNING blob_id";
         deleteParts.Parameters.AddWithValue("$upload_id", uploadId);
-        var partBlobs = new List<string>();
-        var reader = await deleteParts.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        await using (reader.ConfigureAwait(false))
-        {
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                partBlobs.Add(reader.GetString(0));
-            }
-        }
+        var partBlobs = await ReadStringsAsync(deleteParts, cancellationToken).ConfigureAwait(false);
 
         var deleteUpload = connection.CreateCommand();
         deleteUpload.Transaction = transaction;
@@ -568,6 +592,23 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         deleteUpload.Parameters.AddWithValue("$upload_id", uploadId);
         await deleteUpload.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         return partBlobs;
+    }
+
+    /// <summary>Runs the command and collects the first column of every row.</summary>
+    private static async Task<IReadOnlyList<string>> ReadStringsAsync(
+        SqliteCommand command, CancellationToken cancellationToken)
+    {
+        var values = new List<string>();
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using (reader.ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                values.Add(reader.GetString(0));
+            }
+        }
+
+        return values;
     }
 
     private static ObjectRecord ReadObjectRecord(SqliteDataReader reader) => new(

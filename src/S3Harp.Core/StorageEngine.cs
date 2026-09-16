@@ -162,6 +162,22 @@ public sealed class StorageEngine(IMetadataIndex index, BlobStore blobs, TimePro
         return new ObjectListing(objects, commonPrefixes, truncated, truncated ? from : null);
     }
 
+    /// <summary>
+    /// Deletes an empty bucket. In-progress uploads never hold a bucket open:
+    /// they are aborted with it and their parts reclaimed, matching S3.
+    /// </summary>
+    public async Task<DeleteBucketResult> DeleteBucketAsync(
+        string bucket, CancellationToken cancellationToken)
+    {
+        var outcome = await index.DeleteBucketAsync(bucket, cancellationToken).ConfigureAwait(false);
+        foreach (var blobId in outcome.ReleasedBlobIds)
+        {
+            blobs.Delete(blobId);
+        }
+
+        return outcome.Status;
+    }
+
     public async Task DeleteObjectAsync(
         string bucket, string key, CancellationToken cancellationToken)
     {

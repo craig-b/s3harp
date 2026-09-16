@@ -48,6 +48,27 @@ public sealed class BucketTests : IDisposable
     }
 
     [Fact]
+    public async Task DeletingABucketWithAnInProgressUpload_Succeeds()
+    {
+        using var s3 = factory.CreateS3Client();
+        await s3.PutBucketAsync(new PutBucketRequest { BucketName = "alpha" }, Token);
+        var upload = await s3.InitiateMultipartUploadAsync("alpha", "big.bin", Token);
+        await s3.UploadPartAsync(new UploadPartRequest
+        {
+            BucketName = "alpha",
+            Key = "big.bin",
+            UploadId = upload.UploadId,
+            PartNumber = 1,
+            InputStream = new MemoryStream("part one"u8.ToArray()),
+        }, Token);
+
+        await s3.DeleteBucketAsync("alpha", Token);
+        var response = await s3.ListBucketsAsync(Token);
+
+        Assert.Empty(response.Buckets ?? []);
+    }
+
+    [Fact]
     public async Task DeletingAnUnknownBucket_ThrowsNoSuchBucket()
     {
         using var s3 = factory.CreateS3Client();

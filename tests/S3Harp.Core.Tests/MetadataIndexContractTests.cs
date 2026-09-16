@@ -64,14 +64,18 @@ public abstract class MetadataIndexContractTests
     {
         await Create("alpha");
 
-        Assert.Equal(DeleteBucketResult.Deleted, await Index.DeleteBucketAsync("alpha", Token));
+        var outcome = await Index.DeleteBucketAsync("alpha", Token);
+
+        Assert.Equal(DeleteBucketResult.Deleted, outcome.Status);
+        Assert.Empty(outcome.ReleasedBlobIds);
         Assert.False(await Index.BucketExistsAsync("alpha", Token));
     }
 
     [Fact]
     public async Task DeletingAnUnknownBucket_ReportsItMissing()
     {
-        Assert.Equal(DeleteBucketResult.NotFound, await Index.DeleteBucketAsync("missing", Token));
+        Assert.Equal(
+            DeleteBucketResult.NotFound, (await Index.DeleteBucketAsync("missing", Token)).Status);
     }
 
     [Fact]
@@ -80,7 +84,8 @@ public abstract class MetadataIndexContractTests
         await Create("alpha");
         await Index.PutObjectAsync("alpha", Record("key", "blob-1"), Token);
 
-        Assert.Equal(DeleteBucketResult.NotEmpty, await Index.DeleteBucketAsync("alpha", Token));
+        Assert.Equal(
+            DeleteBucketResult.NotEmpty, (await Index.DeleteBucketAsync("alpha", Token)).Status);
         Assert.True(await Index.BucketExistsAsync("alpha", Token));
     }
 
@@ -339,11 +344,18 @@ public abstract class MetadataIndexContractTests
     }
 
     [Fact]
-    public async Task DeletingABucketWithAnActiveUpload_ReportsItNotEmpty()
+    public async Task DeletingABucketWithActiveUploads_AbortsThemAndReleasesTheirParts()
     {
         await StartUpload("alpha", "u1");
+        await Index.PutPartAsync("alpha", "key", "u1", Part(1, "part-1"), Token);
+        await Index.PutPartAsync("alpha", "key", "u1", Part(2, "part-2"), Token);
 
-        Assert.Equal(DeleteBucketResult.NotEmpty, await Index.DeleteBucketAsync("alpha", Token));
+        var outcome = await Index.DeleteBucketAsync("alpha", Token);
+
+        Assert.Equal(DeleteBucketResult.Deleted, outcome.Status);
+        Assert.Equal(["part-1", "part-2"], outcome.ReleasedBlobIds.Order());
+        Assert.False(await Index.BucketExistsAsync("alpha", Token));
+        Assert.Null(await Index.FindUploadAsync("alpha", "key", "u1", Token));
     }
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
