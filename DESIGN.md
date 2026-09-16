@@ -81,4 +81,3 @@ Deliberately open — each awaits an explicit decision:
 - **Bucket addressing:** path-style only (`/bucket/key`) vs also virtual-hosted-style (`bucket.host/key`), which needs DNS/host handling.
 - **Configuration surface** beyond the decided variables — `S3HARP_ACCESS_KEY_ID` and `S3HARP_SECRET_ACCESS_KEY` (a single root keypair, required at startup, with multiple accounts as later candidate work behind the same credential-store seam) and `S3HARP_DATA_DIR` (the storage location, required at startup). Ports and other defaults await decision.
 - **Presigned URLs:** query-string SigV4 joins the roadmap as its own step once objects exist to share.
-- **License.**
