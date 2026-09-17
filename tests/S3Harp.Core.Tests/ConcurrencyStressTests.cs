@@ -55,7 +55,7 @@ public sealed class ConcurrencyStressTests : IDisposable
                             ),
                             ChecksumAlgorithm.Crc64Nvme,
                             null,
-                            CancellationToken.None
+                            Token
                         );
                     },
                     Token
@@ -145,7 +145,7 @@ public sealed class ConcurrencyStressTests : IDisposable
                                 uploadId,
                                 1,
                                 content,
-                                CancellationToken.None
+                                Token
                             );
                         },
                         Token

@@ -37,13 +37,15 @@ public sealed class S3RequestDispatcherTests : IDisposable
 
     public void Dispose() => root.Dispose();
 
+    private static CancellationToken Token => TestContext.Current.CancellationToken;
+
     [Fact]
     public async Task PutBucket_CreatesTheBucket()
     {
         var context = await Dispatch("PUT", "/my-bucket");
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
-        Assert.True(await index.BucketExistsAsync("my-bucket", CancellationToken.None));
+        Assert.True(await index.BucketExistsAsync("my-bucket", Token));
     }
 
     [Fact]
@@ -92,7 +94,7 @@ public sealed class S3RequestDispatcherTests : IDisposable
         var context = await Dispatch("DELETE", "/my-bucket");
 
         Assert.Equal(StatusCodes.Status204NoContent, context.Response.StatusCode);
-        Assert.False(await index.BucketExistsAsync("my-bucket", CancellationToken.None));
+        Assert.False(await index.BucketExistsAsync("my-bucket", Token));
     }
 
     [Fact]

@@ -133,7 +133,7 @@ public sealed class SigV4AuthenticationMiddlewareTests
     [Fact]
     public async Task MatchingContentSha_DeliversTheBodyUnchanged()
     {
-        var body = Encoding.UTF8.GetBytes("Hello, S3Harp!");
+        var body = "Hello, S3Harp!"u8.ToArray();
         var context = CreateSignedContext(
             AccessKeyId,
             SecretAccessKey,
@@ -155,9 +155,9 @@ public sealed class SigV4AuthenticationMiddlewareTests
         var context = CreateSignedContext(
             AccessKeyId,
             SecretAccessKey,
-            payloadHash: SigV4Signer.Sha256Hex(Encoding.UTF8.GetBytes("declared content"))
+            payloadHash: SigV4Signer.Sha256Hex("declared content"u8.ToArray())
         );
-        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("actual content"));
+        context.Request.Body = new MemoryStream("actual content"u8.ToArray());
 
         (context, var nextCalled) = await RunMiddleware(context);
 
@@ -171,7 +171,7 @@ public sealed class SigV4AuthenticationMiddlewareTests
     [Fact]
     public async Task ChecksumValueMatchingTheBody_DeliversTheBody()
     {
-        var body = Encoding.UTF8.GetBytes("Hello, S3Harp!");
+        var body = "Hello, S3Harp!"u8.ToArray();
         var context = CreateSignedContext(AccessKeyId, SecretAccessKey);
         context.Request.Headers["x-amz-checksum-sha256"] =
             "Aj0Lx1vWnbGF+irlCT3Pa4HNGctHtn3/Q49ApNekoy8=";
@@ -190,7 +190,7 @@ public sealed class SigV4AuthenticationMiddlewareTests
     {
         var context = CreateSignedContext(AccessKeyId, SecretAccessKey);
         context.Request.Headers["x-amz-checksum-crc32"] = "AAAAAA==";
-        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("Hello, S3Harp!"));
+        context.Request.Body = new MemoryStream("Hello, S3Harp!"u8.ToArray());
 
         (context, var nextCalled) = await RunMiddleware(context);
 
@@ -218,9 +218,7 @@ public sealed class SigV4AuthenticationMiddlewareTests
         );
         context.Request.Headers["x-amz-checksum-sha256"] =
             "sDGBh5Sl/cL+/VEtpYWyKkP3wHD+lmz/q9Wq8TQpY8c=-2";
-        context.Request.Body = new MemoryStream(
-            Encoding.UTF8.GetBytes("<CompleteMultipartUpload/>")
-        );
+        context.Request.Body = new MemoryStream("<CompleteMultipartUpload/>"u8.ToArray());
 
         (context, var nextCalled) = await RunMiddleware(context);
 

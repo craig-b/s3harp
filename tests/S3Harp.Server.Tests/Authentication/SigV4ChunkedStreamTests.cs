@@ -195,7 +195,7 @@ public sealed class SigV4ChunkedStreamTests
     [InlineData(64)]
     public async Task FragmentedInnerReads_ReassembleThePayload(int fragment)
     {
-        var payload = Encoding.UTF8.GetBytes("Hello, S3Harp!");
+        var payload = "Hello, S3Harp!"u8.ToArray();
         var inner = new FragmentingStream(
             new MemoryStream(SignedWireBody(payload, chunkSize: 5)),
             fragment

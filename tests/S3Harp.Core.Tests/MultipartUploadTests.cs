@@ -117,7 +117,7 @@ public sealed class MultipartUploadTests : IDisposable
     public async Task PutObject_RecordsNoParts()
     {
         await CreateBucket();
-        using var content = new MemoryStream(Encoding.UTF8.GetBytes("hello"));
+        using var content = new MemoryStream("hello"u8.ToArray());
 
         await engine.PutObjectAsync(
             "alpha",
@@ -184,7 +184,7 @@ public sealed class MultipartUploadTests : IDisposable
     {
         var uploadId = await StartUpload(ChecksumAlgorithm.Crc32, ChecksumType.Composite);
 
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("Hello, "));
+        using var stream = new MemoryStream("Hello, "u8.ToArray());
         var outcome = await engine.UploadPartAsync("alpha", "key", uploadId, 1, stream, Token);
 
         Assert.Equal(new ChecksumValue(ChecksumAlgorithm.Crc32, "3ldvBQ=="), outcome.Checksum);
@@ -646,7 +646,7 @@ public sealed class MultipartUploadTests : IDisposable
     {
         var uploadId = await StartUpload();
         await UploadPart(uploadId, 1, "Hello, ");
-        using (var content = new MemoryStream(Encoding.UTF8.GetBytes("existing")))
+        using (var content = new MemoryStream("existing"u8.ToArray()))
         {
             await engine.PutObjectAsync(
                 "alpha",
@@ -709,7 +709,7 @@ public sealed class MultipartUploadTests : IDisposable
     {
         await CreateBucket();
 
-        using var content = new MemoryStream(Encoding.UTF8.GetBytes("data"));
+        using var content = new MemoryStream("data"u8.ToArray());
         var outcome = await engine.UploadPartAsync("alpha", "key", "missing", 1, content, Token);
 
         Assert.False(outcome.UploadExists);
@@ -719,7 +719,7 @@ public sealed class MultipartUploadTests : IDisposable
     public async Task CopiedObject_KeepsContentETagAndMetadata()
     {
         await CreateBucket();
-        using (var content = new MemoryStream(Encoding.UTF8.GetBytes("hello world")))
+        using (var content = new MemoryStream("hello world"u8.ToArray()))
         {
             await engine.PutObjectAsync(
                 "alpha",
@@ -751,7 +751,7 @@ public sealed class MultipartUploadTests : IDisposable
     public async Task CopiedObject_TakesReplacementContentTypeAndMetadata()
     {
         await CreateBucket();
-        using (var content = new MemoryStream(Encoding.UTF8.GetBytes("hello world")))
+        using (var content = new MemoryStream("hello world"u8.ToArray()))
         {
             await engine.PutObjectAsync(
                 "alpha",

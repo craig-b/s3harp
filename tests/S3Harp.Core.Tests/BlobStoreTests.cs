@@ -18,7 +18,7 @@ public sealed class BlobStoreTests : IDisposable
     [Fact]
     public async Task WrittenBlob_ReadsBackIdentical()
     {
-        var content = Encoding.UTF8.GetBytes("Hello, S3Harp!");
+        var content = "Hello, S3Harp!"u8.ToArray();
 
         var result = await Write(content);
 
@@ -31,7 +31,7 @@ public sealed class BlobStoreTests : IDisposable
     [Fact]
     public async Task WriteResult_ReportsSizeAndContentMd5()
     {
-        var result = await Write(Encoding.UTF8.GetBytes("hello world"));
+        var result = await Write("hello world"u8.ToArray());
 
         Assert.Equal(11, result.Size);
         Assert.Equal("5eb63bbbe01eeed093cb22bb8f5acdc3", result.ContentMd5Hex);
@@ -59,8 +59,8 @@ public sealed class BlobStoreTests : IDisposable
     [Fact]
     public async Task ConcatenatedBlobs_ReadBackAsTheJoinedContent()
     {
-        var first = await Write(Encoding.UTF8.GetBytes("Hello, "));
-        var second = await Write(Encoding.UTF8.GetBytes("S3Harp!"));
+        var first = await Write("Hello, "u8.ToArray());
+        var second = await Write("S3Harp!"u8.ToArray());
 
         var result = await store.ConcatenateAsync([first.BlobId, second.BlobId], Token);
 
@@ -74,7 +74,7 @@ public sealed class BlobStoreTests : IDisposable
     [Fact]
     public async Task CopiedBlob_ReadsBackIdenticalUnderANewId()
     {
-        var original = await Write(Encoding.UTF8.GetBytes("copy me"));
+        var original = await Write("copy me"u8.ToArray());
 
         var copyId = await store.CopyAsync(original.BlobId, Token);
 
