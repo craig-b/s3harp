@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using System.Reflection;
@@ -89,23 +90,38 @@ public sealed class S3HarpOptions
         throw new StartupException("S3Harp cannot start: " + string.Join("; ", problems) + ".");
     }
 
+    /// <summary>The configuration key behind each property, read once from the binding attributes.</summary>
+    private static readonly FrozenDictionary<string, string> KeyNames = ReadKeyNames();
+
+    private static FrozenDictionary<string, string> ReadKeyNames()
+    {
+        var names = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var property in typeof(S3HarpOptions).GetProperties())
+        {
+            if (property.GetCustomAttribute<ConfigurationKeyNameAttribute>() is { } key)
+            {
+                names[property.Name] = key.Name;
+            }
+        }
+
+        return names.ToFrozenDictionary(StringComparer.Ordinal);
+    }
+
     /// <summary>The binder names the configuration key whose value it could not convert.</summary>
     private static string DescribeConversionFailure(InvalidOperationException exception)
     {
-        var property = typeof(S3HarpOptions)
-            .GetProperties()
-            .FirstOrDefault(p =>
-                exception.Message.Contains($"'{KeyName(p)}'", StringComparison.OrdinalIgnoreCase)
-            );
-        return property is null
-            ? exception.Message
-            : $"{EnvironmentPrefix}{KeyName(property)} must be a number.";
+        foreach (var key in KeyNames.Values)
+        {
+            if (exception.Message.Contains($"'{key}'", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"{EnvironmentPrefix}{key} must be a number.";
+            }
+        }
+
+        return exception.Message;
     }
 
     /// <summary>The environment variable behind a property, such as <c>S3HARP_PORT</c>.</summary>
     private static string EnvironmentName(string propertyName) =>
-        EnvironmentPrefix + KeyName(typeof(S3HarpOptions).GetProperty(propertyName)!);
-
-    private static string KeyName(PropertyInfo property) =>
-        property.GetCustomAttribute<ConfigurationKeyNameAttribute>()!.Name;
+        EnvironmentPrefix + (KeyNames.TryGetValue(propertyName, out var key) ? key : propertyName);
 }
