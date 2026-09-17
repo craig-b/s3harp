@@ -54,8 +54,8 @@ public sealed class StorageEngineTests : IDisposable
 
         var result = await Put("alpha", "key", "hello world");
 
-        Assert.Equal(PutObjectStatus.Stored, result.Status);
-        Assert.Equal("5eb63bbbe01eeed093cb22bb8f5acdc3", result.ETag);
+        var stored = Assert.IsType<PutObjectOutcome.Stored>(result);
+        Assert.Equal("5eb63bbbe01eeed093cb22bb8f5acdc3", stored.ETag);
     }
 
     [Fact]
@@ -116,7 +116,7 @@ public sealed class StorageEngineTests : IDisposable
         );
 
         var expected = new Checksum(ChecksumAlgorithm.Crc32, "NadAdg==", ChecksumType.FullObject);
-        Assert.Equal(expected, outcome.Checksum);
+        Assert.Equal(expected, Assert.IsType<PutObjectOutcome.Stored>(outcome).Checksum);
         Assert.Equal(expected, (await index.FindObjectAsync("alpha", "key", Token))?.Checksum);
     }
 
@@ -124,7 +124,9 @@ public sealed class StorageEngineTests : IDisposable
     public async Task Copy_KeepsTheSourceChecksum()
     {
         await CreateBucket("alpha");
-        var source = await Put("alpha", "src", "Hello, S3Harp!", checksum: ChecksumAlgorithm.Sha1);
+        var source = Assert.IsType<PutObjectOutcome.Stored>(
+            await Put("alpha", "src", "Hello, S3Harp!", checksum: ChecksumAlgorithm.Sha1)
+        );
 
         var copy = await engine.CopyObjectAsync("alpha", "src", "alpha", "dst", null, null, Token);
 

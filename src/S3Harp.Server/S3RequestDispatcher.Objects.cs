@@ -40,21 +40,21 @@ public sealed partial class S3RequestDispatcher
             return new S3ErrorResult(exception.Error);
         }
 
-        switch (outcome.Status)
+        if (outcome is PutObjectOutcome.Stored stored)
         {
-            case PutObjectStatus.BucketMissing:
-                return new S3ErrorResult(S3Errors.NoSuchBucket);
-            case PutObjectStatus.ObjectMissing:
-                return new S3ErrorResult(S3Errors.NoSuchKey);
-            case PutObjectStatus.PreconditionFailed:
-                return new S3ErrorResult(S3Errors.PreconditionFailed);
-            case PutObjectStatus.Stored:
-                context.Response.Headers.ETag = $"\"{outcome.ETag}\"";
-                ChecksumHeaders.Write(context.Response.Headers, outcome.Checksum!);
-                return new S3StatusResult(StatusCodes.Status200OK);
-            default:
-                throw new UnreachableException();
+            context.Response.Headers.ETag = $"\"{stored.ETag}\"";
+            ChecksumHeaders.Write(context.Response.Headers, stored.Checksum);
+            return new S3StatusResult(StatusCodes.Status200OK);
         }
+
+        return outcome.Status switch
+        {
+            PutObjectStatus.BucketMissing => new S3ErrorResult(S3Errors.NoSuchBucket),
+            PutObjectStatus.ObjectMissing => new S3ErrorResult(S3Errors.NoSuchKey),
+            PutObjectStatus.PreconditionFailed => new S3ErrorResult(S3Errors.PreconditionFailed),
+            PutObjectStatus.Stored => throw new UnreachableException(),
+            _ => throw new UnreachableException(),
+        };
     }
 
     private async Task<IResult> GetObjectAsync(

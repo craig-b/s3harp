@@ -66,14 +66,7 @@ public sealed class ConcurrencyStressTests : IDisposable
             )
         );
 
-        Assert.All(
-            outcomes,
-            outcome =>
-            {
-                Assert.Equal(PutObjectStatus.Stored, outcome.Status);
-                Assert.NotNull(outcome.ETag);
-            }
-        );
+        Assert.All(outcomes, outcome => Assert.IsType<PutObjectOutcome.Stored>(outcome));
         var download = await engine.GetObjectAsync("alpha", "contested", Token);
         Assert.NotNull(download);
         Assert.Contains(await ReadContent(download), bodies);

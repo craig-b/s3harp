@@ -17,8 +17,16 @@ public sealed record ObjectListing(
     string? NextFromKey
 );
 
-/// <summary>The outcome of storing an object: on success, its ETag and stored checksum.</summary>
-public sealed record PutObjectOutcome(PutObjectStatus Status, string? ETag, Checksum? Checksum);
+/// <summary>The outcome of storing an object: either <see cref="Stored"/> with its ETag and checksum, or <see cref="Refused"/> with the reason.</summary>
+public abstract record PutObjectOutcome(PutObjectStatus Status)
+{
+    /// <summary>The object is stored; its ETag is the content MD5.</summary>
+    public sealed record Stored(string ETag, Checksum Checksum)
+        : PutObjectOutcome(PutObjectStatus.Stored);
+
+    /// <summary>The write was refused for the given reason and nothing changed.</summary>
+    public sealed record Refused(PutObjectStatus Status) : PutObjectOutcome(Status);
+}
 
 /// <summary>The caller-supplied attributes of an object: content type, content headers, and user metadata.</summary>
 public sealed record ObjectAttributes(
@@ -116,7 +124,7 @@ public sealed class StorageEngine(
         if (stored.Status != PutObjectStatus.Stored)
         {
             blobs.Delete(write.BlobId);
-            return new PutObjectOutcome(stored.Status, null, null);
+            return new PutObjectOutcome.Refused(stored.Status);
         }
 
         if (stored.ReplacedBlobId is not null)
@@ -124,7 +132,7 @@ public sealed class StorageEngine(
             blobs.Delete(stored.ReplacedBlobId);
         }
 
-        return new PutObjectOutcome(PutObjectStatus.Stored, write.ContentMd5Hex, checksum);
+        return new PutObjectOutcome.Stored(write.ContentMd5Hex, checksum);
     }
 
     public async Task<ObjectDownload?> GetObjectAsync(
