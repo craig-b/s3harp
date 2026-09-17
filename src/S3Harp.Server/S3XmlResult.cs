@@ -19,16 +19,17 @@ public sealed class S3XmlResult(int statusCode, XDocument document) : IResult
         await WriteAsync(httpContext, document).ConfigureAwait(false);
     }
 
+    private static readonly XmlWriterSettings WriterSettings = new()
+    {
+        Async = true,
+        Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+    };
+
     internal static async Task WriteAsync(HttpContext httpContext, XDocument document)
     {
         var response = httpContext.Response;
         response.ContentType = "application/xml";
-        var settings = new XmlWriterSettings
-        {
-            Async = true,
-            Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
-        };
-        var writer = XmlWriter.Create(response.Body, settings);
+        var writer = XmlWriter.Create(response.Body, WriterSettings);
         await using (writer.ConfigureAwait(false))
         {
             await document.SaveAsync(writer, httpContext.RequestAborted).ConfigureAwait(false);

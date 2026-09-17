@@ -103,16 +103,21 @@ public static class Preconditions
     /// <summary>Whether an entity-tag list (<c>*</c>, or comma-separated, optionally quoted tags) names the ETag.</summary>
     private static bool Matches(string header, string etag)
     {
-        var trimmed = header.Trim();
-        if (trimmed == "*")
+        var list = header.AsSpan().Trim();
+        if (list is "*")
         {
             return true;
         }
 
-        return trimmed
-            .Split(',')
-            .Select(tag => tag.Trim().Trim('"'))
-            .Any(tag => string.Equals(tag, etag, StringComparison.Ordinal));
+        foreach (var range in list.Split(','))
+        {
+            if (list[range].Trim().Trim('"').SequenceEqual(etag))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool TryParseHttpDate(string? header, out DateTimeOffset date) =>
