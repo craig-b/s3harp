@@ -35,7 +35,7 @@ insert_final_newline = false
 [*.{cs,vb}]
 
 # Organize usings
-dotnet_separate_import_directive_groups = true
+dotnet_separate_import_directive_groups = false
 dotnet_sort_system_directives_first = true
 file_header_template = unset
 
@@ -388,6 +388,10 @@ dotnet_naming_style.s_camelcase.word_separator =
 dotnet_naming_style.s_camelcase.capitalization = camel_case
 
 #### Rules the build enforces ####
+
+[*.cs]
+# Formatting is CSharpier's job; this proves the editorconfig layout rules agree with it.
+dotnet_diagnostic.IDE0055.severity = error
 
 # Core owns every disposable it creates: SQLite commands, readers and connections.
 [src/S3Harp.Core/**.cs]
