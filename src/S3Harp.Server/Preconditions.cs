@@ -246,6 +246,5 @@ public static class DeleteConditions
         return true;
     }
 
-    private static string Child(XElement entry, string name) =>
-        entry.Elements().FirstOrDefault(e => e.Name.LocalName == name)?.Value ?? "";
+    private static string Child(XElement entry, string name) => entry.Child(name)?.Value ?? "";
 }

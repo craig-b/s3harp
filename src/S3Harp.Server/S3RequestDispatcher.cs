@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Xml;
 using System.Xml.Linq;
 using Microsoft.Extensions.Primitives;
 using S3Harp.Core;
@@ -780,41 +781,33 @@ public sealed class S3RequestDispatcher(
             return new S3ErrorResult(S3Errors.NoSuchBucket);
         }
 
-        List<(string Key, DeleteCondition? Condition)> entries = [];
-        bool quiet;
-        try
-        {
-            var document = await LoadRequestXmlAsync(context.Request, cancellationToken)
-                .ConfigureAwait(false);
-            foreach (
-                var entry in document.Root!.Elements().Where(e => e.Name.LocalName == "Object")
-            )
-            {
-                if (!DeleteConditions.TryParse(entry, out var condition))
-                {
-                    return new S3ErrorResult(S3Errors.MalformedXML);
-                }
-
-                entries.Add(
-                    (entry.Elements().First(e => e.Name.LocalName == "Key").Value, condition)
-                );
-            }
-
-            quiet = string.Equals(
-                document.Root.Elements().FirstOrDefault(e => e.Name.LocalName == "Quiet")?.Value,
-                "true",
-                StringComparison.OrdinalIgnoreCase
-            );
-        }
-        catch (Exception exception)
-            when (exception
-                    is System.Xml.XmlException
-                        or InvalidOperationException
-                        or NullReferenceException
-            )
+        if (
+            await TryLoadRequestXmlAsync(context.Request, cancellationToken).ConfigureAwait(false)
+            is not { } root
+        )
         {
             return new S3ErrorResult(S3Errors.MalformedXML);
         }
+
+        List<(string Key, DeleteCondition? Condition)> entries = [];
+        foreach (var entry in root.Children("Object"))
+        {
+            if (
+                !DeleteConditions.TryParse(entry, out var condition)
+                || entry.Child("Key") is not { } key
+            )
+            {
+                return new S3ErrorResult(S3Errors.MalformedXML);
+            }
+
+            entries.Add((key.Value, condition));
+        }
+
+        var quiet = string.Equals(
+            root.Child("Quiet")?.Value,
+            "true",
+            StringComparison.OrdinalIgnoreCase
+        );
 
         if (entries.Count > maxKeysPerRequest)
         {
@@ -942,12 +935,6 @@ public sealed class S3RequestDispatcher(
         value = fallback;
         return raw.Count == 0 || DecimalDigits.TryParseInt32(raw.ToString(), out value);
     }
-
-    /// <summary>The part number a completion request names, which must be plain digits.</summary>
-    private static int RequestedPartNumber(string value) =>
-        DecimalDigits.TryParseInt32(value, out var partNumber)
-            ? partNumber
-            : throw new FormatException("The part number must be a whole number.");
 
     /// <summary>The parts numbered beyond the marker, up to the page size, and whether more follow.</summary>
     private static (List<T> Page, bool Truncated) PageOfParts<T>(
@@ -1342,34 +1329,27 @@ public sealed class S3RequestDispatcher(
             return new S3ErrorResult(S3Errors.NoSuchBucket);
         }
 
-        List<RequestedPart> parts;
-        try
-        {
-            var document = await LoadRequestXmlAsync(context.Request, cancellationToken)
-                .ConfigureAwait(false);
-            parts =
-            [
-                .. document
-                    .Root!.Elements()
-                    .Where(e => e.Name.LocalName == "Part")
-                    .Select(part => new RequestedPart(
-                        RequestedPartNumber(
-                            part.Elements().First(e => e.Name.LocalName == "PartNumber").Value
-                        ),
-                        part.Elements().First(e => e.Name.LocalName == "ETag").Value,
-                        DeclaredPartChecksum(part)
-                    )),
-            ];
-        }
-        catch (Exception exception)
-            when (exception
-                    is System.Xml.XmlException
-                        or InvalidOperationException
-                        or FormatException
-                        or NullReferenceException
-            )
+        if (
+            await TryLoadRequestXmlAsync(context.Request, cancellationToken).ConfigureAwait(false)
+            is not { } root
+        )
         {
             return new S3ErrorResult(S3Errors.MalformedXML);
+        }
+
+        List<RequestedPart> parts = [];
+        foreach (var part in root.Children("Part"))
+        {
+            if (
+                part.Child("PartNumber") is not { } partNumber
+                || !DecimalDigits.TryParseInt32(partNumber.Value, out var number)
+                || part.Child("ETag") is not { } etag
+            )
+            {
+                return new S3ErrorResult(S3Errors.MalformedXML);
+            }
+
+            parts.Add(new RequestedPart(number, etag.Value, DeclaredPartChecksum(part)));
         }
 
         var expected = ChecksumHeaders.TryFindDeclared(
@@ -1566,10 +1546,24 @@ public sealed class S3RequestDispatcher(
     /// Parses an XML request body. Whitespace is preserved because element text
     /// carries object keys, and a key may consist of nothing but whitespace.
     /// </summary>
-    private static Task<XDocument> LoadRequestXmlAsync(
+    /// <summary>The root element of the request body, or null when the body is not well-formed XML.</summary>
+    private static async Task<XElement?> TryLoadRequestXmlAsync(
         HttpRequest request,
         CancellationToken cancellationToken
-    ) => XDocument.LoadAsync(request.Body, LoadOptions.PreserveWhitespace, cancellationToken);
+    )
+    {
+        try
+        {
+            var document = await XDocument
+                .LoadAsync(request.Body, LoadOptions.PreserveWhitespace, cancellationToken)
+                .ConfigureAwait(false);
+            return document.Root;
+        }
+        catch (XmlException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>URL-encodes a key for <c>encoding-type=url</c>, keeping the slashes S3 leaves literal.</summary>
     private static string UrlEncodeKey(string value) =>

@@ -788,6 +788,19 @@ public sealed class S3RequestDispatcherTests : IDisposable
         Assert.Equal("NoSuchBucket", ReadErrorCode(context));
     }
 
+    [Theory]
+    [InlineData("<Delete><Object><Size>1</Size></Object></Delete>")]
+    [InlineData("<Delete><Object/></Delete>")]
+    public async Task DeleteObjects_WithAnEntryLackingAKey_ReportsMalformedXml(string body)
+    {
+        await Dispatch("PUT", "/my-bucket");
+
+        var context = await Dispatch("POST", "/my-bucket", query: "?delete", body: body);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("MalformedXML", ReadErrorCode(context));
+    }
+
     [Fact]
     public async Task DeleteObjects_WithAMalformedBody_ReportsMalformedXml()
     {
@@ -919,6 +932,26 @@ public sealed class S3RequestDispatcherTests : IDisposable
 
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         Assert.Equal("InvalidArgument", ReadErrorCode(context));
+    }
+
+    [Theory]
+    [InlineData("<Part><ETag>\"etag\"</ETag></Part>")]
+    [InlineData("<Part><PartNumber>1</PartNumber></Part>")]
+    [InlineData("<Part/>")]
+    public async Task CompleteMultipartUploadWithAnIncompletePart_ReportsMalformedXml(string part)
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate("/my-bucket/key");
+
+        var context = await Dispatch(
+            "POST",
+            "/my-bucket/key",
+            query: $"?uploadId={uploadId}",
+            body: $"<CompleteMultipartUpload>{part}</CompleteMultipartUpload>"
+        );
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("MalformedXML", ReadErrorCode(context));
     }
 
     [Theory]
