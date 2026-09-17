@@ -34,10 +34,11 @@ tests/conformance/run.sh
 
 ## Formatting
 
-CSharpier formats the C# and the project files. CI rejects a push that it would change, so format before pushing:
+CSharpier formats the C# and the project files; Prettier formats the Markdown, YAML and JSON. CI rejects a push that either would change, so format before pushing (needs `npm`):
 
 ```sh
 dotnet tool restore && dotnet csharpier format .
+npm ci && npx prettier --write .
 ```
 
 ## What it's for
@@ -61,14 +62,14 @@ S3Harp itself is the storage backend: objects are stored as plain files on the l
 
 Configuration uses the `S3HARP_` prefix for environment variables; every setting is also a flag, such as `--port 9010`, and `s3harp --help` lists them all. A flag overrides the environment. The server authenticates every request with AWS Signature Version 4 against its root keypair, which it requires at startup. A setting that is missing or invalid stops the server with a message naming it.
 
-| Variable | Purpose |
-|---|---|
-| `S3HARP_ACCESS_KEY_ID` | Required. The access key id clients sign requests with |
-| `S3HARP_SECRET_ACCESS_KEY` | Required. The matching secret key |
-| `S3HARP_DATA_DIR` | Required. The directory holding all stored data, including the metadata index |
-| `S3HARP_BIND` | The address to listen on; defaults to `127.0.0.1`, so set `0.0.0.0` to serve other machines |
-| `S3HARP_PORT` | The port to listen on; defaults to `9000`, the port local S3 tooling expects |
-| `S3HARP_DOMAIN` | The domain buckets are addressed under in virtual-hosted style; defaults to `localhost` |
+| Variable                   | Purpose                                                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------- |
+| `S3HARP_ACCESS_KEY_ID`     | Required. The access key id clients sign requests with                                      |
+| `S3HARP_SECRET_ACCESS_KEY` | Required. The matching secret key                                                           |
+| `S3HARP_DATA_DIR`          | Required. The directory holding all stored data, including the metadata index               |
+| `S3HARP_BIND`              | The address to listen on; defaults to `127.0.0.1`, so set `0.0.0.0` to serve other machines |
+| `S3HARP_PORT`              | The port to listen on; defaults to `9000`, the port local S3 tooling expects                |
+| `S3HARP_DOMAIN`            | The domain buckets are addressed under in virtual-hosted style; defaults to `localhost`     |
 
 Buckets are reachable in both of S3's addressing styles: path style (`http://localhost:9000/my-bucket/key`) and virtual-hosted style (`http://my-bucket.localhost:9000/key`), which SDKs use unless told otherwise. Every `*.localhost` name resolves to the loopback address, so the default domain works without DNS setup; set `S3HARP_DOMAIN` when serving under another name.
 
@@ -76,12 +77,12 @@ Buckets are reachable in both of S3's addressing styles: path style (`http://loc
 
 The project name is styled differently depending on context — please keep these consistent:
 
-| Form | Used for |
-|---|---|
-| `S3Harp` | NuGet package ID, .NET namespaces, README title, plain-text and code references |
-| `s3harp` | Git repo, CLI binary, Docker/GHCR image, domain (`s3harp.dev`) |
-| `S3HARP_` | Environment variable and config prefix |
-| S3·harp | Marketing and branding, exclusively (logo, site header) |
+| Form      | Used for                                                                        |
+| --------- | ------------------------------------------------------------------------------- |
+| `S3Harp`  | NuGet package ID, .NET namespaces, README title, plain-text and code references |
+| `s3harp`  | Git repo, CLI binary, Docker/GHCR image, domain (`s3harp.dev`)                  |
+| `S3HARP_` | Environment variable and config prefix                                          |
+| S3·harp   | Marketing and branding, exclusively (logo, site header)                         |
 
 ## License
 
