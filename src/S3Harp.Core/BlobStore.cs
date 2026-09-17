@@ -234,10 +234,10 @@ public sealed class BlobStore
 
     private void Publish(string blobId, string uploadPath)
     {
-        var finalPath = PathFor(blobId);
-        Directory.CreateDirectory(Path.GetDirectoryName(finalPath)!);
-        File.Move(uploadPath, finalPath);
-        DurableFile.FlushDirectory(Path.GetDirectoryName(finalPath)!);
+        var shard = ShardFor(blobId);
+        Directory.CreateDirectory(shard);
+        File.Move(uploadPath, Path.Join(shard, blobId));
+        DurableFile.FlushDirectory(shard);
     }
 
     /// <summary>The outcome of assembling blobs into one: the new blob and its size.</summary>
@@ -345,5 +345,8 @@ public sealed class BlobStore
 
     public void Delete(string blobId) => File.Delete(PathFor(blobId));
 
-    private string PathFor(string blobId) => Path.Combine(blobsDirectory, blobId[..2], blobId);
+    /// <summary>The directory holding a blob: blobs fan out by the first two characters of their id.</summary>
+    private string ShardFor(string blobId) => Path.Join(blobsDirectory, blobId.AsSpan(0, 2));
+
+    private string PathFor(string blobId) => Path.Join(blobsDirectory, blobId.AsSpan(0, 2), blobId);
 }
