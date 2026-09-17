@@ -27,8 +27,6 @@ public sealed class S3RequestDispatcher(
     /// <summary>S3 numbers the parts of a multipart upload 1 through 10,000.</summary>
     private const int MaxPartNumber = 10_000;
 
-    private static readonly XNamespace S3Namespace = "http://s3.amazonaws.com/doc/2006-03-01/";
-
     /// <summary>
     /// Every S3 subresource query marker beyond the operations S3Harp serves.
     /// Each names a distinct operation, so a request carrying one is answered
@@ -175,25 +173,21 @@ public sealed class S3RequestDispatcher(
     private async Task<IResult> ListBucketsAsync(CancellationToken cancellationToken)
     {
         var buckets = await index.ListBucketsAsync(cancellationToken).ConfigureAwait(false);
-        var document = new XDocument(
-            new XDeclaration("1.0", "UTF-8", standalone: null),
-            new XElement(
-                S3Namespace + "ListAllMyBucketsResult",
-                new XElement(
-                    S3Namespace + "Owner",
-                    new XElement(S3Namespace + "ID", credentials.AccessKeyId),
-                    new XElement(S3Namespace + "DisplayName", credentials.AccessKeyId)
-                ),
-                new XElement(
-                    S3Namespace + "Buckets",
-                    buckets.Select(bucket => new XElement(
-                        S3Namespace + "Bucket",
-                        new XElement(S3Namespace + "Name", bucket.Name),
-                        new XElement(
-                            S3Namespace + "CreationDate",
-                            FormatTimestamp(bucket.CreatedAt)
-                        )
-                    ))
+        var document = S3Xml.Element(
+            "ListAllMyBucketsResult",
+            S3Xml.Element(
+                "Owner",
+                S3Xml.Element("ID", credentials.AccessKeyId),
+                S3Xml.Element("DisplayName", credentials.AccessKeyId)
+            ),
+            S3Xml.Element(
+                "Buckets",
+                buckets.Select(bucket =>
+                    S3Xml.Element(
+                        "Bucket",
+                        S3Xml.Element("Name", bucket.Name),
+                        S3Xml.Element("CreationDate", FormatTimestamp(bucket.CreatedAt))
+                    )
                 )
             )
         );
@@ -268,22 +262,20 @@ public sealed class S3RequestDispatcher(
                 cancellationToken
             )
             .ConfigureAwait(false);
-        var root = new XElement(
-            S3Namespace + "ListBucketResult",
-            new XElement(S3Namespace + "Name", bucket),
-            new XElement(S3Namespace + "Prefix", listingQuery.Encode(listingQuery.Prefix)),
-            new XElement(S3Namespace + "Marker", listingQuery.Encode(marker))
+        var root = S3Xml.Element(
+            "ListBucketResult",
+            S3Xml.Element("Name", bucket),
+            S3Xml.Element("Prefix", listingQuery.Encode(listingQuery.Prefix)),
+            S3Xml.Element("Marker", listingQuery.Encode(marker))
         );
         if (listing.IsTruncated && listingQuery.Delimiter is not null)
         {
-            root.Add(
-                new XElement(S3Namespace + "NextMarker", listingQuery.Encode(LastEntry(listing)))
-            );
+            root.Add(S3Xml.Element("NextMarker", listingQuery.Encode(LastEntry(listing))));
         }
 
         root.Add(
-            new XElement(S3Namespace + "MaxKeys", listingQuery.MaxKeys),
-            new XElement(S3Namespace + "IsTruncated", listing.IsTruncated ? "true" : "false")
+            S3Xml.Element("MaxKeys", listingQuery.MaxKeys),
+            S3Xml.Element("IsTruncated", listing.IsTruncated)
         );
         // The original listing always names each object's owner.
         AppendListing(
@@ -292,10 +284,7 @@ public sealed class S3RequestDispatcher(
             listing,
             record => ContentsElement(listingQuery, record, includeOwner: true)
         );
-        return new S3XmlResult(
-            StatusCodes.Status200OK,
-            new XDocument(new XDeclaration("1.0", "UTF-8", standalone: null), root)
-        );
+        return new S3XmlResult(StatusCodes.Status200OK, root);
     }
 
     private async Task<IResult> ListObjectsV2Async(
@@ -339,33 +328,30 @@ public sealed class S3RequestDispatcher(
 
         var listing = await ListAsync(bucket, listingQuery, fromKey, cancellationToken)
             .ConfigureAwait(false);
-        var root = new XElement(
-            S3Namespace + "ListBucketResult",
-            new XElement(S3Namespace + "Name", bucket),
-            new XElement(S3Namespace + "Prefix", listingQuery.Encode(listingQuery.Prefix)),
-            new XElement(S3Namespace + "MaxKeys", listingQuery.MaxKeys),
-            new XElement(
-                S3Namespace + "KeyCount",
-                listing.Objects.Count + listing.CommonPrefixes.Count
-            ),
-            new XElement(S3Namespace + "IsTruncated", listing.IsTruncated ? "true" : "false")
+        var root = S3Xml.Element(
+            "ListBucketResult",
+            S3Xml.Element("Name", bucket),
+            S3Xml.Element("Prefix", listingQuery.Encode(listingQuery.Prefix)),
+            S3Xml.Element("MaxKeys", listingQuery.MaxKeys),
+            S3Xml.Element("KeyCount", listing.Objects.Count + listing.CommonPrefixes.Count),
+            S3Xml.Element("IsTruncated", listing.IsTruncated)
         );
         if (startAfter.Length > 0)
         {
-            root.Add(new XElement(S3Namespace + "StartAfter", listingQuery.Encode(startAfter)));
+            root.Add(S3Xml.Element("StartAfter", listingQuery.Encode(startAfter)));
         }
 
         // The token is echoed whenever the client sent one, even empty.
         if (query.ContainsKey("continuation-token"))
         {
-            root.Add(new XElement(S3Namespace + "ContinuationToken", continuationToken));
+            root.Add(S3Xml.Element("ContinuationToken", continuationToken));
         }
 
         if (listing.NextFromKey is not null)
         {
             root.Add(
-                new XElement(
-                    S3Namespace + "NextContinuationToken",
+                S3Xml.Element(
+                    "NextContinuationToken",
                     Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(listing.NextFromKey))
                 )
             );
@@ -382,10 +368,7 @@ public sealed class S3RequestDispatcher(
             listing,
             record => ContentsElement(listingQuery, record, includeOwner: fetchOwner)
         );
-        return new S3XmlResult(
-            StatusCodes.Status200OK,
-            new XDocument(new XDeclaration("1.0", "UTF-8", standalone: null), root)
-        );
+        return new S3XmlResult(StatusCodes.Status200OK, root);
     }
 
     private Task<ObjectListing> ListAsync(
@@ -424,14 +407,14 @@ public sealed class S3RequestDispatcher(
     }
 
     private XElement ContentsElement(ListingQuery query, ObjectRecord record, bool includeOwner) =>
-        new(
-            S3Namespace + "Contents",
-            new XElement(S3Namespace + "Key", query.Encode(record.Key)),
-            new XElement(S3Namespace + "LastModified", FormatTimestamp(record.LastModified)),
-            new XElement(S3Namespace + "ETag", $"\"{record.ETag}\""),
-            new XElement(S3Namespace + "Size", record.Size),
+        S3Xml.Element(
+            "Contents",
+            S3Xml.Element("Key", query.Encode(record.Key)),
+            S3Xml.Element("LastModified", FormatTimestamp(record.LastModified)),
+            S3Xml.Element("ETag", $"\"{record.ETag}\""),
+            S3Xml.Element("Size", record.Size),
             includeOwner ? OwnerElement("Owner") : null,
-            new XElement(S3Namespace + "StorageClass", "STANDARD")
+            S3Xml.Element("StorageClass", "STANDARD")
         );
 
     /// <summary>The last entry a listing reported, in key order, across contents and common prefixes.</summary>
@@ -474,48 +457,43 @@ public sealed class S3RequestDispatcher(
                 cancellationToken
             )
             .ConfigureAwait(false);
-        var root = new XElement(
-            S3Namespace + "ListVersionsResult",
-            new XElement(S3Namespace + "Name", bucket),
-            new XElement(S3Namespace + "Prefix", listingQuery.Encode(listingQuery.Prefix)),
-            new XElement(S3Namespace + "KeyMarker", listingQuery.Encode(keyMarker)),
-            new XElement(S3Namespace + "VersionIdMarker", query["version-id-marker"].ToString())
+        var root = S3Xml.Element(
+            "ListVersionsResult",
+            S3Xml.Element("Name", bucket),
+            S3Xml.Element("Prefix", listingQuery.Encode(listingQuery.Prefix)),
+            S3Xml.Element("KeyMarker", listingQuery.Encode(keyMarker)),
+            S3Xml.Element("VersionIdMarker", query["version-id-marker"].ToString())
         );
         if (listing.IsTruncated)
         {
             root.Add(
-                new XElement(
-                    S3Namespace + "NextKeyMarker",
-                    listingQuery.Encode(LastEntry(listing))
-                ),
-                new XElement(S3Namespace + "NextVersionIdMarker", NullVersionId)
+                S3Xml.Element("NextKeyMarker", listingQuery.Encode(LastEntry(listing))),
+                S3Xml.Element("NextVersionIdMarker", NullVersionId)
             );
         }
 
         root.Add(
-            new XElement(S3Namespace + "MaxKeys", listingQuery.MaxKeys),
-            new XElement(S3Namespace + "IsTruncated", listing.IsTruncated ? "true" : "false")
+            S3Xml.Element("MaxKeys", listingQuery.MaxKeys),
+            S3Xml.Element("IsTruncated", listing.IsTruncated)
         );
         AppendListing(
             root,
             listingQuery,
             listing,
-            record => new XElement(
-                S3Namespace + "Version",
-                new XElement(S3Namespace + "Key", listingQuery.Encode(record.Key)),
-                new XElement(S3Namespace + "VersionId", NullVersionId),
-                new XElement(S3Namespace + "IsLatest", "true"),
-                new XElement(S3Namespace + "LastModified", FormatTimestamp(record.LastModified)),
-                new XElement(S3Namespace + "ETag", $"\"{record.ETag}\""),
-                new XElement(S3Namespace + "Size", record.Size),
-                OwnerElement("Owner"),
-                new XElement(S3Namespace + "StorageClass", "STANDARD")
-            )
+            record =>
+                S3Xml.Element(
+                    "Version",
+                    S3Xml.Element("Key", listingQuery.Encode(record.Key)),
+                    S3Xml.Element("VersionId", NullVersionId),
+                    S3Xml.Element("IsLatest", "true"),
+                    S3Xml.Element("LastModified", FormatTimestamp(record.LastModified)),
+                    S3Xml.Element("ETag", $"\"{record.ETag}\""),
+                    S3Xml.Element("Size", record.Size),
+                    OwnerElement("Owner"),
+                    S3Xml.Element("StorageClass", "STANDARD")
+                )
         );
-        return new S3XmlResult(
-            StatusCodes.Status200OK,
-            new XDocument(new XDeclaration("1.0", "UTF-8", standalone: null), root)
-        );
+        return new S3XmlResult(StatusCodes.Status200OK, root);
     }
 
     private static void AppendListing(
@@ -527,20 +505,19 @@ public sealed class S3RequestDispatcher(
     {
         if (query.EncodingType.Length > 0)
         {
-            root.Add(new XElement(S3Namespace + "EncodingType", query.EncodingType));
+            root.Add(S3Xml.Element("EncodingType", query.EncodingType));
         }
 
         if (query.Delimiter is not null)
         {
-            root.Add(new XElement(S3Namespace + "Delimiter", query.Encode(query.Delimiter)));
+            root.Add(S3Xml.Element("Delimiter", query.Encode(query.Delimiter)));
         }
 
         root.Add(listing.Objects.Select(entry));
         root.Add(
-            listing.CommonPrefixes.Select(commonPrefix => new XElement(
-                S3Namespace + "CommonPrefixes",
-                new XElement(S3Namespace + "Prefix", query.Encode(commonPrefix))
-            ))
+            listing.CommonPrefixes.Select(commonPrefix =>
+                S3Xml.Element("CommonPrefixes", S3Xml.Element("Prefix", query.Encode(commonPrefix)))
+            )
         );
     }
 
@@ -554,8 +531,8 @@ public sealed class S3RequestDispatcher(
     {
         private const int MaxKeysCeiling = 1000;
 
-        public Func<string, string> Encode { get; } =
-            EncodingType.Length > 0 ? UrlEncodeKey : value => value;
+        /// <summary>The value as the response carries it: URL-encoded when the client asked for it.</summary>
+        public string Encode(string value) => EncodingType.Length > 0 ? UrlEncodeKey(value) : value;
 
         /// <summary>Parses the shared parameters, or returns null when one is invalid.</summary>
         public static ListingQuery? TryParse(IQueryCollection query)
@@ -817,7 +794,7 @@ public sealed class S3RequestDispatcher(
             return new S3ErrorResult(S3Errors.MalformedXML);
         }
 
-        var result = new XElement(S3Namespace + "DeleteResult");
+        var result = S3Xml.Element("DeleteResult");
         foreach (var (key, condition) in entries)
         {
             var status = await engine
@@ -826,26 +803,21 @@ public sealed class S3RequestDispatcher(
             if (status == DeleteObjectStatus.PreconditionFailed)
             {
                 result.Add(
-                    new XElement(
-                        S3Namespace + "Error",
-                        new XElement(S3Namespace + "Key", key),
-                        new XElement(S3Namespace + "Code", S3Errors.PreconditionFailed.Code),
-                        new XElement(S3Namespace + "Message", S3Errors.PreconditionFailed.Message)
+                    S3Xml.Element(
+                        "Error",
+                        S3Xml.Element("Key", key),
+                        S3Xml.Element("Code", S3Errors.PreconditionFailed.Code),
+                        S3Xml.Element("Message", S3Errors.PreconditionFailed.Message)
                     )
                 );
             }
             else if (!quiet)
             {
-                result.Add(
-                    new XElement(S3Namespace + "Deleted", new XElement(S3Namespace + "Key", key))
-                );
+                result.Add(S3Xml.Element("Deleted", S3Xml.Element("Key", key)));
             }
         }
 
-        return new S3XmlResult(
-            StatusCodes.Status200OK,
-            new XDocument(new XDeclaration("1.0", "UTF-8", standalone: null), result)
-        );
+        return new S3XmlResult(StatusCodes.Status200OK, result);
     }
 
     private async Task<IResult> ListPartsAsync(
@@ -887,46 +859,37 @@ public sealed class S3RequestDispatcher(
 
         return new S3XmlResult(
             StatusCodes.Status200OK,
-            new XDocument(
-                new XDeclaration("1.0", "UTF-8", standalone: null),
-                new XElement(
-                    S3Namespace + "ListPartsResult",
-                    new XElement(S3Namespace + "Bucket", bucket),
-                    new XElement(S3Namespace + "Key", key),
-                    new XElement(S3Namespace + "UploadId", uploadId),
-                    OwnerElement("Initiator"),
-                    OwnerElement("Owner"),
-                    new XElement(S3Namespace + "StorageClass", "STANDARD"),
-                    new XElement(
-                        S3Namespace + "ChecksumAlgorithm",
-                        ChecksumAlgorithms.Name(upload.ChecksumAlgorithm)
-                    ),
-                    new XElement(
-                        S3Namespace + "ChecksumType",
-                        ChecksumHeaders.TypeName(upload.ChecksumType)
-                    ),
-                    new XElement(S3Namespace + "PartNumberMarker", marker),
-                    truncated
-                        ? new XElement(S3Namespace + "NextPartNumberMarker", page[^1].PartNumber)
-                        : null,
-                    new XElement(S3Namespace + "MaxParts", maxParts),
-                    new XElement(S3Namespace + "IsTruncated", truncated ? "true" : "false"),
-                    page.Select(part => new XElement(
-                        S3Namespace + "Part",
-                        new XElement(S3Namespace + "PartNumber", part.PartNumber),
-                        new XElement(
-                            S3Namespace + "LastModified",
-                            FormatTimestamp(part.LastModified)
-                        ),
-                        new XElement(S3Namespace + "ETag", $"\"{part.ETag}\""),
-                        new XElement(S3Namespace + "Size", part.Size),
+            S3Xml.Element(
+                "ListPartsResult",
+                S3Xml.Element("Bucket", bucket),
+                S3Xml.Element("Key", key),
+                S3Xml.Element("UploadId", uploadId),
+                OwnerElement("Initiator"),
+                OwnerElement("Owner"),
+                S3Xml.Element("StorageClass", "STANDARD"),
+                S3Xml.Element(
+                    "ChecksumAlgorithm",
+                    ChecksumAlgorithms.Name(upload.ChecksumAlgorithm)
+                ),
+                S3Xml.Element("ChecksumType", ChecksumHeaders.TypeName(upload.ChecksumType)),
+                S3Xml.Element("PartNumberMarker", marker),
+                truncated ? S3Xml.Element("NextPartNumberMarker", page[^1].PartNumber) : null,
+                S3Xml.Element("MaxParts", maxParts),
+                S3Xml.Element("IsTruncated", truncated),
+                page.Select(part =>
+                    S3Xml.Element(
+                        "Part",
+                        S3Xml.Element("PartNumber", part.PartNumber),
+                        S3Xml.Element("LastModified", FormatTimestamp(part.LastModified)),
+                        S3Xml.Element("ETag", $"\"{part.ETag}\""),
+                        S3Xml.Element("Size", part.Size),
                         part.Checksum is null
                             ? null
-                            : new XElement(
-                                S3Namespace + ChecksumHeaders.ElementName(upload.ChecksumAlgorithm),
+                            : S3Xml.Element(
+                                ChecksumHeaders.ElementName(upload.ChecksumAlgorithm),
                                 part.Checksum
                             )
-                    ))
+                    )
                 )
             )
         );
@@ -1007,26 +970,19 @@ public sealed class S3RequestDispatcher(
         context.Response.Headers.LastModified = HttpDate.Format(record.LastModified);
         return new S3XmlResult(
             StatusCodes.Status200OK,
-            new XDocument(
-                new XDeclaration("1.0", "UTF-8", standalone: null),
-                new XElement(
-                    S3Namespace + "GetObjectAttributesResponse",
-                    requested.Contains("ETag")
-                        ? new XElement(S3Namespace + "ETag", record.ETag)
-                        : null,
-                    requested.Contains("Checksum") && record.Checksum is not null
-                        ? new XElement(S3Namespace + "Checksum", ChecksumElements(record.Checksum))
-                        : null,
-                    requested.Contains("ObjectParts") && record.Parts.Count > 0
-                        ? ObjectPartsElement(record, marker, maxParts)
-                        : null,
-                    requested.Contains("StorageClass")
-                        ? new XElement(S3Namespace + "StorageClass", "STANDARD")
-                        : null,
-                    requested.Contains("ObjectSize")
-                        ? new XElement(S3Namespace + "ObjectSize", record.Size)
-                        : null
-                )
+            S3Xml.Element(
+                "GetObjectAttributesResponse",
+                requested.Contains("ETag") ? S3Xml.Element("ETag", record.ETag) : null,
+                requested.Contains("Checksum") && record.Checksum is not null
+                    ? S3Xml.Element("Checksum", ChecksumElements(record.Checksum))
+                    : null,
+                requested.Contains("ObjectParts") && record.Parts.Count > 0
+                    ? ObjectPartsElement(record, marker, maxParts)
+                    : null,
+                requested.Contains("StorageClass")
+                    ? S3Xml.Element("StorageClass", "STANDARD")
+                    : null,
+                requested.Contains("ObjectSize") ? S3Xml.Element("ObjectSize", record.Size) : null
             )
         );
     }
@@ -1036,24 +992,26 @@ public sealed class S3RequestDispatcher(
     {
         var numbered = record.Parts.Select((part, i) => (Number: i + 1, Part: part));
         var (page, truncated) = PageOfParts(numbered, part => part.Number, marker, maxParts);
-        return new XElement(
-            S3Namespace + "ObjectParts",
-            new XElement(S3Namespace + "PartsCount", record.Parts.Count),
-            new XElement(S3Namespace + "PartNumberMarker", marker),
-            truncated ? new XElement(S3Namespace + "NextPartNumberMarker", page[^1].Number) : null,
-            new XElement(S3Namespace + "MaxParts", maxParts),
-            new XElement(S3Namespace + "IsTruncated", truncated ? "true" : "false"),
-            page.Select(entry => new XElement(
-                S3Namespace + "Part",
-                new XElement(S3Namespace + "PartNumber", entry.Number),
-                new XElement(S3Namespace + "Size", entry.Part.Size),
-                entry.Part.Checksum is not null && record.Checksum is not null
-                    ? new XElement(
-                        S3Namespace + ChecksumHeaders.ElementName(record.Checksum.Algorithm),
-                        entry.Part.Checksum
-                    )
-                    : null
-            ))
+        return S3Xml.Element(
+            "ObjectParts",
+            S3Xml.Element("PartsCount", record.Parts.Count),
+            S3Xml.Element("PartNumberMarker", marker),
+            truncated ? S3Xml.Element("NextPartNumberMarker", page[^1].Number) : null,
+            S3Xml.Element("MaxParts", maxParts),
+            S3Xml.Element("IsTruncated", truncated),
+            page.Select(entry =>
+                S3Xml.Element(
+                    "Part",
+                    S3Xml.Element("PartNumber", entry.Number),
+                    S3Xml.Element("Size", entry.Part.Size),
+                    entry.Part.Checksum is not null && record.Checksum is not null
+                        ? S3Xml.Element(
+                            ChecksumHeaders.ElementName(record.Checksum.Algorithm),
+                            entry.Part.Checksum
+                        )
+                        : null
+                )
+            )
         );
     }
 
@@ -1070,32 +1028,31 @@ public sealed class S3RequestDispatcher(
         var uploads = await index.ListUploadsAsync(bucket, cancellationToken).ConfigureAwait(false);
         return new S3XmlResult(
             StatusCodes.Status200OK,
-            new XDocument(
-                new XDeclaration("1.0", "UTF-8", standalone: null),
-                new XElement(
-                    S3Namespace + "ListMultipartUploadsResult",
-                    new XElement(S3Namespace + "Bucket", bucket),
-                    new XElement(S3Namespace + "MaxUploads", 1000),
-                    new XElement(S3Namespace + "IsTruncated", "false"),
-                    uploads.Select(upload => new XElement(
-                        S3Namespace + "Upload",
-                        new XElement(S3Namespace + "Key", upload.Key),
-                        new XElement(S3Namespace + "UploadId", upload.UploadId),
+            S3Xml.Element(
+                "ListMultipartUploadsResult",
+                S3Xml.Element("Bucket", bucket),
+                S3Xml.Element("MaxUploads", 1000),
+                S3Xml.Element("IsTruncated", "false"),
+                uploads.Select(upload =>
+                    S3Xml.Element(
+                        "Upload",
+                        S3Xml.Element("Key", upload.Key),
+                        S3Xml.Element("UploadId", upload.UploadId),
                         OwnerElement("Initiator"),
                         OwnerElement("Owner"),
-                        new XElement(S3Namespace + "StorageClass", "STANDARD"),
-                        new XElement(S3Namespace + "Initiated", FormatTimestamp(upload.InitiatedAt))
-                    ))
+                        S3Xml.Element("StorageClass", "STANDARD"),
+                        S3Xml.Element("Initiated", FormatTimestamp(upload.InitiatedAt))
+                    )
                 )
             )
         );
     }
 
     private XElement OwnerElement(string elementName) =>
-        new(
-            S3Namespace + elementName,
-            new XElement(S3Namespace + "ID", credentials.AccessKeyId),
-            new XElement(S3Namespace + "DisplayName", credentials.AccessKeyId)
+        S3Xml.Element(
+            elementName,
+            S3Xml.Element("ID", credentials.AccessKeyId),
+            S3Xml.Element("DisplayName", credentials.AccessKeyId)
         );
 
     private async Task<IResult> InitiateUploadAsync(
@@ -1141,14 +1098,11 @@ public sealed class S3RequestDispatcher(
         ChecksumHeaders.WriteAlgorithm(context.Response.Headers, algorithm, type);
         return new S3XmlResult(
             StatusCodes.Status200OK,
-            new XDocument(
-                new XDeclaration("1.0", "UTF-8", standalone: null),
-                new XElement(
-                    S3Namespace + "InitiateMultipartUploadResult",
-                    new XElement(S3Namespace + "Bucket", bucket),
-                    new XElement(S3Namespace + "Key", key),
-                    new XElement(S3Namespace + "UploadId", uploadId)
-                )
+            S3Xml.Element(
+                "InitiateMultipartUploadResult",
+                S3Xml.Element("Bucket", bucket),
+                S3Xml.Element("Key", key),
+                S3Xml.Element("UploadId", uploadId)
             )
         );
     }
@@ -1279,22 +1233,16 @@ public sealed class S3RequestDispatcher(
             UploadPartCopyStatus.RangeBeyondSource => new S3ErrorResult(S3Errors.InvalidRange),
             UploadPartCopyStatus.Copied => new S3XmlResult(
                 StatusCodes.Status200OK,
-                new XDocument(
-                    new XDeclaration("1.0", "UTF-8", standalone: null),
-                    new XElement(
-                        S3Namespace + "CopyPartResult",
-                        new XElement(S3Namespace + "ETag", $"\"{outcome.ETag}\""),
-                        new XElement(
-                            S3Namespace + "LastModified",
-                            FormatTimestamp(outcome.LastModified)
-                        ),
-                        outcome.Checksum is { } checksum
-                            ? new XElement(
-                                S3Namespace + ChecksumHeaders.ElementName(checksum.Algorithm),
-                                checksum.Value
-                            )
-                            : null
-                    )
+                S3Xml.Element(
+                    "CopyPartResult",
+                    S3Xml.Element("ETag", $"\"{outcome.ETag}\""),
+                    S3Xml.Element("LastModified", FormatTimestamp(outcome.LastModified)),
+                    outcome.Checksum is { } checksum
+                        ? S3Xml.Element(
+                            ChecksumHeaders.ElementName(checksum.Algorithm),
+                            checksum.Value
+                        )
+                        : null
                 )
             ),
             _ => throw new UnreachableException(),
@@ -1387,16 +1335,13 @@ public sealed class S3RequestDispatcher(
             ),
             CompleteUploadStatus.Completed => new S3XmlResult(
                 StatusCodes.Status200OK,
-                new XDocument(
-                    new XDeclaration("1.0", "UTF-8", standalone: null),
-                    new XElement(
-                        S3Namespace + "CompleteMultipartUploadResult",
-                        new XElement(S3Namespace + "Location", $"/{bucket}/{key}"),
-                        new XElement(S3Namespace + "Bucket", bucket),
-                        new XElement(S3Namespace + "Key", key),
-                        new XElement(S3Namespace + "ETag", $"\"{outcome.ETag}\""),
-                        ChecksumElements(outcome.Checksum)
-                    )
+                S3Xml.Element(
+                    "CompleteMultipartUploadResult",
+                    S3Xml.Element("Location", $"/{bucket}/{key}"),
+                    S3Xml.Element("Bucket", bucket),
+                    S3Xml.Element("Key", key),
+                    S3Xml.Element("ETag", $"\"{outcome.ETag}\""),
+                    ChecksumElements(outcome.Checksum)
                 )
             ),
             _ => throw new UnreachableException(),
@@ -1519,17 +1464,11 @@ public sealed class S3RequestDispatcher(
 
         return new S3XmlResult(
             StatusCodes.Status200OK,
-            new XDocument(
-                new XDeclaration("1.0", "UTF-8", standalone: null),
-                new XElement(
-                    S3Namespace + "CopyObjectResult",
-                    new XElement(S3Namespace + "ETag", $"\"{outcome.ETag}\""),
-                    new XElement(
-                        S3Namespace + "LastModified",
-                        FormatTimestamp(outcome.LastModified)
-                    ),
-                    ChecksumElements(outcome.Checksum)
-                )
+            S3Xml.Element(
+                "CopyObjectResult",
+                S3Xml.Element("ETag", $"\"{outcome.ETag}\""),
+                S3Xml.Element("LastModified", FormatTimestamp(outcome.LastModified)),
+                ChecksumElements(outcome.Checksum)
             )
         );
     }
@@ -1540,11 +1479,8 @@ public sealed class S3RequestDispatcher(
             ? []
             :
             [
-                new XElement(
-                    S3Namespace + ChecksumHeaders.ElementName(checksum.Algorithm),
-                    checksum.Value
-                ),
-                new XElement(S3Namespace + "ChecksumType", ChecksumHeaders.TypeName(checksum.Type)),
+                S3Xml.Element(ChecksumHeaders.ElementName(checksum.Algorithm), checksum.Value),
+                S3Xml.Element("ChecksumType", ChecksumHeaders.TypeName(checksum.Type)),
             ];
 
     /// <summary>

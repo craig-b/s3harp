@@ -7,6 +7,11 @@ namespace S3Harp.Server;
 /// <summary>Writes an XML document as an S3 response body.</summary>
 public sealed class S3XmlResult(int statusCode, XDocument document) : IResult
 {
+    /// <summary>Wraps the root element in a UTF-8 document.</summary>
+    public S3XmlResult(int statusCode, XElement root)
+        : this(statusCode, new XDocument(new XDeclaration("1.0", "UTF-8", standalone: null), root))
+    { }
+
     public async Task ExecuteAsync(HttpContext httpContext)
     {
         ArgumentNullException.ThrowIfNull(httpContext);
