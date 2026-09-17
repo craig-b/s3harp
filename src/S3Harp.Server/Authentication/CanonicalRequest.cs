@@ -26,7 +26,7 @@ public static class CanonicalRequest
             .Append(CanonicalizeQuery(query, omitSignatureParameter))
             .Append('\n');
 
-        var orderedHeaders = signedHeaders.OrderBy(h => h, StringComparer.Ordinal).ToArray();
+        var orderedHeaders = signedHeaders.Order(StringComparer.Ordinal).ToArray();
         foreach (var name in orderedHeaders)
         {
             builder
@@ -67,30 +67,72 @@ public static class CanonicalRequest
 
     private static string CanonicalizeQuery(string query, bool omitSignatureParameter)
     {
-        var parameters = query
-            .Split('&', StringSplitOptions.RemoveEmptyEntries)
-            .Select(parameter =>
+        var parameters = new List<(string Name, string Value)>();
+        var span = query.AsSpan();
+        foreach (var range in span.Split('&'))
+        {
+            var parameter = span[range];
+            if (parameter.IsEmpty)
             {
-                var separator = parameter.IndexOf('=', StringComparison.Ordinal);
-                return separator < 0
-                    ? (Name: parameter, Value: string.Empty)
-                    : (Name: parameter[..separator], Value: parameter[(separator + 1)..]);
-            })
-            .Where(p =>
-                !omitSignatureParameter
-                || !string.Equals(p.Name, "X-Amz-Signature", StringComparison.Ordinal)
-            )
-            .OrderBy(p => p.Name, StringComparer.Ordinal)
-            .ThenBy(p => p.Value, StringComparer.Ordinal)
-            .Select(p => $"{p.Name}={p.Value}");
-        return string.Join('&', parameters);
+                continue;
+            }
+
+            var separator = parameter.IndexOf('=');
+            var name = separator < 0 ? parameter : parameter[..separator];
+            if (omitSignatureParameter && name is "X-Amz-Signature")
+            {
+                continue;
+            }
+
+            var value = separator < 0 ? ReadOnlySpan<char>.Empty : parameter[(separator + 1)..];
+            parameters.Add((name.ToString(), value.ToString()));
+        }
+
+        parameters.Sort(
+            static (left, right) =>
+                string.CompareOrdinal(left.Name, right.Name) is var byName and not 0
+                    ? byName
+                    : string.CompareOrdinal(left.Value, right.Value)
+        );
+
+        var builder = new StringBuilder(query.Length);
+        foreach (var (name, value) in parameters)
+        {
+            if (builder.Length > 0)
+            {
+                builder.Append('&');
+            }
+
+            builder.Append(name).Append('=').Append(value);
+        }
+
+        return builder.ToString();
     }
 
-    private static string CanonicalizeHeaderValue(StringValues values) =>
-        string.Join(',', values.Select(v => CollapseWhitespace(v?.Trim() ?? string.Empty)));
-
-    private static string CollapseWhitespace(string value)
+    private static string CanonicalizeHeaderValue(StringValues values)
     {
+        var builder = new StringBuilder();
+        foreach (var value in values)
+        {
+            if (builder.Length > 0)
+            {
+                builder.Append(',');
+            }
+
+            builder.Append(CollapseWhitespace(value.AsSpan().Trim()));
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>Runs of spaces and tabs become one space, as SigV4 canonicalization requires.</summary>
+    private static string CollapseWhitespace(ReadOnlySpan<char> value)
+    {
+        if (!value.Contains('\t') && !value.Contains("  ", StringComparison.Ordinal))
+        {
+            return value.ToString();
+        }
+
         var builder = new StringBuilder(value.Length);
         var previousWasSpace = false;
         foreach (var character in value)
