@@ -7,7 +7,7 @@ using Xunit;
 
 namespace S3Harp.IntegrationTests;
 
-public sealed class ObjectTests : IDisposable
+public sealed class ObjectTests : IAsyncLifetime
 {
     private const string Bucket = "test-bucket";
 
@@ -778,7 +778,9 @@ public sealed class ObjectTests : IDisposable
             )
         );
 
-    public void Dispose() => factory.Dispose();
+    public ValueTask InitializeAsync() => factory.StartAsync();
+
+    public ValueTask DisposeAsync() => factory.DisposeAsync();
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 

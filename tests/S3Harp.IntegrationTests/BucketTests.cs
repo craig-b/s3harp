@@ -5,7 +5,7 @@ using Xunit;
 
 namespace S3Harp.IntegrationTests;
 
-public sealed class BucketTests : IDisposable
+public sealed class BucketTests : IAsyncLifetime
 {
     private readonly S3HarpFactory factory = new();
 
@@ -84,7 +84,9 @@ public sealed class BucketTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, exception.StatusCode);
     }
 
-    public void Dispose() => factory.Dispose();
+    public ValueTask InitializeAsync() => factory.StartAsync();
+
+    public ValueTask DisposeAsync() => factory.DisposeAsync();
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 }

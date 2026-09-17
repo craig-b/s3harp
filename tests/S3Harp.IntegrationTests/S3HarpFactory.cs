@@ -12,7 +12,7 @@ namespace S3Harp.IntegrationTests;
 /// compatibility oracle, so tests exercise real HTTP end to end. The fixture starts
 /// the application itself on a dynamic port, keeping startup deterministic.
 /// </summary>
-public sealed class S3HarpFactory : IDisposable
+public sealed class S3HarpFactory : IAsyncDisposable
 {
     public const string AccessKeyId = "S3HARPTESTACCESSKEY";
     public const string SecretAccessKey = "s3harp-test-secret-access-key";
@@ -20,6 +20,25 @@ public sealed class S3HarpFactory : IDisposable
     private readonly TempDirectory dataDirectory = new("integration");
 
     private WebApplication? app;
+
+    /// <summary>Starts the server on a free loopback port.</summary>
+    public async ValueTask StartAsync()
+    {
+        app = S3HarpApplication.Build(
+            new Dictionary<string, string?>
+            {
+                ["BIND"] = "127.0.0.1",
+                ["PORT"] = "0",
+                ["ACCESS_KEY_ID"] = AccessKeyId,
+                ["SECRET_ACCESS_KEY"] = SecretAccessKey,
+                ["DATA_DIR"] = dataDirectory.Path,
+            }
+        );
+        await app.StartAsync();
+    }
+
+    /// <summary>The address the started server listens on.</summary>
+    public Uri BaseAddress => new(Started().Urls.First());
 
     /// <summary>
     /// An SDK client for the server. Path style is the default; a virtual-hosted
@@ -32,7 +51,7 @@ public sealed class S3HarpFactory : IDisposable
         bool virtualHosted = false
     )
     {
-        var url = new UriBuilder(EnsureServerStarted());
+        var url = new UriBuilder(BaseAddress);
         if (virtualHosted)
         {
             url.Host = "localhost";
@@ -47,34 +66,17 @@ public sealed class S3HarpFactory : IDisposable
         return new AmazonS3Client(new BasicAWSCredentials(accessKeyId, secretAccessKey), config);
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         if (app is not null)
         {
-            app.StopAsync().GetAwaiter().GetResult();
-            app.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            await app.StopAsync();
+            await app.DisposeAsync();
         }
 
         dataDirectory.Dispose();
     }
 
-    private string EnsureServerStarted()
-    {
-        if (app is null)
-        {
-            app = S3HarpApplication.Build(
-                new Dictionary<string, string?>
-                {
-                    ["BIND"] = "127.0.0.1",
-                    ["PORT"] = "0",
-                    ["ACCESS_KEY_ID"] = AccessKeyId,
-                    ["SECRET_ACCESS_KEY"] = SecretAccessKey,
-                    ["DATA_DIR"] = dataDirectory.Path,
-                }
-            );
-            app.StartAsync().GetAwaiter().GetResult();
-        }
-
-        return app.Urls.First();
-    }
+    private WebApplication Started() =>
+        app ?? throw new InvalidOperationException("The server has not been started.");
 }

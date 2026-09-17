@@ -5,7 +5,7 @@ using Xunit;
 
 namespace S3Harp.IntegrationTests;
 
-public sealed class AuthenticationTests : IDisposable
+public sealed class AuthenticationTests : IAsyncLifetime
 {
     private readonly S3HarpFactory factory = new();
 
@@ -41,5 +41,7 @@ public sealed class AuthenticationTests : IDisposable
         Assert.Equal(HttpStatusCode.Forbidden, exception.StatusCode);
     }
 
-    public void Dispose() => factory.Dispose();
+    public ValueTask InitializeAsync() => factory.StartAsync();
+
+    public ValueTask DisposeAsync() => factory.DisposeAsync();
 }

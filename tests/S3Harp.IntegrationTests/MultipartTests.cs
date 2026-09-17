@@ -6,7 +6,7 @@ using Xunit;
 
 namespace S3Harp.IntegrationTests;
 
-public sealed class MultipartTests : IDisposable
+public sealed class MultipartTests : IAsyncLifetime
 {
     private const string Bucket = "multipart-bucket";
 
@@ -523,7 +523,9 @@ public sealed class MultipartTests : IDisposable
         Assert.Equal("kept", response.Metadata["note"]);
     }
 
-    public void Dispose() => factory.Dispose();
+    public ValueTask InitializeAsync() => factory.StartAsync();
+
+    public ValueTask DisposeAsync() => factory.DisposeAsync();
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 

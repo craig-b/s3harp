@@ -5,7 +5,7 @@ using Xunit;
 
 namespace S3Harp.IntegrationTests;
 
-public sealed class PresignedUrlTests : IDisposable
+public sealed class PresignedUrlTests : IAsyncLifetime
 {
     private const string Bucket = "presign-bucket";
 
@@ -99,10 +99,12 @@ public sealed class PresignedUrlTests : IDisposable
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    public void Dispose()
+    public ValueTask InitializeAsync() => factory.StartAsync();
+
+    public async ValueTask DisposeAsync()
     {
         httpClient.Dispose();
-        factory.Dispose();
+        await factory.DisposeAsync();
     }
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;

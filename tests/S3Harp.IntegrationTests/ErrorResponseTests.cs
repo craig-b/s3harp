@@ -4,7 +4,7 @@ using Xunit;
 
 namespace S3Harp.IntegrationTests;
 
-public sealed class ErrorResponseTests : IDisposable
+public sealed class ErrorResponseTests : IAsyncLifetime
 {
     private readonly S3HarpFactory factory = new();
 
@@ -22,5 +22,7 @@ public sealed class ErrorResponseTests : IDisposable
         Assert.False(string.IsNullOrWhiteSpace(exception.RequestId));
     }
 
-    public void Dispose() => factory.Dispose();
+    public ValueTask InitializeAsync() => factory.StartAsync();
+
+    public ValueTask DisposeAsync() => factory.DisposeAsync();
 }
