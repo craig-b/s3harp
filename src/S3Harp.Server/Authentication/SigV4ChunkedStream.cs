@@ -1,4 +1,5 @@
-using System.Globalization;
+using System.Buffers;
+using System.Buffers.Text;
 using System.Text;
 using S3Harp.Core;
 
@@ -21,10 +22,14 @@ public sealed class SigV4ChunkedStream(
 ) : Stream
 {
     private const int MaxHeaderLength = 1024;
-    private const long MaxChunkSize = 16 * 1024 * 1024;
-    private const string SignaturePrefix = ";chunk-signature=";
+    private const int MaxChunkSize = 16 * 1024 * 1024;
+    private const int ReadAheadSize = 16 * 1024;
 
     private static readonly string EmptyHash = SigV4Signer.Sha256Hex([]);
+
+    private static ReadOnlySpan<byte> SignaturePrefix => ";chunk-signature="u8;
+
+    private static ReadOnlySpan<byte> LineEnd => "\r\n"u8;
 
     private readonly IncrementalChecksum? checksum = trailerChecksum is { } algorithm
         ? ChecksumAlgorithms.Create(algorithm)
@@ -34,8 +39,14 @@ public sealed class SigV4ChunkedStream(
         ? ChecksumHeaders.HeaderName(named)
         : null;
 
+    /// <summary>Wire bytes read ahead of the decoder; the unconsumed part is [start, end).</summary>
+    private readonly byte[] readAhead = ArrayPool<byte>.Shared.Rent(ReadAheadSize);
+    private int readAheadStart;
+    private int readAheadEnd;
+
     private string previousSignature = seedSignature;
-    private byte[] currentChunk = [];
+    private byte[]? chunk;
+    private int chunkLength;
     private int positionInChunk;
     private bool finished;
 
@@ -58,7 +69,7 @@ public sealed class SigV4ChunkedStream(
         CancellationToken cancellationToken = default
     )
     {
-        while (!finished && positionInChunk >= currentChunk.Length)
+        while (!finished && positionInChunk >= chunkLength)
         {
             await LoadNextChunkAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -68,8 +79,8 @@ public sealed class SigV4ChunkedStream(
             return 0;
         }
 
-        var count = Math.Min(buffer.Length, currentChunk.Length - positionInChunk);
-        currentChunk.AsMemory(positionInChunk, count).CopyTo(buffer);
+        var count = Math.Min(buffer.Length, chunkLength - positionInChunk);
+        chunk.AsMemory(positionInChunk, count).CopyTo(buffer);
         positionInChunk += count;
         return count;
     }
@@ -88,25 +99,23 @@ public sealed class SigV4ChunkedStream(
 
     private async Task LoadNextChunkAsync(CancellationToken cancellationToken)
     {
-        var header = await ReadHeaderLineAsync(cancellationToken).ConfigureAwait(false);
-        var separator = header.IndexOf(SignaturePrefix, StringComparison.Ordinal);
+        ReturnChunk();
+        var header = await ReadLineAsync(cancellationToken).ConfigureAwait(false);
+        var separator = header.Span.IndexOf(SignaturePrefix);
         if (
             separator <= 0
-            || !long.TryParse(
-                header.AsSpan(0, separator),
-                NumberStyles.HexNumber,
-                CultureInfo.InvariantCulture,
-                out var size
-            )
+            || !Utf8Parser.TryParse(header.Span[..separator], out long size, out var digits, 'x')
+            || digits != separator
             || size is < 0 or > MaxChunkSize
         )
         {
             throw new InvalidDataException("The chunk header is malformed.");
         }
 
-        var presentedSignature = header[(separator + SignaturePrefix.Length)..];
-        var data = new byte[size];
-        await inner.ReadExactlyAsync(data, cancellationToken).ConfigureAwait(false);
+        var presentedSignature = Encoding.ASCII.GetString(
+            header.Span[(separator + SignaturePrefix.Length)..]
+        );
+        var data = await ReadChunkDataAsync((int)size, cancellationToken).ConfigureAwait(false);
 
         var stringToSign = string.Join(
             '\n',
@@ -115,7 +124,7 @@ public sealed class SigV4ChunkedStream(
             scope.ToString(),
             previousSignature,
             EmptyHash,
-            SigV4Signer.Sha256Hex(data)
+            SigV4Signer.Sha256Hex(data.Span)
         );
         var expectedSignature = SigV4Signer.Sign(signingKey, stringToSign);
         if (!SigV4Signer.SignaturesEqual(expectedSignature, presentedSignature))
@@ -124,7 +133,7 @@ public sealed class SigV4ChunkedStream(
         }
 
         previousSignature = expectedSignature;
-        checksum?.Append(data);
+        checksum?.Append(data.Span);
         if (size == 0)
         {
             if (signedTrailer)
@@ -137,8 +146,24 @@ public sealed class SigV4ChunkedStream(
         }
 
         await ConsumeChunkDelimiterAsync(cancellationToken).ConfigureAwait(false);
-        currentChunk = data;
         positionInChunk = 0;
+    }
+
+    /// <summary>Fills a pooled buffer with the chunk's bytes: what was read ahead first, the rest from the wire.</summary>
+    private async ValueTask<ReadOnlyMemory<byte>> ReadChunkDataAsync(
+        int size,
+        CancellationToken cancellationToken
+    )
+    {
+        chunk = ArrayPool<byte>.Shared.Rent(size);
+        chunkLength = size;
+        var buffered = Math.Min(size, readAheadEnd - readAheadStart);
+        readAhead.AsSpan(readAheadStart, buffered).CopyTo(chunk);
+        readAheadStart += buffered;
+        await inner
+            .ReadExactlyAsync(chunk.AsMemory(buffered, size - buffered), cancellationToken)
+            .ConfigureAwait(false);
+        return chunk.AsMemory(0, size);
     }
 
     private async Task VerifyTrailerAsync(CancellationToken cancellationToken)
@@ -146,19 +171,22 @@ public sealed class SigV4ChunkedStream(
         var canonicalTrailer = new StringBuilder();
         var trailers = new List<(string Name, string Value)>();
         string? presentedSignature = null;
-        while (
-            await ReadHeaderLineAsync(cancellationToken).ConfigureAwait(false)
-                is { Length: > 0 } line
-        )
+        while (true)
         {
-            var separator = line.IndexOf(':', StringComparison.Ordinal);
+            var line = await ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (line.Length == 0)
+            {
+                break;
+            }
+
+            var separator = line.Span.IndexOf((byte)':');
             if (separator <= 0)
             {
                 throw new PayloadVerificationException(S3Errors.IncompleteBody);
             }
 
-            var name = line[..separator];
-            var value = line[(separator + 1)..].Trim();
+            var name = Encoding.ASCII.GetString(line.Span[..separator]);
+            var value = Encoding.ASCII.GetString(line.Span[(separator + 1)..]).Trim();
             if (string.Equals(name, "x-amz-trailer-signature", StringComparison.Ordinal))
             {
                 presentedSignature = value;
@@ -212,45 +240,88 @@ public sealed class SigV4ChunkedStream(
         }
     }
 
-    private async Task<string> ReadHeaderLineAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// The next CRLF-terminated line of the wire, without its terminator. The memory
+    /// points into the read-ahead buffer and is valid until the next read from the wire.
+    /// </summary>
+    private async ValueTask<ReadOnlyMemory<byte>> ReadLineAsync(CancellationToken cancellationToken)
     {
-        var line = new StringBuilder();
-        var single = new byte[1];
-        while (line.Length <= MaxHeaderLength)
+        while (true)
         {
-            if (await inner.ReadAsync(single, cancellationToken).ConfigureAwait(false) == 0)
+            var buffered = readAhead.AsMemory(readAheadStart, readAheadEnd - readAheadStart);
+            var terminator = buffered.Span.IndexOf(LineEnd);
+            if (terminator >= 0)
+            {
+                readAheadStart += terminator + LineEnd.Length;
+                return buffered[..terminator];
+            }
+
+            if (buffered.Length > MaxHeaderLength)
+            {
+                throw new InvalidDataException("The chunk header exceeds the supported length.");
+            }
+
+            if (await FillReadAheadAsync(cancellationToken).ConfigureAwait(false) == 0)
             {
                 throw new InvalidDataException("The chunked body ended inside a chunk header.");
             }
+        }
+    }
 
-            if (single[0] == '\n' && line.Length > 0 && line[^1] == '\r')
+    private async Task ConsumeChunkDelimiterAsync(CancellationToken cancellationToken)
+    {
+        while (readAheadEnd - readAheadStart < LineEnd.Length)
+        {
+            if (await FillReadAheadAsync(cancellationToken).ConfigureAwait(false) == 0)
             {
-                return line.ToString(0, line.Length - 1);
+                throw new InvalidDataException("The chunked body ended inside a chunk.");
             }
-
-            line.Append((char)single[0]);
         }
 
-        throw new InvalidDataException("The chunk header exceeds the supported length.");
+        if (!readAhead.AsSpan(readAheadStart, LineEnd.Length).SequenceEqual(LineEnd))
+        {
+            throw new InvalidDataException("The chunk data is followed by a malformed delimiter.");
+        }
+
+        readAheadStart += LineEnd.Length;
+    }
+
+    /// <summary>Reads more of the wire into the read-ahead buffer, compacting it first; 0 means the wire ended.</summary>
+    private async ValueTask<int> FillReadAheadAsync(CancellationToken cancellationToken)
+    {
+        if (readAheadStart > 0)
+        {
+            readAhead.AsSpan(readAheadStart, readAheadEnd - readAheadStart).CopyTo(readAhead);
+            readAheadEnd -= readAheadStart;
+            readAheadStart = 0;
+        }
+
+        var read = await inner
+            .ReadAsync(readAhead.AsMemory(readAheadEnd), cancellationToken)
+            .ConfigureAwait(false);
+        readAheadEnd += read;
+        return read;
+    }
+
+    private void ReturnChunk()
+    {
+        if (chunk is { } rented)
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+            chunk = null;
+            chunkLength = 0;
+        }
     }
 
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
+            ReturnChunk();
+            ArrayPool<byte>.Shared.Return(readAhead);
             checksum?.Dispose();
         }
 
         base.Dispose(disposing);
-    }
-
-    private async Task ConsumeChunkDelimiterAsync(CancellationToken cancellationToken)
-    {
-        var delimiter = new byte[2];
-        await inner.ReadExactlyAsync(delimiter, cancellationToken).ConfigureAwait(false);
-        if (delimiter[0] != '\r' || delimiter[1] != '\n')
-        {
-            throw new InvalidDataException("The chunk data is followed by a malformed delimiter.");
-        }
     }
 }

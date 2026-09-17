@@ -163,6 +163,152 @@ public sealed class SigV4ChunkedStreamTests
         Assert.Equal(S3Errors.IncompleteBody, exception.Error);
     }
 
+    [Fact]
+    public async Task ReadsTheWireInBlocks_NotOneByteAtATime()
+    {
+        var inner = new CountingStream(new MemoryStream(Encoding.UTF8.GetBytes(WireBody())));
+        using var stream = CreateStream(inner);
+        using var decoded = new MemoryStream();
+
+        await stream.CopyToAsync(decoded, TestContext.Current.CancellationToken);
+
+        Assert.Equal("Hello, S3Harp!", Encoding.UTF8.GetString(decoded.ToArray()));
+        Assert.InRange(inner.Reads, 1, 2);
+    }
+
+    [Fact]
+    public async Task ChunksLargerThanTheReadAheadBuffer_DecodeIntact()
+    {
+        var payload = new byte[200_000];
+        Random.Shared.NextBytes(payload);
+        using var stream = CreateStream(new MemoryStream(SignedWireBody(payload, 70_000)));
+        using var decoded = new MemoryStream();
+
+        await stream.CopyToAsync(decoded, TestContext.Current.CancellationToken);
+
+        Assert.Equal(payload, decoded.ToArray());
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(64)]
+    public async Task FragmentedInnerReads_ReassembleThePayload(int fragment)
+    {
+        var payload = Encoding.UTF8.GetBytes("Hello, S3Harp!");
+        var inner = new FragmentingStream(
+            new MemoryStream(SignedWireBody(payload, chunkSize: 5)),
+            fragment
+        );
+        using var stream = CreateStream(inner);
+        using var decoded = new MemoryStream();
+
+        await stream.CopyToAsync(decoded, TestContext.Current.CancellationToken);
+
+        Assert.Equal(payload, decoded.ToArray());
+    }
+
+    /// <summary>Frames the payload in chunks of the given size, signing each with the test key.</summary>
+    private static byte[] SignedWireBody(byte[] payload, int chunkSize)
+    {
+        var signingKey = SigV4Signer.DeriveSigningKey(SecretAccessKey, Scope);
+        var previous = SeedSignature;
+        using var wire = new MemoryStream();
+        for (var offset = 0; ; offset = Math.Min(offset + chunkSize, payload.Length))
+        {
+            var chunk = payload.AsSpan(offset, Math.Min(chunkSize, payload.Length - offset));
+            var stringToSign = string.Join(
+                '\n',
+                "AWS4-HMAC-SHA256-PAYLOAD",
+                Timestamp,
+                Scope.ToString(),
+                previous,
+                SigV4Signer.Sha256Hex([]),
+                SigV4Signer.Sha256Hex(chunk)
+            );
+            previous = SigV4Signer.Sign(signingKey, stringToSign);
+            wire.Write(Encoding.ASCII.GetBytes($"{chunk.Length:x};chunk-signature={previous}\r\n"));
+            wire.Write(chunk);
+            wire.Write("\r\n"u8);
+            if (chunk.Length == 0)
+            {
+                return wire.ToArray();
+            }
+        }
+    }
+
+    private sealed class CountingStream(Stream inner) : Stream
+    {
+        public int Reads { get; private set; }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Reads++;
+            return inner.ReadAsync(buffer, cancellationToken);
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            Reads++;
+            return inner.Read(buffer, offset, count);
+        }
+
+        public override void Flush() { }
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+    }
+
+    /// <summary>Hands out at most a fixed number of bytes per read, as a network stream may.</summary>
+    private sealed class FragmentingStream(Stream inner, int fragment) : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        ) => inner.ReadAsync(buffer[..Math.Min(fragment, buffer.Length)], cancellationToken);
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            inner.Read(buffer, offset, Math.Min(fragment, count));
+
+        public override void Flush() { }
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+    }
+
     private const string TrailerSignature =
         "adf5dc3a91f8f7fc95b307653fb2ca0282c8cd842d652835653eddd8971a48d3";
 
@@ -193,8 +339,21 @@ public sealed class SigV4ChunkedStreamTests
         bool signedTrailer = false,
         ChecksumAlgorithm? trailerChecksum = null
     ) =>
-        new(
+        CreateStream(
             new MemoryStream(Encoding.UTF8.GetBytes(wireBody)),
+            seedSignature,
+            signedTrailer,
+            trailerChecksum
+        );
+
+    private static SigV4ChunkedStream CreateStream(
+        Stream wire,
+        string seedSignature = SeedSignature,
+        bool signedTrailer = false,
+        ChecksumAlgorithm? trailerChecksum = null
+    ) =>
+        new(
+            wire,
             SigV4Signer.DeriveSigningKey(SecretAccessKey, Scope),
             Scope,
             Timestamp,
