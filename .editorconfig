@@ -387,3 +387,8 @@ dotnet_naming_style.s_camelcase.required_suffix =
 dotnet_naming_style.s_camelcase.word_separator = 
 dotnet_naming_style.s_camelcase.capitalization = camel_case
 
+#### Rules the build enforces ####
+
+# Core owns every disposable it creates: SQLite commands, readers and connections.
+[src/S3Harp.Core/**.cs]
+dotnet_diagnostic.CA2000.severity = error

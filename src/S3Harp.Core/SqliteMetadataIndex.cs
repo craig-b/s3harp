@@ -136,7 +136,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
         {
-            var command = connection.CreateCommand();
+            using var command = connection.CreateCommand();
             command.CommandText =
                 "INSERT INTO buckets (name, created_at) VALUES ($name, $created_at) "
                 + "ON CONFLICT (name) DO NOTHING";
@@ -151,7 +151,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
         {
-            var command = connection.CreateCommand();
+            using var command = connection.CreateCommand();
             command.CommandText = "SELECT 1 FROM buckets WHERE name = $name";
             command.Parameters.AddWithValue("$name", name);
             return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
@@ -166,7 +166,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
         {
-            var command = connection.CreateCommand();
+            using var command = connection.CreateCommand();
             command.CommandText = "SELECT name, created_at FROM buckets ORDER BY name";
             var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             await using (reader.ConfigureAwait(false))
@@ -195,7 +195,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             var transaction = connection.BeginTransaction();
             await using (transaction.ConfigureAwait(false))
             {
-                var deleteParts = connection.CreateCommand();
+                using var deleteParts = connection.CreateCommand();
                 deleteParts.Transaction = transaction;
                 deleteParts.CommandText = """
                     DELETE FROM parts
@@ -206,13 +206,13 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 var partBlobs = await ReadStringsAsync(deleteParts, cancellationToken)
                     .ConfigureAwait(false);
 
-                var deleteUploads = connection.CreateCommand();
+                using var deleteUploads = connection.CreateCommand();
                 deleteUploads.Transaction = transaction;
                 deleteUploads.CommandText = "DELETE FROM uploads WHERE bucket = $name";
                 deleteUploads.Parameters.AddWithValue("$name", name);
                 await deleteUploads.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
-                var deleteBucket = connection.CreateCommand();
+                using var deleteBucket = connection.CreateCommand();
                 deleteBucket.Transaction = transaction;
                 deleteBucket.CommandText = "DELETE FROM buckets WHERE name = $name";
                 deleteBucket.Parameters.AddWithValue("$name", name);
@@ -324,7 +324,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         CancellationToken cancellationToken
     )
     {
-        var command = connection.CreateCommand();
+        using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
             SELECT key, blob_id, size, etag, content_type, metadata, last_modified,
@@ -355,7 +355,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
         {
-            var command = connection.CreateCommand();
+            using var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT key, blob_id, size, etag, content_type, metadata, last_modified,
                        content_headers, parts, checksum
@@ -413,7 +413,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                     return DeleteObjectResult.PreconditionFailed;
                 }
 
-                var delete = connection.CreateCommand();
+                using var delete = connection.CreateCommand();
                 delete.Transaction = transaction;
                 delete.CommandText = "DELETE FROM objects WHERE bucket = $bucket AND key = $key";
                 delete.Parameters.AddWithValue("$bucket", bucket);
@@ -436,7 +436,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
         {
-            var command = connection.CreateCommand();
+            using var command = connection.CreateCommand();
             command.CommandText = """
                 INSERT INTO uploads
                     (upload_id, bucket, key, content_type, metadata, initiated_at, content_headers,
@@ -486,7 +486,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
         {
-            var command = CreateFindUploadCommand(connection, bucket, key, uploadId);
+            using var command = CreateFindUploadCommand(connection, bucket, key, uploadId);
             var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             await using (reader.ConfigureAwait(false))
             {
@@ -539,7 +539,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                     return new PutPartResult(UploadExists: false, null);
                 }
 
-                var find = connection.CreateCommand();
+                using var find = connection.CreateCommand();
                 find.Transaction = transaction;
                 find.CommandText =
                     "SELECT blob_id FROM parts WHERE upload_id = $upload_id AND part_number = $number";
@@ -548,7 +548,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 var replaced = (string?)
                     await find.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
 
-                var upsert = connection.CreateCommand();
+                using var upsert = connection.CreateCommand();
                 upsert.Transaction = transaction;
                 upsert.CommandText = """
                     INSERT INTO parts
@@ -583,7 +583,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
         {
-            var command = connection.CreateCommand();
+            using var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT p.part_number, p.blob_id, p.size, p.etag, p.uploaded_at, p.checksum
                 FROM parts p
@@ -625,7 +625,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
         {
-            var command = connection.CreateCommand();
+            using var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT upload_id, key, content_type, metadata, initiated_at, content_headers,
                        checksum_algorithm, checksum_type
@@ -768,7 +768,11 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
-    public void Dispose() => SqliteConnection.ClearPool(new SqliteConnection(connectionString));
+    public void Dispose()
+    {
+        using var probe = new SqliteConnection(connectionString);
+        SqliteConnection.ClearPool(probe);
+    }
 
     private static SqliteCommand CreateFindUploadCommand(
         SqliteConnection connection,
@@ -799,7 +803,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         CancellationToken cancellationToken
     )
     {
-        var command = connection.CreateCommand();
+        using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
             "SELECT 1 FROM uploads WHERE upload_id = $upload_id AND bucket = $bucket AND key = $key";
@@ -818,7 +822,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         CancellationToken cancellationToken
     )
     {
-        var upsert = connection.CreateCommand();
+        using var upsert = connection.CreateCommand();
         upsert.Transaction = transaction;
         upsert.CommandText = """
             INSERT INTO objects
@@ -873,7 +877,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         CancellationToken cancellationToken
     )
     {
-        var deleteParts = connection.CreateCommand();
+        using var deleteParts = connection.CreateCommand();
         deleteParts.Transaction = transaction;
         deleteParts.CommandText =
             "DELETE FROM parts WHERE upload_id = $upload_id RETURNING blob_id";
@@ -881,7 +885,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         var partBlobs = await ReadStringsAsync(deleteParts, cancellationToken)
             .ConfigureAwait(false);
 
-        var deleteUpload = connection.CreateCommand();
+        using var deleteUpload = connection.CreateCommand();
         deleteUpload.Transaction = transaction;
         deleteUpload.CommandText = "DELETE FROM uploads WHERE upload_id = $upload_id";
         deleteUpload.Parameters.AddWithValue("$upload_id", uploadId);
