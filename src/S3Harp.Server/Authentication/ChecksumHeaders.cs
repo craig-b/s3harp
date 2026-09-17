@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+using System.Diagnostics;
 using S3Harp.Core;
 
 namespace S3Harp.Server.Authentication;
@@ -18,36 +20,40 @@ public static class ChecksumHeaders
     /// <summary>Objects uploaded without any checksum request get this one, as on S3.</summary>
     private const ChecksumAlgorithm DefaultAlgorithm = ChecksumAlgorithm.Crc64Nvme;
 
-    private static readonly (ChecksumAlgorithm Algorithm, string Suffix)[] Names =
+    /// <summary>The value header of each algorithm, in the order a request declaring several is read.</summary>
+    private static readonly (string Header, ChecksumAlgorithm Algorithm)[] ValueHeaders =
     [
-        (ChecksumAlgorithm.Crc32, "crc32"),
-        (ChecksumAlgorithm.Crc32C, "crc32c"),
-        (ChecksumAlgorithm.Crc64Nvme, "crc64nvme"),
-        (ChecksumAlgorithm.Sha1, "sha1"),
-        (ChecksumAlgorithm.Sha256, "sha256"),
+        (HeaderName(ChecksumAlgorithm.Crc32), ChecksumAlgorithm.Crc32),
+        (HeaderName(ChecksumAlgorithm.Crc32C), ChecksumAlgorithm.Crc32C),
+        (HeaderName(ChecksumAlgorithm.Crc64Nvme), ChecksumAlgorithm.Crc64Nvme),
+        (HeaderName(ChecksumAlgorithm.Sha1), ChecksumAlgorithm.Sha1),
+        (HeaderName(ChecksumAlgorithm.Sha256), ChecksumAlgorithm.Sha256),
     ];
 
+    private static readonly FrozenDictionary<string, ChecksumAlgorithm> AlgorithmsByHeader =
+        ValueHeaders.ToFrozenDictionary(
+            entry => entry.Header,
+            entry => entry.Algorithm,
+            StringComparer.OrdinalIgnoreCase
+        );
+
+    private static readonly string[] AlgorithmHeaders = [SdkAlgorithmHeader, AlgorithmHeader];
+
     public static string HeaderName(ChecksumAlgorithm algorithm) =>
-        HeaderPrefix + Names.First(name => name.Algorithm == algorithm).Suffix;
+        algorithm switch
+        {
+            ChecksumAlgorithm.Crc32 => HeaderPrefix + "crc32",
+            ChecksumAlgorithm.Crc32C => HeaderPrefix + "crc32c",
+            ChecksumAlgorithm.Crc64Nvme => HeaderPrefix + "crc64nvme",
+            ChecksumAlgorithm.Sha1 => HeaderPrefix + "sha1",
+            ChecksumAlgorithm.Sha256 => HeaderPrefix + "sha256",
+            _ => throw new UnreachableException(),
+        };
 
     public static bool TryParseHeaderName(string headerName, out ChecksumAlgorithm algorithm)
     {
         ArgumentNullException.ThrowIfNull(headerName);
-        foreach (var (candidate, suffix) in Names)
-        {
-            if (
-                headerName.Length == HeaderPrefix.Length + suffix.Length
-                && headerName.StartsWith(HeaderPrefix, StringComparison.OrdinalIgnoreCase)
-                && headerName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
-            )
-            {
-                algorithm = candidate;
-                return true;
-            }
-        }
-
-        algorithm = default;
-        return false;
+        return AlgorithmsByHeader.TryGetValue(headerName, out algorithm);
     }
 
     /// <summary>
@@ -60,9 +66,9 @@ public static class ChecksumHeaders
     )
     {
         ArgumentNullException.ThrowIfNull(headers);
-        foreach (var (candidate, _) in Names)
+        foreach (var (header, candidate) in ValueHeaders)
         {
-            if (headers.TryGetValue(HeaderName(candidate), out var value) && value.Count > 0)
+            if (headers.TryGetValue(header, out var value) && value.Count > 0)
             {
                 algorithm = candidate;
                 declared = value.ToString().Trim();
@@ -100,7 +106,7 @@ public static class ChecksumHeaders
     public static ChecksumAlgorithm? RequestedAlgorithm(IHeaderDictionary headers)
     {
         ArgumentNullException.ThrowIfNull(headers);
-        foreach (var header in new[] { SdkAlgorithmHeader, AlgorithmHeader })
+        foreach (var header in AlgorithmHeaders)
         {
             string? name = headers[header];
             if (name is not null && ChecksumAlgorithms.TryParseName(name.Trim(), out var algorithm))
@@ -138,13 +144,28 @@ public static class ChecksumHeaders
     public static bool TryParseType(string value, out ChecksumType type)
     {
         ArgumentNullException.ThrowIfNull(value);
-        foreach (var candidate in new[] { ChecksumType.FullObject, ChecksumType.Composite })
+        if (
+            string.Equals(
+                value,
+                TypeName(ChecksumType.FullObject),
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
         {
-            if (string.Equals(value, TypeName(candidate), StringComparison.OrdinalIgnoreCase))
-            {
-                type = candidate;
-                return true;
-            }
+            type = ChecksumType.FullObject;
+            return true;
+        }
+
+        if (
+            string.Equals(
+                value,
+                TypeName(ChecksumType.Composite),
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            type = ChecksumType.Composite;
+            return true;
         }
 
         type = default;
@@ -191,6 +212,6 @@ public static class ChecksumHeaders
         {
             ChecksumType.FullObject => "FULL_OBJECT",
             ChecksumType.Composite => "COMPOSITE",
-            _ => throw new ArgumentOutOfRangeException(nameof(type)),
+            _ => throw new UnreachableException(),
         };
 }

@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Diagnostics;
 using System.Security.Cryptography;
 
@@ -35,32 +36,25 @@ public sealed record ChecksumValue(ChecksumAlgorithm Algorithm, string Value);
 /// </summary>
 public static class ChecksumAlgorithms
 {
-    private static readonly (ChecksumAlgorithm Algorithm, string Name)[] Names =
-    [
-        (ChecksumAlgorithm.Crc32, "CRC32"),
-        (ChecksumAlgorithm.Crc32C, "CRC32C"),
-        (ChecksumAlgorithm.Crc64Nvme, "CRC64NVME"),
-        (ChecksumAlgorithm.Sha1, "SHA1"),
-        (ChecksumAlgorithm.Sha256, "SHA256"),
-    ];
+    private static readonly FrozenDictionary<string, ChecksumAlgorithm> AlgorithmsByName =
+        Enum.GetValues<ChecksumAlgorithm>()
+            .ToFrozenDictionary(Name, algorithm => algorithm, StringComparer.OrdinalIgnoreCase);
 
     public static string Name(ChecksumAlgorithm algorithm) =>
-        Names.First(name => name.Algorithm == algorithm).Name;
+        algorithm switch
+        {
+            ChecksumAlgorithm.Crc32 => "CRC32",
+            ChecksumAlgorithm.Crc32C => "CRC32C",
+            ChecksumAlgorithm.Crc64Nvme => "CRC64NVME",
+            ChecksumAlgorithm.Sha1 => "SHA1",
+            ChecksumAlgorithm.Sha256 => "SHA256",
+            _ => throw new UnreachableException(),
+        };
 
     public static bool TryParseName(string name, out ChecksumAlgorithm algorithm)
     {
         ArgumentNullException.ThrowIfNull(name);
-        foreach (var (candidate, candidateName) in Names)
-        {
-            if (string.Equals(name, candidateName, StringComparison.OrdinalIgnoreCase))
-            {
-                algorithm = candidate;
-                return true;
-            }
-        }
-
-        algorithm = default;
-        return false;
+        return AlgorithmsByName.TryGetValue(name, out algorithm);
     }
 
     /// <summary>
