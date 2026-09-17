@@ -1,0 +1,6 @@
+M:System.Int32.Parse(System.String);Parse client input with DecimalDigits, or pass NumberStyles and CultureInfo.InvariantCulture
+M:System.Int32.TryParse(System.String,System.Int32@);Parse client input with DecimalDigits, or pass NumberStyles and CultureInfo.InvariantCulture
+M:System.Int32.TryParse(System.ReadOnlySpan{System.Char},System.Int32@);Parse client input with DecimalDigits, or pass NumberStyles and CultureInfo.InvariantCulture
+M:System.Int64.Parse(System.String);Parse client input with DecimalDigits, or pass NumberStyles and CultureInfo.InvariantCulture
+M:System.Int64.TryParse(System.String,System.Int64@);Parse client input with DecimalDigits, or pass NumberStyles and CultureInfo.InvariantCulture
+M:System.Int64.TryParse(System.ReadOnlySpan{System.Char},System.Int64@);Parse client input with DecimalDigits, or pass NumberStyles and CultureInfo.InvariantCulture
