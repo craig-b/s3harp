@@ -21,6 +21,25 @@ public abstract class MetadataIndexContractTests
     }
 
     [Fact]
+    public async Task NullRecords_AreRefusedBeforeAnyStateChanges()
+    {
+        await StartUpload("alpha", "u1");
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            Index.PutObjectAsync("alpha", null!, null, Token)
+        );
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            Index.TryCreateUploadAsync("alpha", null!, Token)
+        );
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            Index.PutPartAsync("alpha", "key", "u1", null!, Token)
+        );
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            Index.CompleteUploadAsync("alpha", "u1", null!, null, Token)
+        );
+    }
+
+    [Fact]
     public async Task UnknownBucket_DoesNotExist()
     {
         Assert.False(await Index.BucketExistsAsync("missing", Token));

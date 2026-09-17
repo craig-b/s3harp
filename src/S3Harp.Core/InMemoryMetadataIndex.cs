@@ -71,6 +71,8 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
         CancellationToken cancellationToken
     )
     {
+        ArgumentNullException.ThrowIfNull(record);
+
         lock (gate)
         {
             if (!buckets.TryGetValue(bucket, out var state))
@@ -171,6 +173,8 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
         CancellationToken cancellationToken
     )
     {
+        ArgumentNullException.ThrowIfNull(upload);
+
         lock (gate)
         {
             return Task.FromResult(
@@ -201,6 +205,8 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
         CancellationToken cancellationToken
     )
     {
+        ArgumentNullException.ThrowIfNull(part);
+
         lock (gate)
         {
             if (FindUploadState(bucket, key, uploadId) is not { } upload)
@@ -258,6 +264,8 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
         CancellationToken cancellationToken
     )
     {
+        ArgumentNullException.ThrowIfNull(record);
+
         lock (gate)
         {
             if (

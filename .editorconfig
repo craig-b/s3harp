@@ -395,3 +395,5 @@ dotnet_diagnostic.CA2000.severity = error
 # The libraries never resume on a captured context.
 [src/**.cs]
 dotnet_diagnostic.CA2007.severity = error
+# Public entry points reject null arguments up front rather than failing somewhere inside.
+dotnet_diagnostic.CA1062.severity = error
