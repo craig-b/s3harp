@@ -382,12 +382,10 @@ public sealed class SigV4AuthenticationMiddlewareTests
 
     private static string HeaderSignature(DefaultHttpContext context)
     {
-        var parsed = SigV4AuthorizationHeader.TryParse(
-            context.Request.Headers.Authorization,
-            out var header
+        Assert.True(
+            SigV4AuthorizationHeader.TryParse(context.Request.Headers.Authorization, out var header)
         );
-        Assert.True(parsed);
-        return header!.Signature;
+        return header.Signature;
     }
 
     private static byte[] BuildChunkedWire(

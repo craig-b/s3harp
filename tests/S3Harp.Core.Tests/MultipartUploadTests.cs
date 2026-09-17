@@ -130,7 +130,8 @@ public sealed class MultipartUploadTests : IDisposable
         );
 
         var record = await index.FindObjectAsync("alpha", "key", Token);
-        Assert.Empty(record!.Parts);
+        Assert.NotNull(record);
+        Assert.Empty(record.Parts);
     }
 
     [Fact]
@@ -384,11 +385,13 @@ public sealed class MultipartUploadTests : IDisposable
             null,
             Token
         );
+        Assert.NotNull(first.ETag);
+        Assert.NotNull(second.ETag);
         await engine.CompleteUploadAsync(
             "alpha",
             "key",
             uploadId,
-            [new(1, first.ETag!), new(2, second.ETag!)],
+            [new(1, first.ETag), new(2, second.ETag)],
             null,
             null,
             Token
@@ -530,7 +533,7 @@ public sealed class MultipartUploadTests : IDisposable
             "alpha",
             "key",
             uploadId,
-            [new(1, tiny!), new(2, second!)],
+            [new(1, tiny), new(2, second)],
             null,
             null,
             Token
@@ -551,7 +554,7 @@ public sealed class MultipartUploadTests : IDisposable
             "alpha",
             "key",
             uploadId,
-            [new(1, first!), new(2, tiny!)],
+            [new(1, first), new(2, tiny)],
             null,
             null,
             Token
@@ -570,7 +573,7 @@ public sealed class MultipartUploadTests : IDisposable
             "alpha",
             "key",
             uploadId,
-            [new(1, first!), new(2, second!)],
+            [new(1, first), new(2, second)],
             null,
             null,
             Token
@@ -580,7 +583,7 @@ public sealed class MultipartUploadTests : IDisposable
             "alpha",
             "key",
             uploadId,
-            [new(1, first!), new(2, second!)],
+            [new(1, first), new(2, second)],
             null,
             null,
             Token
@@ -601,7 +604,7 @@ public sealed class MultipartUploadTests : IDisposable
             "alpha",
             "key",
             uploadId,
-            [new(1, first!), new(2, second!)],
+            [new(1, first), new(2, second)],
             null,
             null,
             Token
@@ -611,7 +614,7 @@ public sealed class MultipartUploadTests : IDisposable
             "alpha",
             "key",
             uploadId,
-            [new(1, first!)],
+            [new(1, first)],
             null,
             null,
             Token
@@ -866,11 +869,12 @@ public sealed class MultipartUploadTests : IDisposable
         Assert.Equal(PutObjectStatus.Stored, outcome.Status);
     }
 
-    private async Task<string?> UploadPart(string uploadId, int number, string content)
+    private async Task<string> UploadPart(string uploadId, int number, string content)
     {
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
         var outcome = await engine.UploadPartAsync("alpha", "key", uploadId, number, stream, Token);
         Assert.True(outcome.UploadExists);
+        Assert.NotNull(outcome.ETag);
         return outcome.ETag;
     }
 }

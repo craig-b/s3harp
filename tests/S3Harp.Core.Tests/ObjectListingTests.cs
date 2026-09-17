@@ -76,7 +76,8 @@ public sealed class ObjectListingTests : IDisposable
         await Seed();
 
         var first = await List(delimiter: "/", maxKeys: 2);
-        var second = await List(delimiter: "/", maxKeys: 10, fromKey: first.NextFromKey!);
+        Assert.NotNull(first.NextFromKey);
+        var second = await List(delimiter: "/", maxKeys: 10, fromKey: first.NextFromKey);
 
         Assert.True(first.IsTruncated);
         Assert.Equal(["a.txt"], first.Objects.Select(o => o.Key));
@@ -104,7 +105,8 @@ public sealed class ObjectListingTests : IDisposable
                 break;
             }
 
-            fromKey = page.NextFromKey!;
+            Assert.NotNull(page.NextFromKey);
+            fromKey = page.NextFromKey;
         }
 
         Assert.Equal(["a.txt", "docs/", "photos/", "z.txt"], entries);

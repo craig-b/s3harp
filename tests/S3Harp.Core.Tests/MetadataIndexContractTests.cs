@@ -784,7 +784,8 @@ public sealed class SqliteMetadataIndexTests : MetadataIndexContractTests, IDisp
             TestContext.Current.CancellationToken
         );
         Assert.Equal(ContentHeaders.None, old?.ContentHeaders);
-        Assert.Empty(old!.Parts);
+        Assert.NotNull(old);
+        Assert.Empty(old.Parts);
         Assert.Null(old.Checksum);
         var stored = await upgraded.PutObjectAsync(
             "alpha",
@@ -857,7 +858,8 @@ public sealed class SqliteMetadataIndexTests : MetadataIndexContractTests, IDisp
             "single",
             TestContext.Current.CancellationToken
         );
-        Assert.Empty(single!.Parts);
+        Assert.NotNull(single);
+        Assert.Empty(single.Parts);
     }
 
     public void Dispose()
