@@ -111,7 +111,7 @@ public sealed class BlobStoreTests : IDisposable
     public async Task FailedWrite_LeavesNoFilesBehind()
     {
         await Assert.ThrowsAsync<InvalidDataException>(() =>
-            store.WriteAsync(new FailingStream(), null, Token)
+            store.WriteAsync(new FailingStream(), ChecksumAlgorithm.Crc64Nvme, Token)
         );
 
         Assert.Empty(Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories));

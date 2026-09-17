@@ -11,13 +11,13 @@ public readonly record struct ByteRange(long From, long To)
 
 /// <summary>
 /// The outcome of writing a blob: its identity, size, content MD5, and the base64
-/// checksum of the algorithm requested, when one was.
+/// checksum of the algorithm requested.
 /// </summary>
 public sealed record BlobWriteResult(
     string BlobId,
     long Size,
     string ContentMd5Hex,
-    string? Checksum
+    string Checksum
 );
 
 /// <summary>
@@ -42,7 +42,7 @@ public sealed class BlobStore
     /// <summary>Writes the content as a new blob, computing the requested checksum as it streams.</summary>
     public async Task<BlobWriteResult> WriteAsync(
         Stream content,
-        ChecksumAlgorithm? checksum,
+        ChecksumAlgorithm checksum,
         CancellationToken cancellationToken
     )
     {
@@ -56,9 +56,7 @@ public sealed class BlobStore
 #pragma warning disable CA5351
         using var md5 = IncrementalHash.CreateHash(HashAlgorithmName.MD5);
 #pragma warning restore CA5351
-        using var integrity = checksum is { } algorithm
-            ? ChecksumAlgorithms.Create(algorithm)
-            : null;
+        using var integrity = ChecksumAlgorithms.Create(checksum);
 
         try
         {
@@ -84,7 +82,7 @@ public sealed class BlobStore
         string blobId,
         string uploadPath,
         IncrementalHash md5,
-        IncrementalChecksum? integrity,
+        IncrementalChecksum integrity,
         CancellationToken cancellationToken
     )
     {
@@ -111,8 +109,8 @@ public sealed class BlobStore
                     ) > 0
                 )
                 {
-                    md5.AppendData(buffer, 0, read);
-                    integrity?.Append(buffer.AsSpan(0, read));
+                    md5.AppendData(buffer.AsSpan(0, read));
+                    integrity.Append(buffer.AsSpan(0, read));
                     await file.WriteAsync(buffer.AsMemory(0, read), cancellationToken)
                         .ConfigureAwait(false);
                     size += read;
@@ -131,7 +129,7 @@ public sealed class BlobStore
             blobId,
             size,
             Convert.ToHexStringLower(md5.GetHashAndReset()),
-            integrity is null ? null : Convert.ToBase64String(integrity.Finish())
+            Convert.ToBase64String(integrity.Finish())
         );
     }
 
@@ -144,7 +142,7 @@ public sealed class BlobStore
     {
         var (_, checksum) = await DigestAsync(blobId, algorithm, cancellationToken)
             .ConfigureAwait(false);
-        return checksum!;
+        return checksum;
     }
 
     /// <summary>
@@ -154,7 +152,7 @@ public sealed class BlobStore
     public async Task<BlobWriteResult> CopyRangeAsync(
         string sourceBlobId,
         ByteRange range,
-        ChecksumAlgorithm? checksum,
+        ChecksumAlgorithm checksum,
         CancellationToken cancellationToken
     )
     {
@@ -194,10 +192,10 @@ public sealed class BlobStore
         return new BlobWriteResult(blobId, range.Length, md5Hex, value);
     }
 
-    /// <summary>A stored blob's MD5 and, when an algorithm is given, its base64 checksum, in one pass.</summary>
-    private async Task<(string Md5Hex, string? Checksum)> DigestAsync(
+    /// <summary>A stored blob's MD5 and its base64 checksum in the algorithm, in one pass.</summary>
+    private async Task<(string Md5Hex, string Checksum)> DigestAsync(
         string blobId,
-        ChecksumAlgorithm? algorithm,
+        ChecksumAlgorithm algorithm,
         CancellationToken cancellationToken
     )
     {
@@ -205,7 +203,7 @@ public sealed class BlobStore
 #pragma warning disable CA5351
         using var md5 = IncrementalHash.CreateHash(HashAlgorithmName.MD5);
 #pragma warning restore CA5351
-        using var integrity = algorithm is { } named ? ChecksumAlgorithms.Create(named) : null;
+        using var integrity = ChecksumAlgorithms.Create(algorithm);
         var file = OpenRead(blobId);
         await using (file.ConfigureAwait(false))
         {
@@ -218,8 +216,8 @@ public sealed class BlobStore
                     > 0
                 )
                 {
-                    md5.AppendData(buffer, 0, read);
-                    integrity?.Append(buffer.AsSpan(0, read));
+                    md5.AppendData(buffer.AsSpan(0, read));
+                    integrity.Append(buffer.AsSpan(0, read));
                 }
             }
             finally
@@ -230,7 +228,7 @@ public sealed class BlobStore
 
         return (
             Convert.ToHexStringLower(md5.GetHashAndReset()),
-            integrity is null ? null : Convert.ToBase64String(integrity.Finish())
+            Convert.ToBase64String(integrity.Finish())
         );
     }
 

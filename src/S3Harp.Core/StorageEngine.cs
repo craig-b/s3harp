@@ -94,7 +94,7 @@ public sealed class StorageEngine(
         var write = await blobs
             .WriteAsync(content, checksumAlgorithm, cancellationToken)
             .ConfigureAwait(false);
-        var checksum = new Checksum(checksumAlgorithm, write.Checksum!, ChecksumType.FullObject);
+        var checksum = new Checksum(checksumAlgorithm, write.Checksum, ChecksumType.FullObject);
         var record = new ObjectRecord(
             key,
             write.BlobId,
@@ -342,7 +342,7 @@ public sealed class StorageEngine(
         return new UploadPartOutcome(
             UploadExists: true,
             write.ContentMd5Hex,
-            new ChecksumValue(upload.ChecksumAlgorithm, write.Checksum!)
+            new ChecksumValue(upload.ChecksumAlgorithm, write.Checksum)
         );
     }
 
@@ -426,7 +426,7 @@ public sealed class StorageEngine(
         return new UploadPartCopyOutcome(
             UploadPartCopyStatus.Copied,
             copy.ContentMd5Hex,
-            new ChecksumValue(upload.ChecksumAlgorithm, copy.Checksum!),
+            new ChecksumValue(upload.ChecksumAlgorithm, copy.Checksum),
             now
         );
     }
