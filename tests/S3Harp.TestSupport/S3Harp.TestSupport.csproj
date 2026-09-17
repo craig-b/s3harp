@@ -1,16 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Testing.Extensions.GitHubActionsReport" />
-    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.v3.assert" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\S3Harp.Core\S3Harp.Core.csproj" />
-    <ProjectReference Include="..\S3Harp.TestSupport\S3Harp.TestSupport.csproj" />
   </ItemGroup>
 </Project>

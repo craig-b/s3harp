@@ -1,4 +1,5 @@
 using System.Text;
+using S3Harp.TestSupport;
 using Xunit;
 
 namespace S3Harp.Core.Tests;
@@ -11,10 +12,7 @@ public sealed class MultipartUploadTests : IDisposable
 
     private static readonly DateTimeOffset Now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
 
-    private readonly string root = Path.Combine(
-        Path.GetTempPath(),
-        $"s3harp-multipart-{Guid.NewGuid():N}"
-    );
+    private readonly TempDirectory root = new("multipart");
 
     private readonly InMemoryMetadataIndex index = new();
     private readonly StorageEngine engine;
@@ -23,7 +21,7 @@ public sealed class MultipartUploadTests : IDisposable
     {
         engine = new StorageEngine(
             index,
-            new BlobStore(root),
+            new BlobStore(root.Path),
             new FixedTimeProvider(Now),
             new StorageLimits(MinimumPartSize: 5)
         );
@@ -88,7 +86,7 @@ public sealed class MultipartUploadTests : IDisposable
         Assert.Equal(CombinedETag, outcome.ETag);
         var download = await engine.GetObjectAsync("alpha", "key", Token);
         Assert.NotNull(download);
-        Assert.Equal("Hello, S3Harp!", await ReadContent(download));
+        Assert.Equal("Hello, S3Harp!", await download.ReadContentAsync(Token));
         Assert.Equal(CombinedETag, download.Record.ETag);
         Assert.Equal("text/plain", download.Record.ContentType);
         Assert.Equal("from-test", download.Record.Metadata["note"]);
@@ -301,7 +299,7 @@ public sealed class MultipartUploadTests : IDisposable
 
         Assert.Equal(CompleteUploadStatus.BadDigest, outcome.Status);
         Assert.NotNull(await index.FindUploadAsync("alpha", "key", uploadId, Token));
-        Assert.Equal(2, CountBlobFiles());
+        Assert.Equal(2, root.CountFiles("blobs"));
     }
 
     [Fact]
@@ -398,7 +396,7 @@ public sealed class MultipartUploadTests : IDisposable
 
         var download = await engine.GetObjectAsync("alpha", "key", Token);
         Assert.NotNull(download);
-        Assert.Equal("Hello, Hello, S3Harp!", await ReadContent(download));
+        Assert.Equal("Hello, Hello, S3Harp!", await download.ReadContentAsync(Token));
     }
 
     [Fact]
@@ -419,7 +417,7 @@ public sealed class MultipartUploadTests : IDisposable
         );
 
         Assert.Equal(UploadPartCopyStatus.NoSuchUpload, outcome.Status);
-        Assert.Equal(1, CountBlobFiles());
+        Assert.Equal(1, root.CountFiles("blobs"));
     }
 
     [Fact]
@@ -479,7 +477,7 @@ public sealed class MultipartUploadTests : IDisposable
             Token
         );
 
-        Assert.Equal(1, CountBlobFiles());
+        Assert.Equal(1, root.CountFiles("blobs"));
     }
 
     [Fact]
@@ -590,7 +588,7 @@ public sealed class MultipartUploadTests : IDisposable
 
         Assert.Equal(CompleteUploadStatus.Completed, again.Status);
         Assert.Equal(CombinedETag, again.ETag);
-        Assert.Equal(1, CountBlobFiles());
+        Assert.Equal(1, root.CountFiles("blobs"));
     }
 
     [Fact]
@@ -671,9 +669,9 @@ public sealed class MultipartUploadTests : IDisposable
         Assert.Equal(CompleteUploadStatus.PreconditionFailed, outcome.Status);
         Assert.Equal(
             "existing",
-            await ReadContent((await engine.GetObjectAsync("alpha", "key", Token))!)
+            await (await engine.GetObjectAsync("alpha", "key", Token)).ReadContentAsync(Token)
         );
-        Assert.Equal(2, CountBlobFiles());
+        Assert.Equal(2, root.CountFiles("blobs"));
         Assert.Single(await index.ListPartsAsync("alpha", "key", uploadId, Token));
     }
 
@@ -686,7 +684,7 @@ public sealed class MultipartUploadTests : IDisposable
 
         Assert.True(await engine.AbortUploadAsync("alpha", "key", uploadId, Token));
 
-        Assert.Equal(0, CountBlobFiles());
+        Assert.Equal(0, root.CountFiles("blobs"));
         Assert.False(await engine.AbortUploadAsync("alpha", "key", uploadId, Token));
     }
 
@@ -699,7 +697,7 @@ public sealed class MultipartUploadTests : IDisposable
 
         Assert.Equal(DeleteBucketResult.Deleted, await engine.DeleteBucketAsync("alpha", Token));
 
-        Assert.Equal(0, CountBlobFiles());
+        Assert.Equal(0, root.CountFiles("blobs"));
         Assert.False(await index.BucketExistsAsync("alpha", Token));
     }
 
@@ -741,9 +739,9 @@ public sealed class MultipartUploadTests : IDisposable
         Assert.Equal("5eb63bbbe01eeed093cb22bb8f5acdc3", copy.ETag);
         var download = await engine.GetObjectAsync("alpha", "dst", Token);
         Assert.NotNull(download);
-        Assert.Equal("hello world", await ReadContent(download));
+        Assert.Equal("hello world", await download.ReadContentAsync(Token));
         Assert.Equal("kept", download.Record.Metadata["note"]);
-        Assert.Equal(2, CountBlobFiles());
+        Assert.Equal(2, root.CountFiles("blobs"));
     }
 
     [Fact]
@@ -824,7 +822,7 @@ public sealed class MultipartUploadTests : IDisposable
         );
     }
 
-    public void Dispose() => Directory.Delete(root, recursive: true);
+    public void Dispose() => root.Dispose();
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
@@ -874,25 +872,5 @@ public sealed class MultipartUploadTests : IDisposable
         var outcome = await engine.UploadPartAsync("alpha", "key", uploadId, number, stream, Token);
         Assert.True(outcome.UploadExists);
         return outcome.ETag;
-    }
-
-    private static async Task<string> ReadContent(ObjectDownload download)
-    {
-        await using (download.Content)
-        {
-            using var buffer = new MemoryStream();
-            await download.Content.CopyToAsync(buffer, Token);
-            return Encoding.UTF8.GetString(buffer.ToArray());
-        }
-    }
-
-    private int CountBlobFiles() =>
-        Directory
-            .EnumerateFiles(Path.Combine(root, "blobs"), "*", SearchOption.AllDirectories)
-            .Count();
-
-    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => now;
     }
 }

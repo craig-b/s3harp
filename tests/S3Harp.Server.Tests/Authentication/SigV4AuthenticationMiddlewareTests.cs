@@ -4,6 +4,7 @@ using System.Xml.Linq;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using S3Harp.Server.Authentication;
+using S3Harp.TestSupport;
 using Xunit;
 
 namespace S3Harp.Server.Tests.Authentication;
@@ -519,10 +520,5 @@ public sealed class SigV4AuthenticationMiddlewareTests
     {
         context.Response.Body.Position = 0;
         return XDocument.Load(context.Response.Body).Root?.Element("Code")?.Value;
-    }
-
-    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => now;
     }
 }

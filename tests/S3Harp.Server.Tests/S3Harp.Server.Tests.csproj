@@ -11,5 +11,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\S3Harp.Server\S3Harp.Server.csproj" />
+    <ProjectReference Include="..\S3Harp.TestSupport\S3Harp.TestSupport.csproj" />
   </ItemGroup>
 </Project>

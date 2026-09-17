@@ -2,6 +2,7 @@ using System.Xml.Linq;
 using Microsoft.AspNetCore.Http;
 using S3Harp.Core;
 using S3Harp.Server.Authentication;
+using S3Harp.TestSupport;
 using Xunit;
 
 namespace S3Harp.Server.Tests;
@@ -13,10 +14,7 @@ public sealed class S3RequestDispatcherTests : IDisposable
     private static readonly XNamespace S3Namespace = "http://s3.amazonaws.com/doc/2006-03-01/";
     private static readonly DateTimeOffset Now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
 
-    private readonly string root = Path.Combine(
-        Path.GetTempPath(),
-        $"s3harp-dispatch-{Guid.NewGuid():N}"
-    );
+    private readonly TempDirectory root = new("dispatch");
 
     private readonly InMemoryMetadataIndex index = new();
     private readonly S3RequestDispatcher dispatcher;
@@ -27,7 +25,7 @@ public sealed class S3RequestDispatcherTests : IDisposable
             index,
             new StorageEngine(
                 index,
-                new BlobStore(root),
+                new BlobStore(root.Path),
                 new FixedTimeProvider(Now),
                 new StorageLimits(MinimumPartSize: 5)
             ),
@@ -37,7 +35,7 @@ public sealed class S3RequestDispatcherTests : IDisposable
         );
     }
 
-    public void Dispose() => Directory.Delete(root, recursive: true);
+    public void Dispose() => root.Dispose();
 
     [Fact]
     public async Task PutBucket_CreatesTheBucket()
@@ -2488,9 +2486,4 @@ public sealed class S3RequestDispatcherTests : IDisposable
 
     private static string? ReadErrorCode(DefaultHttpContext context) =>
         ReadBody(context).Root?.Element("Code")?.Value;
-
-    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => now;
-    }
 }

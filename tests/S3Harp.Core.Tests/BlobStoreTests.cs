@@ -1,20 +1,18 @@
 using System.Text;
+using S3Harp.TestSupport;
 using Xunit;
 
 namespace S3Harp.Core.Tests;
 
 public sealed class BlobStoreTests : IDisposable
 {
-    private readonly string root = Path.Combine(
-        Path.GetTempPath(),
-        $"s3harp-blobs-{Guid.NewGuid():N}"
-    );
+    private readonly TempDirectory root = new("blobs");
 
     private readonly BlobStore store;
 
     public BlobStoreTests()
     {
-        store = new BlobStore(root);
+        store = new BlobStore(root.Path);
     }
 
     [Fact]
@@ -114,10 +112,10 @@ public sealed class BlobStoreTests : IDisposable
             store.WriteAsync(new FailingStream(), ChecksumAlgorithm.Crc64Nvme, Token)
         );
 
-        Assert.Empty(Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories));
+        Assert.Empty(Directory.EnumerateFiles(root.Path, "*", SearchOption.AllDirectories));
     }
 
-    public void Dispose() => Directory.Delete(root, recursive: true);
+    public void Dispose() => root.Dispose();
 
     private sealed class FailingStream : Stream
     {

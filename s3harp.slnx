@@ -7,5 +7,6 @@
     <Project Path="tests/S3Harp.Core.Tests/S3Harp.Core.Tests.csproj" />
     <Project Path="tests/S3Harp.IntegrationTests/S3Harp.IntegrationTests.csproj" />
     <Project Path="tests/S3Harp.Server.Tests/S3Harp.Server.Tests.csproj" />
+    <Project Path="tests/S3Harp.TestSupport/S3Harp.TestSupport.csproj" />
   </Folder>
 </Solution>

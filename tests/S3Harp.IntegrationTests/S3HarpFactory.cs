@@ -2,6 +2,7 @@ using Amazon.Runtime;
 using Amazon.S3;
 using Microsoft.AspNetCore.Builder;
 using S3Harp.Server;
+using S3Harp.TestSupport;
 
 namespace S3Harp.IntegrationTests;
 
@@ -16,10 +17,7 @@ public sealed class S3HarpFactory : IDisposable
     public const string AccessKeyId = "S3HARPTESTACCESSKEY";
     public const string SecretAccessKey = "s3harp-test-secret-access-key";
 
-    private readonly string dataDirectory = Path.Combine(
-        Path.GetTempPath(),
-        $"s3harp-test-{Guid.NewGuid():N}"
-    );
+    private readonly TempDirectory dataDirectory = new("integration");
 
     private WebApplication? app;
 
@@ -57,10 +55,7 @@ public sealed class S3HarpFactory : IDisposable
             app.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
 
-        if (Directory.Exists(dataDirectory))
-        {
-            Directory.Delete(dataDirectory, recursive: true);
-        }
+        dataDirectory.Dispose();
     }
 
     private string EnsureServerStarted()
@@ -74,7 +69,7 @@ public sealed class S3HarpFactory : IDisposable
                     ["PORT"] = "0",
                     ["ACCESS_KEY_ID"] = AccessKeyId,
                     ["SECRET_ACCESS_KEY"] = SecretAccessKey,
-                    ["DATA_DIR"] = dataDirectory,
+                    ["DATA_DIR"] = dataDirectory.Path,
                 }
             );
             app.StartAsync().GetAwaiter().GetResult();

@@ -1,4 +1,5 @@
 using System.Text;
+using S3Harp.TestSupport;
 using Xunit;
 
 namespace S3Harp.Core.Tests;
@@ -7,10 +8,7 @@ public sealed class ObjectListingTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
 
-    private readonly string root = Path.Combine(
-        Path.GetTempPath(),
-        $"s3harp-list-{Guid.NewGuid():N}"
-    );
+    private readonly TempDirectory root = new("list");
 
     private readonly InMemoryMetadataIndex index = new();
     private readonly StorageEngine engine;
@@ -19,7 +17,7 @@ public sealed class ObjectListingTests : IDisposable
     {
         engine = new StorageEngine(
             index,
-            new BlobStore(root),
+            new BlobStore(root.Path),
             new FixedTimeProvider(Now),
             StorageLimits.S3
         );
@@ -112,7 +110,7 @@ public sealed class ObjectListingTests : IDisposable
         Assert.Equal(["a.txt", "docs/", "photos/", "z.txt"], entries);
     }
 
-    public void Dispose() => Directory.Delete(root, recursive: true);
+    public void Dispose() => root.Dispose();
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
@@ -149,9 +147,4 @@ public sealed class ObjectListingTests : IDisposable
         string fromKey = "",
         int maxKeys = 1000
     ) => engine.ListObjectsAsync("alpha", prefix, delimiter, fromKey, maxKeys, Token);
-
-    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => now;
-    }
 }

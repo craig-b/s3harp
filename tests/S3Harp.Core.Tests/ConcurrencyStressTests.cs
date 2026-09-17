@@ -1,4 +1,5 @@
 using System.Text;
+using S3Harp.TestSupport;
 using Xunit;
 
 namespace S3Harp.Core.Tests;
@@ -12,21 +13,17 @@ public sealed class ConcurrencyStressTests : IDisposable
 {
     private const int WriterCount = 16;
 
-    private readonly string root = Path.Combine(
-        Path.GetTempPath(),
-        $"s3harp-stress-{Guid.NewGuid():N}"
-    );
+    private readonly TempDirectory root = new("stress");
 
     private readonly SqliteMetadataIndex index;
     private readonly StorageEngine engine;
 
     public ConcurrencyStressTests()
     {
-        Directory.CreateDirectory(root);
-        index = new SqliteMetadataIndex(Path.Combine(root, "index.db"));
+        index = new SqliteMetadataIndex(Path.Combine(root.Path, "index.db"));
         engine = new StorageEngine(
             index,
-            new BlobStore(root),
+            new BlobStore(root.Path),
             TimeProvider.System,
             new StorageLimits(MinimumPartSize: 1)
         );
@@ -69,9 +66,9 @@ public sealed class ConcurrencyStressTests : IDisposable
         Assert.All(outcomes, outcome => Assert.IsType<PutObjectOutcome.Stored>(outcome));
         var download = await engine.GetObjectAsync("alpha", "contested", Token);
         Assert.NotNull(download);
-        Assert.Contains(await ReadContent(download), bodies);
-        Assert.Equal(1, CountBlobFiles());
-        Assert.Empty(Directory.EnumerateFiles(Path.Combine(root, "uploads")));
+        Assert.Contains(await download.ReadContentAsync(Token), bodies);
+        Assert.Equal(1, root.CountFiles("blobs"));
+        Assert.Empty(Directory.EnumerateFiles(Path.Combine(root.Path, "uploads")));
     }
 
     [Fact]
@@ -108,7 +105,7 @@ public sealed class ConcurrencyStressTests : IDisposable
                         {
                             var download = await engine.GetObjectAsync("alpha", "readable", Token);
                             Assert.NotNull(download);
-                            Assert.Contains(await ReadContent(download), validBodies);
+                            Assert.Contains(await download.ReadContentAsync(Token), validBodies);
                         }
                     },
                     Token
@@ -158,13 +155,13 @@ public sealed class ConcurrencyStressTests : IDisposable
 
         Assert.All(outcomes, outcome => Assert.True(outcome.UploadExists));
         Assert.Single(await index.ListPartsAsync("alpha", "assembled", uploadId, Token));
-        Assert.Equal(1, CountBlobFiles());
+        Assert.Equal(1, root.CountFiles("blobs"));
     }
 
     public void Dispose()
     {
         index.Dispose();
-        Directory.Delete(root, recursive: true);
+        root.Dispose();
     }
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
@@ -186,19 +183,4 @@ public sealed class ConcurrencyStressTests : IDisposable
         );
         Assert.Equal(PutObjectStatus.Stored, outcome.Status);
     }
-
-    private static async Task<string> ReadContent(ObjectDownload download)
-    {
-        await using (download.Content)
-        {
-            using var buffer = new MemoryStream();
-            await download.Content.CopyToAsync(buffer, Token);
-            return Encoding.UTF8.GetString(buffer.ToArray());
-        }
-    }
-
-    private int CountBlobFiles() =>
-        Directory
-            .EnumerateFiles(Path.Combine(root, "blobs"), "*", SearchOption.AllDirectories)
-            .Count();
 }

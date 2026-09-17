@@ -1,4 +1,5 @@
 using System.Text;
+using S3Harp.TestSupport;
 using Xunit;
 
 namespace S3Harp.Core.Tests;
@@ -7,10 +8,7 @@ public sealed class StorageEngineTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
 
-    private readonly string root = Path.Combine(
-        Path.GetTempPath(),
-        $"s3harp-engine-{Guid.NewGuid():N}"
-    );
+    private readonly TempDirectory root = new("engine");
 
     private readonly InMemoryMetadataIndex index = new();
     private readonly StorageEngine engine;
@@ -19,7 +17,7 @@ public sealed class StorageEngineTests : IDisposable
     {
         engine = new StorageEngine(
             index,
-            new BlobStore(root),
+            new BlobStore(root.Path),
             new FixedTimeProvider(Now),
             StorageLimits.S3
         );
@@ -40,7 +38,7 @@ public sealed class StorageEngineTests : IDisposable
         var download = await engine.GetObjectAsync("alpha", "greeting.txt", Token);
 
         Assert.NotNull(download);
-        Assert.Equal("Hello, S3Harp!", await ReadContent(download));
+        Assert.Equal("Hello, S3Harp!", await download.ReadContentAsync(Token));
         Assert.Equal("text/plain", download.Record.ContentType);
         Assert.Equal("from-test", download.Record.Metadata["note"]);
         Assert.Equal(14, download.Record.Size);
@@ -68,9 +66,9 @@ public sealed class StorageEngineTests : IDisposable
 
         Assert.Equal(
             "second version",
-            await ReadContent((await engine.GetObjectAsync("alpha", "key", Token))!)
+            await (await engine.GetObjectAsync("alpha", "key", Token)).ReadContentAsync(Token)
         );
-        Assert.Equal(1, CountBlobFiles());
+        Assert.Equal(1, root.CountFiles("blobs"));
     }
 
     [Fact]
@@ -89,9 +87,9 @@ public sealed class StorageEngineTests : IDisposable
         Assert.Equal(PutObjectStatus.PreconditionFailed, result.Status);
         Assert.Equal(
             "first version",
-            await ReadContent((await engine.GetObjectAsync("alpha", "key", Token))!)
+            await (await engine.GetObjectAsync("alpha", "key", Token)).ReadContentAsync(Token)
         );
-        Assert.Equal(1, CountBlobFiles());
+        Assert.Equal(1, root.CountFiles("blobs"));
     }
 
     [Fact]
@@ -100,7 +98,7 @@ public sealed class StorageEngineTests : IDisposable
         var result = await Put("missing", "key", "content");
 
         Assert.Equal(PutObjectStatus.BucketMissing, result.Status);
-        Assert.Equal(0, CountBlobFiles());
+        Assert.Equal(0, root.CountFiles("blobs"));
     }
 
     [Fact]
@@ -169,7 +167,7 @@ public sealed class StorageEngineTests : IDisposable
 
         Assert.Equal(DeleteObjectStatus.Deleted, status);
         Assert.Null(await engine.GetObjectAsync("alpha", "key", Token));
-        Assert.Equal(0, CountBlobFiles());
+        Assert.Equal(0, root.CountFiles("blobs"));
     }
 
     [Fact]
@@ -189,7 +187,7 @@ public sealed class StorageEngineTests : IDisposable
         var download = await engine.GetObjectAsync("alpha", "key", Token);
         Assert.NotNull(download);
         await download.Content.DisposeAsync();
-        Assert.Equal(1, CountBlobFiles());
+        Assert.Equal(1, root.CountFiles("blobs"));
     }
 
     [Fact]
@@ -210,7 +208,7 @@ public sealed class StorageEngineTests : IDisposable
         Assert.Null(await engine.GetObjectAsync("alpha", "missing", Token));
     }
 
-    public void Dispose() => Directory.Delete(root, recursive: true);
+    public void Dispose() => root.Dispose();
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
@@ -241,27 +239,5 @@ public sealed class StorageEngineTests : IDisposable
             condition,
             Token
         );
-    }
-
-    private static async Task<string> ReadContent(ObjectDownload download)
-    {
-        await using (download.Content)
-        {
-            using var buffer = new MemoryStream();
-            await download.Content.CopyToAsync(buffer, Token);
-            return Encoding.UTF8.GetString(buffer.ToArray());
-        }
-    }
-
-    private int CountBlobFiles() =>
-        Directory.Exists(Path.Combine(root, "blobs"))
-            ? Directory
-                .EnumerateFiles(Path.Combine(root, "blobs"), "*", SearchOption.AllDirectories)
-                .Count()
-            : 0;
-
-    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => now;
     }
 }
