@@ -65,26 +65,38 @@ public sealed class S3HarpOptions
         {
             // The binder names the property whose value it could not convert.
             throw new StartupException(
-                $"S3Harp cannot start: {DescribeConversionFailure(exception)}", exception);
+                $"S3Harp cannot start: {DescribeConversionFailure(exception)}",
+                exception
+            );
         }
 
         var results = new List<ValidationResult>();
-        if (Validator.TryValidateObject(options, new ValidationContext(options), results, validateAllProperties: true))
+        if (
+            Validator.TryValidateObject(
+                options,
+                new ValidationContext(options),
+                results,
+                validateAllProperties: true
+            )
+        )
         {
             return options;
         }
 
         var problems = results.Select(result =>
-            $"{EnvironmentName(result.MemberNames.First())} {result.ErrorMessage}");
+            $"{EnvironmentName(result.MemberNames.First())} {result.ErrorMessage}"
+        );
         throw new StartupException("S3Harp cannot start: " + string.Join("; ", problems) + ".");
     }
 
     /// <summary>The binder names the configuration key whose value it could not convert.</summary>
     private static string DescribeConversionFailure(InvalidOperationException exception)
     {
-        var property = typeof(S3HarpOptions).GetProperties()
-            .FirstOrDefault(p => exception.Message.Contains(
-                $"'{KeyName(p)}'", StringComparison.OrdinalIgnoreCase));
+        var property = typeof(S3HarpOptions)
+            .GetProperties()
+            .FirstOrDefault(p =>
+                exception.Message.Contains($"'{KeyName(p)}'", StringComparison.OrdinalIgnoreCase)
+            );
         return property is null
             ? exception.Message
             : $"{EnvironmentPrefix}{KeyName(property)} must be a number.";

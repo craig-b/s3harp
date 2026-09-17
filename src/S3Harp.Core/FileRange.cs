@@ -15,15 +15,23 @@ internal static partial class FileRange
     private const int BufferSize = 256 * 1024;
 
     public static void Copy(
-        SafeFileHandle source, long sourceOffset,
-        SafeFileHandle destination, long destinationOffset,
-        long length)
+        SafeFileHandle source,
+        long sourceOffset,
+        SafeFileHandle destination,
+        long destinationOffset,
+        long length
+    )
     {
         while (length > 0 && OperatingSystem.IsLinux())
         {
             var copied = CopyFileRange(
-                source, ref sourceOffset, destination, ref destinationOffset,
-                (nuint)length, 0);
+                source,
+                ref sourceOffset,
+                destination,
+                ref destinationOffset,
+                (nuint)length,
+                0
+            );
             if (copied <= 0)
             {
                 break;
@@ -39,9 +47,12 @@ internal static partial class FileRange
     }
 
     private static void CopyBuffered(
-        SafeFileHandle source, long sourceOffset,
-        SafeFileHandle destination, long destinationOffset,
-        long length)
+        SafeFileHandle source,
+        long sourceOffset,
+        SafeFileHandle destination,
+        long destinationOffset,
+        long length
+    )
     {
         var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
         try
@@ -49,11 +60,15 @@ internal static partial class FileRange
             while (length > 0)
             {
                 var read = RandomAccess.Read(
-                    source, buffer.AsSpan(0, (int)Math.Min(length, buffer.Length)), sourceOffset);
+                    source,
+                    buffer.AsSpan(0, (int)Math.Min(length, buffer.Length)),
+                    sourceOffset
+                );
                 if (read == 0)
                 {
                     throw new EndOfStreamException(
-                        "The source blob ended before the requested range was copied.");
+                        "The source blob ended before the requested range was copied."
+                    );
                 }
 
                 RandomAccess.Write(destination, buffer.AsSpan(0, read), destinationOffset);
@@ -70,6 +85,11 @@ internal static partial class FileRange
 
     [LibraryImport("libc", EntryPoint = "copy_file_range", SetLastError = true)]
     private static partial nint CopyFileRange(
-        SafeFileHandle fdIn, ref long offsetIn, SafeFileHandle fdOut, ref long offsetOut,
-        nuint length, uint flags);
+        SafeFileHandle fdIn,
+        ref long offsetIn,
+        SafeFileHandle fdOut,
+        ref long offsetOut,
+        nuint length,
+        uint flags
+    );
 }

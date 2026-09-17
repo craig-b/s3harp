@@ -32,7 +32,9 @@ public abstract class PayloadVerifyingStream(Stream inner) : Stream
     }
 
     public override async ValueTask<int> ReadAsync(
-        Memory<byte> buffer, CancellationToken cancellationToken = default)
+        Memory<byte> buffer,
+        CancellationToken cancellationToken = default
+    )
     {
         var read = await inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
         if (read > 0)
@@ -53,9 +55,7 @@ public abstract class PayloadVerifyingStream(Stream inner) : Stream
     public override int Read(byte[] buffer, int offset, int count) =>
         ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
 
-    public override void Flush()
-    {
-    }
+    public override void Flush() { }
 
     public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
 
@@ -106,8 +106,10 @@ public sealed class Sha256VerifyingStream(Stream inner, string declaredSha256Hex
 /// in its <c>x-amz-checksum-*</c> header.
 /// </summary>
 public sealed class ChecksumVerifyingStream(
-    Stream inner, IncrementalChecksum checksum, string declaredBase64)
-    : PayloadVerifyingStream(inner)
+    Stream inner,
+    IncrementalChecksum checksum,
+    string declaredBase64
+) : PayloadVerifyingStream(inner)
 {
     protected override void Observe(ReadOnlySpan<byte> data) => checksum.Append(data);
 

@@ -13,7 +13,12 @@ public readonly record struct ByteRange(long From, long To)
 /// The outcome of writing a blob: its identity, size, content MD5, and the base64
 /// checksum of the algorithm requested, when one was.
 /// </summary>
-public sealed record BlobWriteResult(string BlobId, long Size, string ContentMd5Hex, string? Checksum);
+public sealed record BlobWriteResult(
+    string BlobId,
+    long Size,
+    string ContentMd5Hex,
+    string? Checksum
+);
 
 /// <summary>
 /// Stores object data as plain files under the data directory. Blob ids are opaque
@@ -36,7 +41,10 @@ public sealed class BlobStore
 
     /// <summary>Writes the content as a new blob, computing the requested checksum as it streams.</summary>
     public async Task<BlobWriteResult> WriteAsync(
-        Stream content, ChecksumAlgorithm? checksum, CancellationToken cancellationToken)
+        Stream content,
+        ChecksumAlgorithm? checksum,
+        CancellationToken cancellationToken
+    )
     {
         ArgumentNullException.ThrowIfNull(content);
 
@@ -48,11 +56,20 @@ public sealed class BlobStore
 #pragma warning disable CA5351
         using var md5 = IncrementalHash.CreateHash(HashAlgorithmName.MD5);
 #pragma warning restore CA5351
-        using var integrity = checksum is { } algorithm ? ChecksumAlgorithms.Create(algorithm) : null;
+        using var integrity = checksum is { } algorithm
+            ? ChecksumAlgorithms.Create(algorithm)
+            : null;
 
         try
         {
-            return await WriteCoreAsync(content, blobId, uploadPath, md5, integrity, cancellationToken)
+            return await WriteCoreAsync(
+                    content,
+                    blobId,
+                    uploadPath,
+                    md5,
+                    integrity,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
         catch
@@ -68,20 +85,31 @@ public sealed class BlobStore
         string uploadPath,
         IncrementalHash md5,
         IncrementalChecksum? integrity,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         long size = 0;
         var file = new FileStream(
-            uploadPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
-            BufferSize, useAsync: true);
+            uploadPath,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            BufferSize,
+            useAsync: true
+        );
         await using (file.ConfigureAwait(false))
         {
             var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
             try
             {
                 int read;
-                while ((read = await content.ReadAsync(buffer, cancellationToken)
-                    .ConfigureAwait(false)) > 0)
+                while (
+                    (
+                        read = await content
+                            .ReadAsync(buffer, cancellationToken)
+                            .ConfigureAwait(false)
+                    ) > 0
+                )
                 {
                     md5.AppendData(buffer, 0, read);
                     integrity?.Append(buffer.AsSpan(0, read));
@@ -100,15 +128,22 @@ public sealed class BlobStore
 
         Publish(blobId, uploadPath);
         return new BlobWriteResult(
-            blobId, size, Convert.ToHexStringLower(md5.GetHashAndReset()),
-            integrity is null ? null : Convert.ToBase64String(integrity.Finish()));
+            blobId,
+            size,
+            Convert.ToHexStringLower(md5.GetHashAndReset()),
+            integrity is null ? null : Convert.ToBase64String(integrity.Finish())
+        );
     }
 
     /// <summary>The base64 checksum of a stored blob's content.</summary>
     public async Task<string> ComputeChecksumAsync(
-        string blobId, ChecksumAlgorithm algorithm, CancellationToken cancellationToken)
+        string blobId,
+        ChecksumAlgorithm algorithm,
+        CancellationToken cancellationToken
+    )
     {
-        var (_, checksum) = await DigestAsync(blobId, algorithm, cancellationToken).ConfigureAwait(false);
+        var (_, checksum) = await DigestAsync(blobId, algorithm, cancellationToken)
+            .ConfigureAwait(false);
         return checksum!;
     }
 
@@ -117,23 +152,35 @@ public sealed class BlobStore
     /// filesystem allows, and reports the copy's MD5 and requested checksum.
     /// </summary>
     public async Task<BlobWriteResult> CopyRangeAsync(
-        string sourceBlobId, ByteRange range, ChecksumAlgorithm? checksum,
-        CancellationToken cancellationToken)
+        string sourceBlobId,
+        ByteRange range,
+        ChecksumAlgorithm? checksum,
+        CancellationToken cancellationToken
+    )
     {
         var blobId = Guid.NewGuid().ToString("N");
         var uploadPath = Path.Combine(uploadsDirectory, blobId);
         try
         {
             await Task.Run(
-                () =>
-                {
-                    using var source = File.OpenHandle(PathFor(sourceBlobId), options: FileOptions.None);
-                    using var destination = File.OpenHandle(
-                        uploadPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
-                    FileRange.Copy(source, range.From, destination, 0, range.Length);
-                    RandomAccess.FlushToDisk(destination);
-                },
-                cancellationToken).ConfigureAwait(false);
+                    () =>
+                    {
+                        using var source = File.OpenHandle(
+                            PathFor(sourceBlobId),
+                            options: FileOptions.None
+                        );
+                        using var destination = File.OpenHandle(
+                            uploadPath,
+                            FileMode.CreateNew,
+                            FileAccess.ReadWrite,
+                            FileShare.None
+                        );
+                        FileRange.Copy(source, range.From, destination, 0, range.Length);
+                        RandomAccess.FlushToDisk(destination);
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
             Publish(blobId, uploadPath);
         }
         catch
@@ -142,13 +189,17 @@ public sealed class BlobStore
             throw;
         }
 
-        var (md5Hex, value) = await DigestAsync(blobId, checksum, cancellationToken).ConfigureAwait(false);
+        var (md5Hex, value) = await DigestAsync(blobId, checksum, cancellationToken)
+            .ConfigureAwait(false);
         return new BlobWriteResult(blobId, range.Length, md5Hex, value);
     }
 
     /// <summary>A stored blob's MD5 and, when an algorithm is given, its base64 checksum, in one pass.</summary>
     private async Task<(string Md5Hex, string? Checksum)> DigestAsync(
-        string blobId, ChecksumAlgorithm? algorithm, CancellationToken cancellationToken)
+        string blobId,
+        ChecksumAlgorithm? algorithm,
+        CancellationToken cancellationToken
+    )
     {
         // The MD5 is the part's ETag: a protocol artifact carrying no security claim.
 #pragma warning disable CA5351
@@ -162,7 +213,10 @@ public sealed class BlobStore
             try
             {
                 int read;
-                while ((read = await file.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+                while (
+                    (read = await file.ReadAsync(buffer, cancellationToken).ConfigureAwait(false))
+                    > 0
+                )
                 {
                     md5.AppendData(buffer, 0, read);
                     integrity?.Append(buffer.AsSpan(0, read));
@@ -176,7 +230,8 @@ public sealed class BlobStore
 
         return (
             Convert.ToHexStringLower(md5.GetHashAndReset()),
-            integrity is null ? null : Convert.ToBase64String(integrity.Finish()));
+            integrity is null ? null : Convert.ToBase64String(integrity.Finish())
+        );
     }
 
     private void Publish(string blobId, string uploadPath)
@@ -195,27 +250,40 @@ public sealed class BlobStore
     /// filesystems the parts' blocks are shared rather than rewritten.
     /// </summary>
     public Task<BlobConcatResult> ConcatenateAsync(
-        IReadOnlyList<string> blobIds, CancellationToken cancellationToken)
+        IReadOnlyList<string> blobIds,
+        CancellationToken cancellationToken
+    )
     {
         ArgumentNullException.ThrowIfNull(blobIds);
         return Task.Run(() => Concatenate(blobIds, cancellationToken), cancellationToken);
     }
 
     private BlobConcatResult Concatenate(
-        IReadOnlyList<string> blobIds, CancellationToken cancellationToken)
+        IReadOnlyList<string> blobIds,
+        CancellationToken cancellationToken
+    )
     {
         var blobId = Guid.NewGuid().ToString("N");
         var uploadPath = Path.Combine(uploadsDirectory, blobId);
         try
         {
             long size = 0;
-            using (var destination = File.OpenHandle(
-                uploadPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+            using (
+                var destination = File.OpenHandle(
+                    uploadPath,
+                    FileMode.CreateNew,
+                    FileAccess.ReadWrite,
+                    FileShare.None
+                )
+            )
             {
                 foreach (var sourceId in blobIds)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    using var source = File.OpenHandle(PathFor(sourceId), options: FileOptions.None);
+                    using var source = File.OpenHandle(
+                        PathFor(sourceId),
+                        options: FileOptions.None
+                    );
                     var length = RandomAccess.GetLength(source);
                     FileRange.Copy(source, 0, destination, size, length);
                     size += length;
@@ -245,13 +313,18 @@ public sealed class BlobStore
         try
         {
             await Task.Run(
-                () =>
-                {
-                    File.Copy(PathFor(blobId), uploadPath);
-                    using var handle = File.OpenHandle(uploadPath, access: FileAccess.ReadWrite);
-                    RandomAccess.FlushToDisk(handle);
-                },
-                cancellationToken).ConfigureAwait(false);
+                    () =>
+                    {
+                        File.Copy(PathFor(blobId), uploadPath);
+                        using var handle = File.OpenHandle(
+                            uploadPath,
+                            access: FileAccess.ReadWrite
+                        );
+                        RandomAccess.FlushToDisk(handle);
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
             Publish(newBlobId, uploadPath);
             return newBlobId;
         }
@@ -262,9 +335,15 @@ public sealed class BlobStore
         }
     }
 
-    public Stream OpenRead(string blobId) => new FileStream(
-        PathFor(blobId), FileMode.Open, FileAccess.Read, FileShare.Read,
-        BufferSize, useAsync: true);
+    public Stream OpenRead(string blobId) =>
+        new FileStream(
+            PathFor(blobId),
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            BufferSize,
+            useAsync: true
+        );
 
     public void Delete(string blobId) => File.Delete(PathFor(blobId));
 

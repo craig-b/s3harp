@@ -11,26 +11,35 @@ public static class CanonicalRequest
         HttpRequest request,
         IReadOnlyList<string> signedHeaders,
         string payloadHash,
-        bool omitSignatureParameter = false)
+        bool omitSignatureParameter = false
+    )
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(signedHeaders);
 
         var (path, query) = SplitRawTarget(request);
         var builder = new StringBuilder()
-            .Append(request.Method).Append('\n')
-            .Append(path).Append('\n')
-            .Append(CanonicalizeQuery(query, omitSignatureParameter)).Append('\n');
+            .Append(request.Method)
+            .Append('\n')
+            .Append(path)
+            .Append('\n')
+            .Append(CanonicalizeQuery(query, omitSignatureParameter))
+            .Append('\n');
 
         var orderedHeaders = signedHeaders.OrderBy(h => h, StringComparer.Ordinal).ToArray();
         foreach (var name in orderedHeaders)
         {
-            builder.Append(name).Append(':')
-                .Append(CanonicalizeHeaderValue(request.Headers[name])).Append('\n');
+            builder
+                .Append(name)
+                .Append(':')
+                .Append(CanonicalizeHeaderValue(request.Headers[name]))
+                .Append('\n');
         }
 
-        return builder.Append('\n')
-            .AppendJoin(';', orderedHeaders).Append('\n')
+        return builder
+            .Append('\n')
+            .AppendJoin(';', orderedHeaders)
+            .Append('\n')
             .Append(payloadHash)
             .ToString();
     }
@@ -39,11 +48,15 @@ public static class CanonicalRequest
     {
         // The raw target preserves the exact bytes the client signed; the parsed
         // Path property has already been decoded and would re-sign differently.
-        var rawTarget = request.HttpContext.Features.GetRequiredFeature<IHttpRequestFeature>().RawTarget;
+        var rawTarget = request
+            .HttpContext.Features.GetRequiredFeature<IHttpRequestFeature>()
+            .RawTarget;
         if (string.IsNullOrEmpty(rawTarget))
         {
-            return (request.PathBase.Add(request.Path).ToUriComponent(),
-                request.QueryString.Value?.TrimStart('?') ?? string.Empty);
+            return (
+                request.PathBase.Add(request.Path).ToUriComponent(),
+                request.QueryString.Value?.TrimStart('?') ?? string.Empty
+            );
         }
 
         var separator = rawTarget.IndexOf('?', StringComparison.Ordinal);
@@ -63,8 +76,10 @@ public static class CanonicalRequest
                     ? (Name: parameter, Value: string.Empty)
                     : (Name: parameter[..separator], Value: parameter[(separator + 1)..]);
             })
-            .Where(p => !omitSignatureParameter
-                || !string.Equals(p.Name, "X-Amz-Signature", StringComparison.Ordinal))
+            .Where(p =>
+                !omitSignatureParameter
+                || !string.Equals(p.Name, "X-Amz-Signature", StringComparison.Ordinal)
+            )
             .OrderBy(p => p.Name, StringComparer.Ordinal)
             .ThenBy(p => p.Value, StringComparer.Ordinal)
             .Select(p => $"{p.Name}={p.Value}");

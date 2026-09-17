@@ -7,8 +7,10 @@ public sealed class StorageEngineTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
 
-    private readonly string root =
-        Path.Combine(Path.GetTempPath(), $"s3harp-engine-{Guid.NewGuid():N}");
+    private readonly string root = Path.Combine(
+        Path.GetTempPath(),
+        $"s3harp-engine-{Guid.NewGuid():N}"
+    );
 
     private readonly InMemoryMetadataIndex index = new();
     private readonly StorageEngine engine;
@@ -16,7 +18,11 @@ public sealed class StorageEngineTests : IDisposable
     public StorageEngineTests()
     {
         engine = new StorageEngine(
-            index, new BlobStore(root), new FixedTimeProvider(Now), StorageLimits.S3);
+            index,
+            new BlobStore(root),
+            new FixedTimeProvider(Now),
+            StorageLimits.S3
+        );
     }
 
     [Fact]
@@ -24,8 +30,13 @@ public sealed class StorageEngineTests : IDisposable
     {
         await CreateBucket("alpha");
 
-        await Put("alpha", "greeting.txt", "Hello, S3Harp!", "text/plain",
-            new Dictionary<string, string> { ["note"] = "from-test" });
+        await Put(
+            "alpha",
+            "greeting.txt",
+            "Hello, S3Harp!",
+            "text/plain",
+            new Dictionary<string, string> { ["note"] = "from-test" }
+        );
         var download = await engine.GetObjectAsync("alpha", "greeting.txt", Token);
 
         Assert.NotNull(download);
@@ -55,8 +66,10 @@ public sealed class StorageEngineTests : IDisposable
         await Put("alpha", "key", "first version");
         await Put("alpha", "key", "second version");
 
-        Assert.Equal("second version", await ReadContent(
-            (await engine.GetObjectAsync("alpha", "key", Token))!));
+        Assert.Equal(
+            "second version",
+            await ReadContent((await engine.GetObjectAsync("alpha", "key", Token))!)
+        );
         Assert.Equal(1, CountBlobFiles());
     }
 
@@ -67,12 +80,17 @@ public sealed class StorageEngineTests : IDisposable
         await Put("alpha", "key", "first version");
 
         var result = await Put(
-            "alpha", "key", "second version",
-            condition: new WriteCondition(MustNotMatch: ETagCondition.AnyObject));
+            "alpha",
+            "key",
+            "second version",
+            condition: new WriteCondition(MustNotMatch: ETagCondition.AnyObject)
+        );
 
         Assert.Equal(PutObjectStatus.PreconditionFailed, result.Status);
-        Assert.Equal("first version", await ReadContent(
-            (await engine.GetObjectAsync("alpha", "key", Token))!));
+        Assert.Equal(
+            "first version",
+            await ReadContent((await engine.GetObjectAsync("alpha", "key", Token))!)
+        );
         Assert.Equal(1, CountBlobFiles());
     }
 
@@ -90,7 +108,12 @@ public sealed class StorageEngineTests : IDisposable
     {
         await CreateBucket("alpha");
 
-        var outcome = await Put("alpha", "key", "Hello, S3Harp!", checksum: ChecksumAlgorithm.Crc32);
+        var outcome = await Put(
+            "alpha",
+            "key",
+            "Hello, S3Harp!",
+            checksum: ChecksumAlgorithm.Crc32
+        );
 
         var expected = new Checksum(ChecksumAlgorithm.Crc32, "NadAdg==", ChecksumType.FullObject);
         Assert.Equal(expected, outcome.Checksum);
@@ -106,7 +129,10 @@ public sealed class StorageEngineTests : IDisposable
         var copy = await engine.CopyObjectAsync("alpha", "src", "alpha", "dst", null, null, Token);
 
         Assert.Equal(source.Checksum, copy?.Checksum);
-        Assert.Equal(source.Checksum, (await index.FindObjectAsync("alpha", "dst", Token))?.Checksum);
+        Assert.Equal(
+            source.Checksum,
+            (await index.FindObjectAsync("alpha", "dst", Token))?.Checksum
+        );
     }
 
     [Fact]
@@ -116,11 +142,19 @@ public sealed class StorageEngineTests : IDisposable
         await Put("alpha", "src", "Hello, S3Harp!", checksum: ChecksumAlgorithm.Sha1);
 
         var copy = await engine.CopyObjectAsync(
-            "alpha", "src", "alpha", "dst", null, ChecksumAlgorithm.Crc32, Token);
+            "alpha",
+            "src",
+            "alpha",
+            "dst",
+            null,
+            ChecksumAlgorithm.Crc32,
+            Token
+        );
 
         Assert.Equal(
             new Checksum(ChecksumAlgorithm.Crc32, "NadAdg==", ChecksumType.FullObject),
-            copy?.Checksum);
+            copy?.Checksum
+        );
     }
 
     [Fact]
@@ -143,7 +177,11 @@ public sealed class StorageEngineTests : IDisposable
         await Put("alpha", "key", "content");
 
         var status = await engine.DeleteObjectAsync(
-            "alpha", "key", new DeleteCondition(Size: 1), Token);
+            "alpha",
+            "key",
+            new DeleteCondition(Size: 1),
+            Token
+        );
 
         Assert.Equal(DeleteObjectStatus.PreconditionFailed, status);
         var download = await engine.GetObjectAsync("alpha", "key", Token);
@@ -178,15 +216,29 @@ public sealed class StorageEngineTests : IDisposable
         Assert.True(await index.TryCreateBucketAsync(name, Now, Token));
 
     private async Task<PutObjectOutcome> Put(
-        string bucket, string key, string content, string? contentType = null,
-        IReadOnlyDictionary<string, string>? metadata = null, WriteCondition? condition = null,
-        ChecksumAlgorithm checksum = ChecksumAlgorithm.Crc64Nvme)
+        string bucket,
+        string key,
+        string content,
+        string? contentType = null,
+        IReadOnlyDictionary<string, string>? metadata = null,
+        WriteCondition? condition = null,
+        ChecksumAlgorithm checksum = ChecksumAlgorithm.Crc64Nvme
+    )
     {
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
         return await engine.PutObjectAsync(
-            bucket, key, stream,
-            new ObjectAttributes(contentType, ContentHeaders.None, metadata ?? new Dictionary<string, string>()),
-            checksum, condition, Token);
+            bucket,
+            key,
+            stream,
+            new ObjectAttributes(
+                contentType,
+                ContentHeaders.None,
+                metadata ?? new Dictionary<string, string>()
+            ),
+            checksum,
+            condition,
+            Token
+        );
     }
 
     private static async Task<string> ReadContent(ObjectDownload download)
@@ -201,7 +253,9 @@ public sealed class StorageEngineTests : IDisposable
 
     private int CountBlobFiles() =>
         Directory.Exists(Path.Combine(root, "blobs"))
-            ? Directory.EnumerateFiles(Path.Combine(root, "blobs"), "*", SearchOption.AllDirectories).Count()
+            ? Directory
+                .EnumerateFiles(Path.Combine(root, "blobs"), "*", SearchOption.AllDirectories)
+                .Count()
             : 0;
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

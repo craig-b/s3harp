@@ -1,5 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
-
   <PropertyGroup>
     <!-- The shipped binary is named per the project's naming conventions (see README). -->
     <AssemblyName>s3harp</AssemblyName>
@@ -12,5 +11,4 @@
   <ItemGroup>
     <ProjectReference Include="..\S3Harp.Core\S3Harp.Core.csproj" />
   </ItemGroup>
-
 </Project>

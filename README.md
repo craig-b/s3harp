@@ -32,6 +32,14 @@ dotnet build src/S3Harp.Server --configuration Release
 tests/conformance/run.sh
 ```
 
+## Formatting
+
+CSharpier formats the C# and the project files. CI rejects a push that it would change, so format before pushing:
+
+```sh
+dotnet tool restore && dotnet csharpier format .
+```
+
 ## What it's for
 
 Two uses, in a tension that keeps the project honest:

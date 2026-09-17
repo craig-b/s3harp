@@ -25,7 +25,10 @@ public static partial class S3HarpApplication
     {
         ArgumentNullException.ThrowIfNull(settings);
         var builder = WebApplication.CreateBuilder();
-        builder.Configuration.Sources.Insert(0, new MemoryConfigurationSource { InitialData = LoggingDefaults });
+        builder.Configuration.Sources.Insert(
+            0,
+            new MemoryConfigurationSource { InitialData = LoggingDefaults }
+        );
         builder.Configuration.AddEnvironmentVariables("S3HARP_");
         builder.Configuration.AddInMemoryCollection(settings);
         builder.WebHost.ConfigureKestrel(kestrel =>
@@ -45,11 +48,14 @@ public static partial class S3HarpApplication
 
         builder.Services.AddSingleton(options);
         builder.Services.AddSingleton(new ServiceDomain(options.Domain.Trim()));
-        builder.Services.AddSingleton(new RootCredentials(options.AccessKeyId, options.SecretAccessKey));
+        builder.Services.AddSingleton(
+            new RootCredentials(options.AccessKeyId, options.SecretAccessKey)
+        );
         builder.Services.AddSingleton<ICredentialStore, RootCredentialStore>();
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<IMetadataIndex>(
-            new SqliteMetadataIndex(Path.Combine(dataDirectory, "s3harp.db")));
+            new SqliteMetadataIndex(Path.Combine(dataDirectory, "s3harp.db"))
+        );
         builder.Services.AddSingleton(new BlobStore(dataDirectory));
         builder.Services.AddSingleton(StorageLimits.S3);
         builder.Services.AddSingleton<StorageEngine>();
@@ -81,7 +87,12 @@ public static partial class S3HarpApplication
 
     private static partial class Log
     {
-        [LoggerMessage(EventId = 1, EventName = "Started", Level = LogLevel.Information, Message = "{Summary}")]
+        [LoggerMessage(
+            EventId = 1,
+            EventName = "Started",
+            Level = LogLevel.Information,
+            Message = "{Summary}"
+        )]
         public static partial void Started(ILogger logger, string summary);
     }
 }

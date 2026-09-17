@@ -16,8 +16,10 @@ public sealed class S3HarpFactory : IDisposable
     public const string AccessKeyId = "S3HARPTESTACCESSKEY";
     public const string SecretAccessKey = "s3harp-test-secret-access-key";
 
-    private readonly string dataDirectory =
-        Path.Combine(Path.GetTempPath(), $"s3harp-test-{Guid.NewGuid():N}");
+    private readonly string dataDirectory = Path.Combine(
+        Path.GetTempPath(),
+        $"s3harp-test-{Guid.NewGuid():N}"
+    );
 
     private WebApplication? app;
 
@@ -29,7 +31,8 @@ public sealed class S3HarpFactory : IDisposable
     public AmazonS3Client CreateS3Client(
         string accessKeyId = AccessKeyId,
         string secretAccessKey = SecretAccessKey,
-        bool virtualHosted = false)
+        bool virtualHosted = false
+    )
     {
         var url = new UriBuilder(EnsureServerStarted());
         if (virtualHosted)
@@ -64,14 +67,16 @@ public sealed class S3HarpFactory : IDisposable
     {
         if (app is null)
         {
-            app = S3HarpApplication.Build(new Dictionary<string, string?>
-            {
-                ["BIND"] = "127.0.0.1",
-                ["PORT"] = "0",
-                ["ACCESS_KEY_ID"] = AccessKeyId,
-                ["SECRET_ACCESS_KEY"] = SecretAccessKey,
-                ["DATA_DIR"] = dataDirectory,
-            });
+            app = S3HarpApplication.Build(
+                new Dictionary<string, string?>
+                {
+                    ["BIND"] = "127.0.0.1",
+                    ["PORT"] = "0",
+                    ["ACCESS_KEY_ID"] = AccessKeyId,
+                    ["SECRET_ACCESS_KEY"] = SecretAccessKey,
+                    ["DATA_DIR"] = dataDirectory,
+                }
+            );
             app.StartAsync().GetAwaiter().GetResult();
         }
 

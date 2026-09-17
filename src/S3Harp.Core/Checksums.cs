@@ -88,22 +88,24 @@ public static class ChecksumAlgorithms
     /// Whether a multipart upload may combine the algorithm and type: CRC-32 and
     /// CRC-32C span both, the SHAs compose only, and CRC-64/NVME covers whole objects only.
     /// </summary>
-    public static bool Supports(ChecksumAlgorithm algorithm, ChecksumType type) => algorithm switch
-    {
-        ChecksumAlgorithm.Crc32 or ChecksumAlgorithm.Crc32C => true,
-        ChecksumAlgorithm.Crc64Nvme => type == ChecksumType.FullObject,
-        _ => type == ChecksumType.Composite,
-    };
+    public static bool Supports(ChecksumAlgorithm algorithm, ChecksumType type) =>
+        algorithm switch
+        {
+            ChecksumAlgorithm.Crc32 or ChecksumAlgorithm.Crc32C => true,
+            ChecksumAlgorithm.Crc64Nvme => type == ChecksumType.FullObject,
+            _ => type == ChecksumType.Composite,
+        };
 
-    public static IncrementalChecksum Create(ChecksumAlgorithm algorithm) => algorithm switch
-    {
-        ChecksumAlgorithm.Crc32 => new CrcChecksum(CrcChecksum.Crc32Table, width: 32),
-        ChecksumAlgorithm.Crc32C => new CrcChecksum(CrcChecksum.Crc32CTable, width: 32),
-        ChecksumAlgorithm.Crc64Nvme => new CrcChecksum(CrcChecksum.Crc64NvmeTable, width: 64),
-        ChecksumAlgorithm.Sha1 => new HashChecksum(HashAlgorithmName.SHA1),
-        ChecksumAlgorithm.Sha256 => new HashChecksum(HashAlgorithmName.SHA256),
-        _ => throw new ArgumentOutOfRangeException(nameof(algorithm)),
-    };
+    public static IncrementalChecksum Create(ChecksumAlgorithm algorithm) =>
+        algorithm switch
+        {
+            ChecksumAlgorithm.Crc32 => new CrcChecksum(CrcChecksum.Crc32Table, width: 32),
+            ChecksumAlgorithm.Crc32C => new CrcChecksum(CrcChecksum.Crc32CTable, width: 32),
+            ChecksumAlgorithm.Crc64Nvme => new CrcChecksum(CrcChecksum.Crc64NvmeTable, width: 64),
+            ChecksumAlgorithm.Sha1 => new HashChecksum(HashAlgorithmName.SHA1),
+            ChecksumAlgorithm.Sha256 => new HashChecksum(HashAlgorithmName.SHA256),
+            _ => throw new ArgumentOutOfRangeException(nameof(algorithm)),
+        };
 }
 
 /// <summary>A payload checksum accumulated as the payload's bytes pass through.</summary>
@@ -133,9 +135,7 @@ public abstract class IncrementalChecksum : IDisposable
 
     protected abstract byte[] Compute();
 
-    protected virtual void Dispose(bool disposing)
-    {
-    }
+    protected virtual void Dispose(bool disposing) { }
 }
 
 /// <summary>A cryptographic hash of the payload.</summary>

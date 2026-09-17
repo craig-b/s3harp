@@ -35,9 +35,11 @@ public static class ChecksumHeaders
         ArgumentNullException.ThrowIfNull(headerName);
         foreach (var (candidate, suffix) in Names)
         {
-            if (headerName.Length == HeaderPrefix.Length + suffix.Length
+            if (
+                headerName.Length == HeaderPrefix.Length + suffix.Length
                 && headerName.StartsWith(HeaderPrefix, StringComparison.OrdinalIgnoreCase)
-                && headerName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                && headerName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+            )
             {
                 algorithm = candidate;
                 return true;
@@ -52,7 +54,10 @@ public static class ChecksumHeaders
     /// The checksum a request declares for its body in an <c>x-amz-checksum-*</c> header.
     /// </summary>
     public static bool TryFindDeclared(
-        IHeaderDictionary headers, out ChecksumAlgorithm algorithm, out string declared)
+        IHeaderDictionary headers,
+        out ChecksumAlgorithm algorithm,
+        out string declared
+    )
     {
         ArgumentNullException.ThrowIfNull(headers);
         foreach (var (candidate, _) in Names)
@@ -147,7 +152,11 @@ public static class ChecksumHeaders
     }
 
     /// <summary>Announces the algorithm and type a multipart upload was created with.</summary>
-    public static void WriteAlgorithm(IHeaderDictionary headers, ChecksumAlgorithm algorithm, ChecksumType type)
+    public static void WriteAlgorithm(
+        IHeaderDictionary headers,
+        ChecksumAlgorithm algorithm,
+        ChecksumType type
+    )
     {
         ArgumentNullException.ThrowIfNull(headers);
         headers[AlgorithmHeader] = ChecksumAlgorithms.Name(algorithm);
@@ -177,10 +186,11 @@ public static class ChecksumHeaders
     public static string ElementName(ChecksumAlgorithm algorithm) =>
         "Checksum" + ChecksumAlgorithms.Name(algorithm);
 
-    public static string TypeName(ChecksumType type) => type switch
-    {
-        ChecksumType.FullObject => "FULL_OBJECT",
-        ChecksumType.Composite => "COMPOSITE",
-        _ => throw new ArgumentOutOfRangeException(nameof(type)),
-    };
+    public static string TypeName(ChecksumType type) =>
+        type switch
+        {
+            ChecksumType.FullObject => "FULL_OBJECT",
+            ChecksumType.Composite => "COMPOSITE",
+            _ => throw new ArgumentOutOfRangeException(nameof(type)),
+        };
 }

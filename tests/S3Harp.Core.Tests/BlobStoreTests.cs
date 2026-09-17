@@ -5,8 +5,10 @@ namespace S3Harp.Core.Tests;
 
 public sealed class BlobStoreTests : IDisposable
 {
-    private readonly string root =
-        Path.Combine(Path.GetTempPath(), $"s3harp-blobs-{Guid.NewGuid():N}");
+    private readonly string root = Path.Combine(
+        Path.GetTempPath(),
+        $"s3harp-blobs-{Guid.NewGuid():N}"
+    );
 
     private readonly BlobStore store;
 
@@ -91,7 +93,11 @@ public sealed class BlobStoreTests : IDisposable
         var source = await Write("Hello, S3Harp!"u8.ToArray());
 
         var copied = await store.CopyRangeAsync(
-            source.BlobId, new ByteRange(7, 13), ChecksumAlgorithm.Crc32, Token);
+            source.BlobId,
+            new ByteRange(7, 13),
+            ChecksumAlgorithm.Crc32,
+            Token
+        );
 
         using var stream = store.OpenRead(copied.BlobId);
         using var reader = new StreamReader(stream);
@@ -104,8 +110,9 @@ public sealed class BlobStoreTests : IDisposable
     [Fact]
     public async Task FailedWrite_LeavesNoFilesBehind()
     {
-        await Assert.ThrowsAsync<InvalidDataException>(
-            () => store.WriteAsync(new FailingStream(), null, Token));
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            store.WriteAsync(new FailingStream(), null, Token)
+        );
 
         Assert.Empty(Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories));
     }
@@ -131,9 +138,7 @@ public sealed class BlobStoreTests : IDisposable
         public override int Read(byte[] buffer, int offset, int count) =>
             throw new InvalidDataException("The payload failed verification.");
 
-        public override void Flush()
-        {
-        }
+        public override void Flush() { }
 
         public override long Seek(long offset, SeekOrigin origin) =>
             throw new NotSupportedException();
@@ -157,7 +162,11 @@ public sealed class BlobStoreTests : IDisposable
     {
         var written = await Write("Hello, S3Harp!"u8.ToArray());
 
-        var sha256 = await store.ComputeChecksumAsync(written.BlobId, ChecksumAlgorithm.Sha256, Token);
+        var sha256 = await store.ComputeChecksumAsync(
+            written.BlobId,
+            ChecksumAlgorithm.Sha256,
+            Token
+        );
 
         Assert.Equal("Aj0Lx1vWnbGF+irlCT3Pa4HNGctHtn3/Q49ApNekoy8=", sha256);
     }
@@ -168,7 +177,9 @@ public sealed class BlobStoreTests : IDisposable
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     private async Task<BlobWriteResult> Write(
-        byte[] content, ChecksumAlgorithm checksum = ChecksumAlgorithm.Crc64Nvme)
+        byte[] content,
+        ChecksumAlgorithm checksum = ChecksumAlgorithm.Crc64Nvme
+    )
     {
         using var stream = new MemoryStream(content);
         return await store.WriteAsync(stream, checksum, Token);

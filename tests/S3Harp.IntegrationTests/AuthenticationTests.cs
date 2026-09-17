@@ -14,9 +14,12 @@ public sealed class AuthenticationTests : IDisposable
     {
         using var s3 = factory.CreateS3Client(secretAccessKey: "wrong-secret-access-key");
 
-        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
-            () => s3.PutBucketAsync(
-                new PutBucketRequest { BucketName = "demo" }, TestContext.Current.CancellationToken));
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() =>
+            s3.PutBucketAsync(
+                new PutBucketRequest { BucketName = "demo" },
+                TestContext.Current.CancellationToken
+            )
+        );
 
         Assert.Equal("SignatureDoesNotMatch", exception.ErrorCode);
         Assert.Equal(HttpStatusCode.Forbidden, exception.StatusCode);
@@ -27,9 +30,12 @@ public sealed class AuthenticationTests : IDisposable
     {
         using var s3 = factory.CreateS3Client(accessKeyId: "UNKNOWNACCESSKEYID");
 
-        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
-            () => s3.PutBucketAsync(
-                new PutBucketRequest { BucketName = "demo" }, TestContext.Current.CancellationToken));
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() =>
+            s3.PutBucketAsync(
+                new PutBucketRequest { BucketName = "demo" },
+                TestContext.Current.CancellationToken
+            )
+        );
 
         Assert.Equal("InvalidAccessKeyId", exception.ErrorCode);
         Assert.Equal(HttpStatusCode.Forbidden, exception.StatusCode);

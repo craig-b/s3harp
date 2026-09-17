@@ -10,28 +10,50 @@ namespace S3Harp.Server;
 /// </summary>
 public static class S3HarpCommand
 {
-    private static readonly Option<string> AccessKeyId = Setting("--access-key-id", "ACCESS_KEY_ID",
-        "The access key id clients sign requests with.");
+    private static readonly Option<string> AccessKeyId = Setting(
+        "--access-key-id",
+        "ACCESS_KEY_ID",
+        "The access key id clients sign requests with."
+    );
 
-    private static readonly Option<string> SecretAccessKey = Setting("--secret-access-key", "SECRET_ACCESS_KEY",
-        "The secret key matching the access key id.");
+    private static readonly Option<string> SecretAccessKey = Setting(
+        "--secret-access-key",
+        "SECRET_ACCESS_KEY",
+        "The secret key matching the access key id."
+    );
 
-    private static readonly Option<string> DataDirectory = Setting("--data-dir", "DATA_DIR",
-        "The directory holding all stored data, including the metadata index.");
+    private static readonly Option<string> DataDirectory = Setting(
+        "--data-dir",
+        "DATA_DIR",
+        "The directory holding all stored data, including the metadata index."
+    );
 
-    private static readonly Option<string> Bind = Setting("--bind", "BIND",
-        "The address to listen on; 127.0.0.1 unless given, 0.0.0.0 serves other machines.");
+    private static readonly Option<string> Bind = Setting(
+        "--bind",
+        "BIND",
+        "The address to listen on; 127.0.0.1 unless given, 0.0.0.0 serves other machines."
+    );
 
-    private static readonly Option<int> Port = Setting<int>("--port", "PORT",
-        $"The port to listen on; {S3HarpOptions.DefaultPort} unless given, 0 lets the system choose.");
+    private static readonly Option<int> Port = Setting<int>(
+        "--port",
+        "PORT",
+        $"The port to listen on; {S3HarpOptions.DefaultPort} unless given, 0 lets the system choose."
+    );
 
-    private static readonly Option<string> Domain = Setting("--domain", "DOMAIN",
-        "The domain buckets are addressed under in virtual-hosted style; localhost unless given.");
+    private static readonly Option<string> Domain = Setting(
+        "--domain",
+        "DOMAIN",
+        "The domain buckets are addressed under in virtual-hosted style; localhost unless given."
+    );
 
     private static readonly (Option Option, string Key)[] Settings_ =
     [
-        (AccessKeyId, "ACCESS_KEY_ID"), (SecretAccessKey, "SECRET_ACCESS_KEY"), (DataDirectory, "DATA_DIR"),
-        (Bind, "BIND"), (Port, "PORT"), (Domain, "DOMAIN"),
+        (AccessKeyId, "ACCESS_KEY_ID"),
+        (SecretAccessKey, "SECRET_ACCESS_KEY"),
+        (DataDirectory, "DATA_DIR"),
+        (Bind, "BIND"),
+        (Port, "PORT"),
+        (Domain, "DOMAIN"),
     ];
 
     /// <summary>The root command, whose action starts the server with the settings the flags give.</summary>
@@ -40,7 +62,8 @@ public static class S3HarpCommand
         ArgumentNullException.ThrowIfNull(start);
         var command = new RootCommand(
             "S3Harp: an S3-compatible object store. Every flag can also be set through the "
-            + "environment variable it names.");
+                + "environment variable it names."
+        );
         foreach (var (option, _) in Settings_)
         {
             command.Options.Add(option);
@@ -59,7 +82,10 @@ public static class S3HarpCommand
         {
             if (parseResult.GetResult(option) is { Implicit: false } result)
             {
-                settings[key] = Convert.ToString(result.GetValueOrDefault<object>(), CultureInfo.InvariantCulture);
+                settings[key] = Convert.ToString(
+                    result.GetValueOrDefault<object>(),
+                    CultureInfo.InvariantCulture
+                );
             }
         }
 

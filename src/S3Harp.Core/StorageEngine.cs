@@ -11,14 +11,18 @@ public sealed record ObjectListing(
     IReadOnlyList<ObjectRecord> Objects,
     IReadOnlyList<string> CommonPrefixes,
     bool IsTruncated,
-    string? NextFromKey);
+    string? NextFromKey
+);
 
 /// <summary>The outcome of storing an object: on success, its ETag and stored checksum.</summary>
 public sealed record PutObjectOutcome(PutObjectStatus Status, string? ETag, Checksum? Checksum);
 
 /// <summary>The caller-supplied attributes of an object: content type, content headers, and user metadata.</summary>
 public sealed record ObjectAttributes(
-    string? ContentType, ContentHeaders ContentHeaders, IReadOnlyDictionary<string, string> Metadata);
+    string? ContentType,
+    ContentHeaders ContentHeaders,
+    IReadOnlyDictionary<string, string> Metadata
+);
 
 /// <summary>The outcome of uploading a part: its ETag and its checksum in the upload's algorithm.</summary>
 public sealed record UploadPartOutcome(bool UploadExists, string? ETag, ChecksumValue? Checksum);
@@ -33,17 +37,28 @@ public enum UploadPartCopyStatus
 
 /// <summary>The outcome of filling a part from another object: the part's ETag, checksum and time.</summary>
 public sealed record UploadPartCopyOutcome(
-    UploadPartCopyStatus Status, string? ETag, ChecksumValue? Checksum, DateTimeOffset LastModified);
+    UploadPartCopyStatus Status,
+    string? ETag,
+    ChecksumValue? Checksum,
+    DateTimeOffset LastModified
+);
 
 /// <summary>A part named in a completion request, with the checksum the client declares for it.</summary>
 public sealed record RequestedPart(int PartNumber, string ETag, ChecksumValue? Checksum = null);
 
 /// <summary>The outcome of completing a multipart upload: the object's ETag and checksum.</summary>
 public sealed record CompleteUploadOutcome(
-    CompleteUploadStatus Status, string? ETag, Checksum? Checksum);
+    CompleteUploadStatus Status,
+    string? ETag,
+    Checksum? Checksum
+);
 
 /// <summary>The outcome of a server-side object copy.</summary>
-public sealed record CopyObjectOutcome(string ETag, DateTimeOffset LastModified, Checksum? Checksum);
+public sealed record CopyObjectOutcome(
+    string ETag,
+    DateTimeOffset LastModified,
+    Checksum? Checksum
+);
 
 /// <summary>The size limits the engine enforces, with S3's values as the default.</summary>
 public sealed record StorageLimits(long MinimumPartSize)
@@ -57,7 +72,11 @@ public sealed record StorageLimits(long MinimumPartSize)
 /// pair always agree, including reclaiming blob files their records release.
 /// </summary>
 public sealed class StorageEngine(
-    IMetadataIndex index, BlobStore blobs, TimeProvider timeProvider, StorageLimits limits)
+    IMetadataIndex index,
+    BlobStore blobs,
+    TimeProvider timeProvider,
+    StorageLimits limits
+)
 {
     /// <summary>Stores the content as an object, with a full-object checksum of the given algorithm.</summary>
     public async Task<PutObjectOutcome> PutObjectAsync(
@@ -67,18 +86,29 @@ public sealed class StorageEngine(
         ObjectAttributes attributes,
         ChecksumAlgorithm checksumAlgorithm,
         WriteCondition? condition,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         ArgumentNullException.ThrowIfNull(attributes);
 
-        var write = await blobs.WriteAsync(content, checksumAlgorithm, cancellationToken)
+        var write = await blobs
+            .WriteAsync(content, checksumAlgorithm, cancellationToken)
             .ConfigureAwait(false);
         var checksum = new Checksum(checksumAlgorithm, write.Checksum!, ChecksumType.FullObject);
         var record = new ObjectRecord(
-            key, write.BlobId, write.Size, write.ContentMd5Hex, Parts: [], checksum,
-            attributes.ContentType, attributes.ContentHeaders, attributes.Metadata,
-            timeProvider.GetUtcNow());
-        var stored = await index.PutObjectAsync(bucket, record, condition, cancellationToken)
+            key,
+            write.BlobId,
+            write.Size,
+            write.ContentMd5Hex,
+            Parts: [],
+            checksum,
+            attributes.ContentType,
+            attributes.ContentHeaders,
+            attributes.Metadata,
+            timeProvider.GetUtcNow()
+        );
+        var stored = await index
+            .PutObjectAsync(bucket, record, condition, cancellationToken)
             .ConfigureAwait(false);
         if (stored.Status != PutObjectStatus.Stored)
         {
@@ -95,12 +125,16 @@ public sealed class StorageEngine(
     }
 
     public async Task<ObjectDownload?> GetObjectAsync(
-        string bucket, string key, CancellationToken cancellationToken)
+        string bucket,
+        string key,
+        CancellationToken cancellationToken
+    )
     {
         const int maxAttempts = 5;
         for (var attempt = 1; ; attempt++)
         {
-            var record = await index.FindObjectAsync(bucket, key, cancellationToken)
+            var record = await index
+                .FindObjectAsync(bucket, key, cancellationToken)
                 .ConfigureAwait(false);
             if (record is null)
             {
@@ -125,7 +159,8 @@ public sealed class StorageEngine(
         string? delimiter,
         string fromKey,
         int maxKeys,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         const int batchSize = 1000;
         ArgumentNullException.ThrowIfNull(prefix);
@@ -139,7 +174,8 @@ public sealed class StorageEngine(
 
         while (!exhausted && !truncated)
         {
-            var batch = await index.ScanObjectsAsync(bucket, prefix, from, batchSize, cancellationToken)
+            var batch = await index
+                .ScanObjectsAsync(bucket, prefix, from, batchSize, cancellationToken)
                 .ConfigureAwait(false);
             if (batch.Count == 0)
             {
@@ -194,9 +230,13 @@ public sealed class StorageEngine(
     /// they are aborted with it and their parts reclaimed, matching S3.
     /// </summary>
     public async Task<DeleteBucketResult> DeleteBucketAsync(
-        string bucket, CancellationToken cancellationToken)
+        string bucket,
+        CancellationToken cancellationToken
+    )
     {
-        var outcome = await index.DeleteBucketAsync(bucket, cancellationToken).ConfigureAwait(false);
+        var outcome = await index
+            .DeleteBucketAsync(bucket, cancellationToken)
+            .ConfigureAwait(false);
         foreach (var blobId in outcome.ReleasedBlobIds)
         {
             blobs.Delete(blobId);
@@ -207,9 +247,14 @@ public sealed class StorageEngine(
 
     /// <summary>Deletes the object when the condition, if any, holds against it.</summary>
     public async Task<DeleteObjectStatus> DeleteObjectAsync(
-        string bucket, string key, DeleteCondition? condition, CancellationToken cancellationToken)
+        string bucket,
+        string key,
+        DeleteCondition? condition,
+        CancellationToken cancellationToken
+    )
     {
-        var deleted = await index.DeleteObjectAsync(bucket, key, condition, cancellationToken)
+        var deleted = await index
+            .DeleteObjectAsync(bucket, key, condition, cancellationToken)
             .ConfigureAwait(false);
         if (deleted.BlobId is not null)
         {
@@ -225,14 +270,23 @@ public sealed class StorageEngine(
         ObjectAttributes attributes,
         ChecksumAlgorithm checksumAlgorithm,
         ChecksumType checksumType,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         ArgumentNullException.ThrowIfNull(attributes);
 
         var upload = new MultipartUpload(
-            Guid.NewGuid().ToString("N"), key, attributes.ContentType, attributes.ContentHeaders,
-            attributes.Metadata, checksumAlgorithm, checksumType, timeProvider.GetUtcNow());
-        return await index.TryCreateUploadAsync(bucket, upload, cancellationToken)
+            Guid.NewGuid().ToString("N"),
+            key,
+            attributes.ContentType,
+            attributes.ContentHeaders,
+            attributes.Metadata,
+            checksumAlgorithm,
+            checksumType,
+            timeProvider.GetUtcNow()
+        );
+        return await index
+            .TryCreateUploadAsync(bucket, upload, cancellationToken)
             .ConfigureAwait(false)
             ? upload.UploadId
             : null;
@@ -244,23 +298,36 @@ public sealed class StorageEngine(
         string uploadId,
         int partNumber,
         Stream content,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
-        var upload = await index.FindUploadAsync(bucket, key, uploadId, cancellationToken)
+        var upload = await index
+            .FindUploadAsync(bucket, key, uploadId, cancellationToken)
             .ConfigureAwait(false);
         if (upload is null)
         {
             return new UploadPartOutcome(UploadExists: false, null, null);
         }
 
-        var write = await blobs.WriteAsync(content, upload.ChecksumAlgorithm, cancellationToken)
+        var write = await blobs
+            .WriteAsync(content, upload.ChecksumAlgorithm, cancellationToken)
             .ConfigureAwait(false);
-        var stored = await index.PutPartAsync(
-            bucket, key, uploadId,
-            new PartRecord(
-                partNumber, write.BlobId, write.Size, write.ContentMd5Hex, write.Checksum,
-                timeProvider.GetUtcNow()),
-            cancellationToken).ConfigureAwait(false);
+        var stored = await index
+            .PutPartAsync(
+                bucket,
+                key,
+                uploadId,
+                new PartRecord(
+                    partNumber,
+                    write.BlobId,
+                    write.Size,
+                    write.ContentMd5Hex,
+                    write.Checksum,
+                    timeProvider.GetUtcNow()
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
         if (!stored.UploadExists)
         {
             blobs.Delete(write.BlobId);
@@ -273,8 +340,10 @@ public sealed class StorageEngine(
         }
 
         return new UploadPartOutcome(
-            UploadExists: true, write.ContentMd5Hex,
-            new ChecksumValue(upload.ChecksumAlgorithm, write.Checksum!));
+            UploadExists: true,
+            write.ContentMd5Hex,
+            new ChecksumValue(upload.ChecksumAlgorithm, write.Checksum!)
+        );
     }
 
     /// <summary>
@@ -289,17 +358,20 @@ public sealed class StorageEngine(
         string sourceBucket,
         string sourceKey,
         ByteRange? range,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var now = timeProvider.GetUtcNow();
-        var upload = await index.FindUploadAsync(bucket, key, uploadId, cancellationToken)
+        var upload = await index
+            .FindUploadAsync(bucket, key, uploadId, cancellationToken)
             .ConfigureAwait(false);
         if (upload is null)
         {
             return new UploadPartCopyOutcome(UploadPartCopyStatus.NoSuchUpload, null, null, now);
         }
 
-        var source = await index.FindObjectAsync(sourceBucket, sourceKey, cancellationToken)
+        var source = await index
+            .FindObjectAsync(sourceBucket, sourceKey, cancellationToken)
             .ConfigureAwait(false);
         if (source is null)
         {
@@ -308,16 +380,38 @@ public sealed class StorageEngine(
 
         if (range is { } requested && requested.To >= source.Size)
         {
-            return new UploadPartCopyOutcome(UploadPartCopyStatus.RangeBeyondSource, null, null, now);
+            return new UploadPartCopyOutcome(
+                UploadPartCopyStatus.RangeBeyondSource,
+                null,
+                null,
+                now
+            );
         }
 
-        var copy = await blobs.CopyRangeAsync(
-            source.BlobId, range ?? new ByteRange(0, source.Size - 1), upload.ChecksumAlgorithm,
-            cancellationToken).ConfigureAwait(false);
-        var stored = await index.PutPartAsync(
-            bucket, key, uploadId,
-            new PartRecord(partNumber, copy.BlobId, copy.Size, copy.ContentMd5Hex, copy.Checksum, now),
-            cancellationToken).ConfigureAwait(false);
+        var copy = await blobs
+            .CopyRangeAsync(
+                source.BlobId,
+                range ?? new ByteRange(0, source.Size - 1),
+                upload.ChecksumAlgorithm,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        var stored = await index
+            .PutPartAsync(
+                bucket,
+                key,
+                uploadId,
+                new PartRecord(
+                    partNumber,
+                    copy.BlobId,
+                    copy.Size,
+                    copy.ContentMd5Hex,
+                    copy.Checksum,
+                    now
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
         if (!stored.UploadExists)
         {
             blobs.Delete(copy.BlobId);
@@ -330,8 +424,11 @@ public sealed class StorageEngine(
         }
 
         return new UploadPartCopyOutcome(
-            UploadPartCopyStatus.Copied, copy.ContentMd5Hex,
-            new ChecksumValue(upload.ChecksumAlgorithm, copy.Checksum!), now);
+            UploadPartCopyStatus.Copied,
+            copy.ContentMd5Hex,
+            new ChecksumValue(upload.ChecksumAlgorithm, copy.Checksum!),
+            now
+        );
     }
 
     /// <summary>
@@ -346,11 +443,13 @@ public sealed class StorageEngine(
         IReadOnlyList<RequestedPart> requestedParts,
         ChecksumValue? expectedChecksum,
         WriteCondition? condition,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         ArgumentNullException.ThrowIfNull(requestedParts);
 
-        var upload = await index.FindUploadAsync(bucket, key, uploadId, cancellationToken)
+        var upload = await index
+            .FindUploadAsync(bucket, key, uploadId, cancellationToken)
             .ConfigureAwait(false);
         if (upload is null)
         {
@@ -366,16 +465,23 @@ public sealed class StorageEngine(
             }
         }
 
-        var storedParts = (await index
-            .ListPartsAsync(bucket, key, uploadId, cancellationToken).ConfigureAwait(false))
-            .ToDictionary(p => p.PartNumber);
+        var storedParts = (
+            await index
+                .ListPartsAsync(bucket, key, uploadId, cancellationToken)
+                .ConfigureAwait(false)
+        ).ToDictionary(p => p.PartNumber);
         var assembled = new List<PartRecord>(requestedParts.Count);
         foreach (var requested in requestedParts)
         {
-            if (!storedParts.TryGetValue(requested.PartNumber, out var part)
+            if (
+                !storedParts.TryGetValue(requested.PartNumber, out var part)
                 || !string.Equals(
-                    part.ETag, requested.ETag.Trim('"'), StringComparison.OrdinalIgnoreCase)
-                || !Matches(requested.Checksum, upload.ChecksumAlgorithm, part.Checksum))
+                    part.ETag,
+                    requested.ETag.Trim('"'),
+                    StringComparison.OrdinalIgnoreCase
+                )
+                || !Matches(requested.Checksum, upload.ChecksumAlgorithm, part.Checksum)
+            )
             {
                 return new CompleteUploadOutcome(CompleteUploadStatus.InvalidPart, null, null);
             }
@@ -394,9 +500,15 @@ public sealed class StorageEngine(
             return new CompleteUploadOutcome(CompleteUploadStatus.EntityTooSmall, null, null);
         }
 
-        var concatenated = await blobs.ConcatenateAsync(
-            [.. assembled.Select(p => p.BlobId)], cancellationToken).ConfigureAwait(false);
-        var checksum = await ObjectChecksumAsync(upload, assembled, concatenated.BlobId, cancellationToken)
+        var concatenated = await blobs
+            .ConcatenateAsync([.. assembled.Select(p => p.BlobId)], cancellationToken)
+            .ConfigureAwait(false);
+        var checksum = await ObjectChecksumAsync(
+                upload,
+                assembled,
+                concatenated.BlobId,
+                cancellationToken
+            )
             .ConfigureAwait(false);
         if (!Matches(expectedChecksum, checksum?.Algorithm, checksum?.Value))
         {
@@ -405,9 +517,17 @@ public sealed class StorageEngine(
         }
 
         var record = new ObjectRecord(
-            key, concatenated.BlobId, concatenated.Size, MultipartETag(assembled),
-            [.. assembled.Select(part => new CompletedPart(part.Size, part.Checksum))], checksum,
-            upload.ContentType, upload.ContentHeaders, upload.Metadata, timeProvider.GetUtcNow());
+            key,
+            concatenated.BlobId,
+            concatenated.Size,
+            MultipartETag(assembled),
+            [.. assembled.Select(part => new CompletedPart(part.Size, part.Checksum))],
+            checksum,
+            upload.ContentType,
+            upload.ContentHeaders,
+            upload.Metadata,
+            timeProvider.GetUtcNow()
+        );
         var completed = await index
             .CompleteUploadAsync(bucket, uploadId, record, condition, cancellationToken)
             .ConfigureAwait(false);
@@ -432,10 +552,15 @@ public sealed class StorageEngine(
 
     /// <summary>True when nothing was declared, or the declared checksum is the recorded one.</summary>
     private static bool Matches(
-        ChecksumValue? declared, ChecksumAlgorithm? algorithm, string? value) =>
+        ChecksumValue? declared,
+        ChecksumAlgorithm? algorithm,
+        string? value
+    ) =>
         declared is null
-        || (declared.Algorithm == algorithm
-            && string.Equals(declared.Value, value, StringComparison.Ordinal));
+        || (
+            declared.Algorithm == algorithm
+            && string.Equals(declared.Value, value, StringComparison.Ordinal)
+        );
 
     /// <summary>
     /// The completed object's checksum: over its assembled bytes for a full-object
@@ -446,11 +571,13 @@ public sealed class StorageEngine(
         MultipartUpload upload,
         List<PartRecord> parts,
         string blobId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         if (upload.ChecksumType == ChecksumType.FullObject)
         {
-            var value = await blobs.ComputeChecksumAsync(blobId, upload.ChecksumAlgorithm, cancellationToken)
+            var value = await blobs
+                .ComputeChecksumAsync(blobId, upload.ChecksumAlgorithm, cancellationToken)
                 .ConfigureAwait(false);
             return new Checksum(upload.ChecksumAlgorithm, value, ChecksumType.FullObject);
         }
@@ -462,14 +589,23 @@ public sealed class StorageEngine(
 
         return new Checksum(
             upload.ChecksumAlgorithm,
-            ChecksumAlgorithms.Composite(upload.ChecksumAlgorithm, parts.Select(part => part.Checksum!)),
-            ChecksumType.Composite);
+            ChecksumAlgorithms.Composite(
+                upload.ChecksumAlgorithm,
+                parts.Select(part => part.Checksum!)
+            ),
+            ChecksumType.Composite
+        );
     }
 
     public async Task<bool> AbortUploadAsync(
-        string bucket, string key, string uploadId, CancellationToken cancellationToken)
+        string bucket,
+        string key,
+        string uploadId,
+        CancellationToken cancellationToken
+    )
     {
-        var partBlobs = await index.DeleteUploadAsync(bucket, key, uploadId, cancellationToken)
+        var partBlobs = await index
+            .DeleteUploadAsync(bucket, key, uploadId, cancellationToken)
             .ConfigureAwait(false);
         if (partBlobs is null)
         {
@@ -496,9 +632,11 @@ public sealed class StorageEngine(
         string destinationKey,
         ObjectAttributes? replacement,
         ChecksumAlgorithm? checksumAlgorithm,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
-        var source = await index.FindObjectAsync(sourceBucket, sourceKey, cancellationToken)
+        var source = await index
+            .FindObjectAsync(sourceBucket, sourceKey, cancellationToken)
             .ConfigureAwait(false);
         if (source is null)
         {
@@ -506,12 +644,16 @@ public sealed class StorageEngine(
         }
 
         var blobId = await blobs.CopyAsync(source.BlobId, cancellationToken).ConfigureAwait(false);
-        var checksum = checksumAlgorithm is { } algorithm && algorithm != source.Checksum?.Algorithm
-            ? new Checksum(
-                algorithm,
-                await blobs.ComputeChecksumAsync(blobId, algorithm, cancellationToken).ConfigureAwait(false),
-                ChecksumType.FullObject)
-            : source.Checksum;
+        var checksum =
+            checksumAlgorithm is { } algorithm && algorithm != source.Checksum?.Algorithm
+                ? new Checksum(
+                    algorithm,
+                    await blobs
+                        .ComputeChecksumAsync(blobId, algorithm, cancellationToken)
+                        .ConfigureAwait(false),
+                    ChecksumType.FullObject
+                )
+                : source.Checksum;
         var record = source with
         {
             Key = destinationKey,
@@ -522,7 +664,8 @@ public sealed class StorageEngine(
             Metadata = replacement?.Metadata ?? source.Metadata,
             LastModified = timeProvider.GetUtcNow(),
         };
-        var stored = await index.PutObjectAsync(destinationBucket, record, null, cancellationToken)
+        var stored = await index
+            .PutObjectAsync(destinationBucket, record, null, cancellationToken)
             .ConfigureAwait(false);
         if (stored.Status != PutObjectStatus.Stored)
         {
@@ -547,15 +690,22 @@ public sealed class StorageEngine(
         string bucket,
         string key,
         IReadOnlyList<RequestedPart> requestedParts,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var expectedETag = MultipartETag(requestedParts.Select(part => part.ETag.Trim('"')));
-        var existing = await index.FindObjectAsync(bucket, key, cancellationToken)
+        var existing = await index
+            .FindObjectAsync(bucket, key, cancellationToken)
             .ConfigureAwait(false);
-        return expectedETag is not null
+        return
+            expectedETag is not null
             && existing is not null
             && string.Equals(existing.ETag, expectedETag, StringComparison.OrdinalIgnoreCase)
-            ? new CompleteUploadOutcome(CompleteUploadStatus.Completed, existing.ETag, existing.Checksum)
+            ? new CompleteUploadOutcome(
+                CompleteUploadStatus.Completed,
+                existing.ETag,
+                existing.Checksum
+            )
             : new CompleteUploadOutcome(CompleteUploadStatus.NoSuchUpload, null, null);
     }
 

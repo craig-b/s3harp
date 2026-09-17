@@ -15,7 +15,9 @@ public sealed class S3HarpOptionsTests
     [Fact]
     public void ReadsTheSettingsByTheirEnvironmentNames()
     {
-        var options = S3HarpOptions.Load(Configuration(Complete, ("DOMAIN", "s3.test"), ("BIND", "0.0.0.0"), ("PORT", "9010")));
+        var options = S3HarpOptions.Load(
+            Configuration(Complete, ("DOMAIN", "s3.test"), ("BIND", "0.0.0.0"), ("PORT", "9010"))
+        );
 
         Assert.Equal("S3HARPEXAMPLEKEY", options.AccessKeyId);
         Assert.Equal("secret", options.SecretAccessKey);
@@ -39,7 +41,9 @@ public sealed class S3HarpOptionsTests
     [Fact]
     public void BracketsAnIpv6BindAddressInTheListenUrl()
     {
-        var options = S3HarpOptions.Load(Configuration(Complete, ("BIND", "::1"), ("PORT", "9000")));
+        var options = S3HarpOptions.Load(
+            Configuration(Complete, ("BIND", "::1"), ("PORT", "9000"))
+        );
 
         Assert.Equal("http://[::1]:9000", options.ListenUrl);
     }
@@ -52,7 +56,9 @@ public sealed class S3HarpOptionsTests
     {
         var settings = new Dictionary<string, string?>(Complete) { [missing] = " " };
 
-        var exception = Assert.Throws<StartupException>(() => S3HarpOptions.Load(Configuration(settings)));
+        var exception = Assert.Throws<StartupException>(() =>
+            S3HarpOptions.Load(Configuration(settings))
+        );
 
         Assert.Contains("S3HARP_" + missing, exception.Message, StringComparison.Ordinal);
     }
@@ -63,8 +69,9 @@ public sealed class S3HarpOptionsTests
     [InlineData("many")]
     public void RefusesAPortOutsideTheRange(string port)
     {
-        var exception = Assert.Throws<StartupException>(
-            () => S3HarpOptions.Load(Configuration(Complete, ("PORT", port))));
+        var exception = Assert.Throws<StartupException>(() =>
+            S3HarpOptions.Load(Configuration(Complete, ("PORT", port)))
+        );
 
         Assert.Contains("S3HARP_PORT", exception.Message, StringComparison.Ordinal);
     }
@@ -78,8 +85,9 @@ public sealed class S3HarpOptionsTests
     [Fact]
     public void ReportsEveryProblemAtOnce()
     {
-        var exception = Assert.Throws<StartupException>(
-            () => S3HarpOptions.Load(Configuration(new Dictionary<string, string?>(), ("PORT", "70000"))));
+        var exception = Assert.Throws<StartupException>(() =>
+            S3HarpOptions.Load(Configuration(new Dictionary<string, string?>(), ("PORT", "70000")))
+        );
 
         Assert.Contains("S3HARP_ACCESS_KEY_ID", exception.Message, StringComparison.Ordinal);
         Assert.Contains("S3HARP_DATA_DIR", exception.Message, StringComparison.Ordinal);
@@ -87,7 +95,9 @@ public sealed class S3HarpOptionsTests
     }
 
     private static IConfiguration Configuration(
-        IReadOnlyDictionary<string, string?> settings, params (string Key, string Value)[] extra)
+        IReadOnlyDictionary<string, string?> settings,
+        params (string Key, string Value)[] extra
+    )
     {
         var all = new Dictionary<string, string?>(settings);
         foreach (var (key, value) in extra)

@@ -14,13 +14,17 @@ public sealed class ListObjectsTests : IDisposable
     public async Task ListObjectsV2_ReturnsObjectsAndCommonPrefixes()
     {
         using var s3 = await CreateClientWithKeys(
-            "a.txt", "docs/one.txt", "docs/two.txt", "photos/pic.jpg", "z.txt");
+            "a.txt",
+            "docs/one.txt",
+            "docs/two.txt",
+            "photos/pic.jpg",
+            "z.txt"
+        );
 
-        var response = await s3.ListObjectsV2Async(new ListObjectsV2Request
-        {
-            BucketName = Bucket,
-            Delimiter = "/",
-        }, Token);
+        var response = await s3.ListObjectsV2Async(
+            new ListObjectsV2Request { BucketName = Bucket, Delimiter = "/" },
+            Token
+        );
 
         Assert.Equal(["a.txt", "z.txt"], (response.S3Objects ?? []).Select(o => o.Key));
         Assert.Equal(["docs/", "photos/"], response.CommonPrefixes ?? []);
@@ -32,15 +36,15 @@ public sealed class ListObjectsTests : IDisposable
     {
         using var s3 = await CreateClientWithKeys("a.txt", "docs/one.txt", "docs/two.txt");
 
-        var response = await s3.ListObjectsV2Async(new ListObjectsV2Request
-        {
-            BucketName = Bucket,
-            Prefix = "docs/",
-        }, Token);
+        var response = await s3.ListObjectsV2Async(
+            new ListObjectsV2Request { BucketName = Bucket, Prefix = "docs/" },
+            Token
+        );
 
         Assert.Equal(
             ["docs/one.txt", "docs/two.txt"],
-            (response.S3Objects ?? []).Select(o => o.Key));
+            (response.S3Objects ?? []).Select(o => o.Key)
+        );
     }
 
     [Fact]
@@ -52,16 +56,18 @@ public sealed class ListObjectsTests : IDisposable
 
         do
         {
-            var response = await s3.ListObjectsV2Async(new ListObjectsV2Request
-            {
-                BucketName = Bucket,
-                MaxKeys = 2,
-                ContinuationToken = token,
-            }, Token);
+            var response = await s3.ListObjectsV2Async(
+                new ListObjectsV2Request
+                {
+                    BucketName = Bucket,
+                    MaxKeys = 2,
+                    ContinuationToken = token,
+                },
+                Token
+            );
             collected.AddRange((response.S3Objects ?? []).Select(o => o.Key));
             token = response.NextContinuationToken;
-        }
-        while (token is not null);
+        } while (token is not null);
 
         Assert.Equal(["a", "b", "c", "d", "e"], collected);
     }
@@ -71,11 +77,10 @@ public sealed class ListObjectsTests : IDisposable
     {
         using var s3 = await CreateClientWithKeys("plus+and space.txt", "docs/nested key.txt");
 
-        var response = await s3.ListObjectsV2Async(new ListObjectsV2Request
-        {
-            BucketName = Bucket,
-            Encoding = EncodingType.Url,
-        }, Token);
+        var response = await s3.ListObjectsV2Async(
+            new ListObjectsV2Request { BucketName = Bucket, Encoding = EncodingType.Url },
+            Token
+        );
 
         // The .NET SDK hands back the wire values verbatim; decoding them
         // reproduces the original keys, which is the client contract.
@@ -83,7 +88,8 @@ public sealed class ListObjectsTests : IDisposable
         Assert.Equal(["docs/nested%20key.txt", "plus%2Band%20space.txt"], keys);
         Assert.Equal(
             ["docs/nested key.txt", "plus+and space.txt"],
-            keys.Select(Uri.UnescapeDataString));
+            keys.Select(Uri.UnescapeDataString)
+        );
     }
 
     [Fact]
@@ -91,11 +97,10 @@ public sealed class ListObjectsTests : IDisposable
     {
         using var s3 = await CreateClientWithKeys("a", "b", "c");
 
-        var response = await s3.ListObjectsV2Async(new ListObjectsV2Request
-        {
-            BucketName = Bucket,
-            StartAfter = "a",
-        }, Token);
+        var response = await s3.ListObjectsV2Async(
+            new ListObjectsV2Request { BucketName = Bucket, StartAfter = "a" },
+            Token
+        );
 
         Assert.Equal(["b", "c"], (response.S3Objects ?? []).Select(o => o.Key));
     }
@@ -110,18 +115,20 @@ public sealed class ListObjectsTests : IDisposable
 
         do
         {
-            var response = await s3.ListObjectsAsync(new ListObjectsRequest
-            {
-                BucketName = Bucket,
-                MaxKeys = 2,
-                Marker = marker,
-            }, Token);
+            var response = await s3.ListObjectsAsync(
+                new ListObjectsRequest
+                {
+                    BucketName = Bucket,
+                    MaxKeys = 2,
+                    Marker = marker,
+                },
+                Token
+            );
             var keys = (response.S3Objects ?? []).Select(o => o.Key).ToList();
             collected.AddRange(keys);
             truncated = response.IsTruncated ?? false;
             marker = response.NextMarker ?? keys.LastOrDefault();
-        }
-        while (truncated);
+        } while (truncated);
 
         Assert.Equal(["a", "b", "c", "d", "e"], collected);
     }
@@ -136,25 +143,30 @@ public sealed class ListObjectsTests : IDisposable
 
         do
         {
-            var response = await s3.ListVersionsAsync(new ListVersionsRequest
-            {
-                BucketName = Bucket,
-                MaxKeys = 2,
-                KeyMarker = keyMarker,
-            }, Token);
+            var response = await s3.ListVersionsAsync(
+                new ListVersionsRequest
+                {
+                    BucketName = Bucket,
+                    MaxKeys = 2,
+                    KeyMarker = keyMarker,
+                },
+                Token
+            );
             collected.AddRange(response.Versions ?? []);
             truncated = response.IsTruncated ?? false;
             keyMarker = response.NextKeyMarker;
-        }
-        while (truncated);
+        } while (truncated);
 
         Assert.Equal(["a", "b", "c"], collected.Select(v => v.Key));
-        Assert.All(collected, v =>
-        {
-            Assert.Equal("null", v.VersionId);
-            Assert.True(v.IsLatest);
-            Assert.NotEqual(true, v.IsDeleteMarker);
-        });
+        Assert.All(
+            collected,
+            v =>
+            {
+                Assert.Equal("null", v.VersionId);
+                Assert.True(v.IsLatest);
+                Assert.NotEqual(true, v.IsDeleteMarker);
+            }
+        );
     }
 
     [Fact]
@@ -162,17 +174,19 @@ public sealed class ListObjectsTests : IDisposable
     {
         using var s3 = await CreateClientWithKeys("asdf/", "asdf/x");
 
-        var grouped = await s3.ListObjectsV2Async(new ListObjectsV2Request
-        {
-            BucketName = Bucket,
-            Delimiter = "/",
-        }, Token);
-        var beneath = await s3.ListObjectsV2Async(new ListObjectsV2Request
-        {
-            BucketName = Bucket,
-            Prefix = "asdf/",
-            Delimiter = "/",
-        }, Token);
+        var grouped = await s3.ListObjectsV2Async(
+            new ListObjectsV2Request { BucketName = Bucket, Delimiter = "/" },
+            Token
+        );
+        var beneath = await s3.ListObjectsV2Async(
+            new ListObjectsV2Request
+            {
+                BucketName = Bucket,
+                Prefix = "asdf/",
+                Delimiter = "/",
+            },
+            Token
+        );
 
         Assert.Empty(grouped.S3Objects ?? []);
         Assert.Equal(["asdf/"], grouped.CommonPrefixes ?? []);
@@ -189,12 +203,15 @@ public sealed class ListObjectsTests : IDisposable
         await s3.PutBucketAsync(new PutBucketRequest { BucketName = Bucket }, Token);
         foreach (var key in keys)
         {
-            await s3.PutObjectAsync(new PutObjectRequest
-            {
-                BucketName = Bucket,
-                Key = key,
-                ContentBody = key,
-            }, Token);
+            await s3.PutObjectAsync(
+                new PutObjectRequest
+                {
+                    BucketName = Bucket,
+                    Key = key,
+                    ContentBody = key,
+                },
+                Token
+            );
         }
 
         return s3;

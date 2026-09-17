@@ -29,7 +29,10 @@ public sealed class ChecksumHeadersTests
     [Fact]
     public void FindsTheChecksumARequestDeclaresInItsHeaders()
     {
-        var headers = new HeaderDictionary { ["x-amz-checksum-sha1"] = "gLagvNJpcFuHJZa/U8arrgX+MoM=" };
+        var headers = new HeaderDictionary
+        {
+            ["x-amz-checksum-sha1"] = "gLagvNJpcFuHJZa/U8arrgX+MoM=",
+        };
 
         Assert.True(ChecksumHeaders.TryFindDeclared(headers, out var algorithm, out var declared));
         Assert.Equal(ChecksumAlgorithm.Sha1, algorithm);
@@ -70,7 +73,10 @@ public sealed class ChecksumHeadersTests
     [Fact]
     public void WithoutAnyChecksumRequest_TheUploadAlgorithmIsCrc64Nvme()
     {
-        Assert.Equal(ChecksumAlgorithm.Crc64Nvme, ChecksumHeaders.UploadAlgorithm(new HeaderDictionary()));
+        Assert.Equal(
+            ChecksumAlgorithm.Crc64Nvme,
+            ChecksumHeaders.UploadAlgorithm(new HeaderDictionary())
+        );
     }
 
     [Fact]
@@ -79,7 +85,9 @@ public sealed class ChecksumHeadersTests
         var headers = new HeaderDictionary();
 
         ChecksumHeaders.Write(
-            headers, new Checksum(ChecksumAlgorithm.Crc64Nvme, "Qeh8oXvGiSo=", ChecksumType.FullObject));
+            headers,
+            new Checksum(ChecksumAlgorithm.Crc64Nvme, "Qeh8oXvGiSo=", ChecksumType.FullObject)
+        );
 
         Assert.Equal("Qeh8oXvGiSo=", headers["x-amz-checksum-crc64nvme"]);
         Assert.Equal("FULL_OBJECT", headers["x-amz-checksum-type"]);

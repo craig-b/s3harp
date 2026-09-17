@@ -18,14 +18,17 @@ public sealed class ObjectTests : IDisposable
     {
         using var s3 = await CreateClientWithBucket();
 
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "greeting.txt",
-            ContentBody = "Hello, S3Harp!",
-            ContentType = "text/plain",
-            Metadata = { ["note"] = "from-test" },
-        }, Token);
+        await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "greeting.txt",
+                ContentBody = "Hello, S3Harp!",
+                ContentType = "text/plain",
+                Metadata = { ["note"] = "from-test" },
+            },
+            Token
+        );
         using var response = await s3.GetObjectAsync(Bucket, "greeting.txt", Token);
 
         using var reader = new StreamReader(response.ResponseStream);
@@ -40,11 +43,13 @@ public sealed class ObjectTests : IDisposable
         // S3 metadata values are UTF-8 on the wire: clients such as boto3 send
         // the UTF-8 bytes and expect the same bytes back.
         using var s3 = await CreateClientWithBucket();
-        using var rawClient = new HttpClient(new SocketsHttpHandler
-        {
-            RequestHeaderEncodingSelector = (_, _) => Encoding.UTF8,
-            ResponseHeaderEncodingSelector = (_, _) => Encoding.UTF8,
-        });
+        using var rawClient = new HttpClient(
+            new SocketsHttpHandler
+            {
+                RequestHeaderEncodingSelector = (_, _) => Encoding.UTF8,
+                ResponseHeaderEncodingSelector = (_, _) => Encoding.UTF8,
+            }
+        );
         var put = new HttpRequestMessage(HttpMethod.Put, await PresignedUrl(s3, HttpVerb.PUT))
         {
             Content = new StringContent("Hello"),
@@ -57,32 +62,40 @@ public sealed class ObjectTests : IDisposable
 
         Assert.Equal(HttpStatusCode.OK, fetched.StatusCode);
         Assert.Equal(
-            "Hello W\u00f6rld\u00e9", Assert.Single(fetched.Headers.GetValues("x-amz-meta-note")));
+            "Hello W\u00f6rld\u00e9",
+            Assert.Single(fetched.Headers.GetValues("x-amz-meta-note"))
+        );
     }
 
     [Fact]
     public async Task CopyObject_WithReplaceDirective_TakesTheNewContentTypeAndMetadata()
     {
         using var s3 = await CreateClientWithBucket();
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "song",
-            ContentBody = "content",
-            ContentType = "audio/mpeg",
-            Metadata = { ["note"] = "old" },
-        }, Token);
+        await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "song",
+                ContentBody = "content",
+                ContentType = "audio/mpeg",
+                Metadata = { ["note"] = "old" },
+            },
+            Token
+        );
 
-        await s3.CopyObjectAsync(new CopyObjectRequest
-        {
-            SourceBucket = Bucket,
-            SourceKey = "song",
-            DestinationBucket = Bucket,
-            DestinationKey = "copy",
-            MetadataDirective = S3MetadataDirective.REPLACE,
-            ContentType = "audio/ogg",
-            Metadata = { ["note"] = "new" },
-        }, Token);
+        await s3.CopyObjectAsync(
+            new CopyObjectRequest
+            {
+                SourceBucket = Bucket,
+                SourceKey = "song",
+                DestinationBucket = Bucket,
+                DestinationKey = "copy",
+                MetadataDirective = S3MetadataDirective.REPLACE,
+                ContentType = "audio/ogg",
+                Metadata = { ["note"] = "new" },
+            },
+            Token
+        );
         var copied = await s3.GetObjectMetadataAsync(Bucket, "copy", Token);
 
         Assert.Equal("audio/ogg", copied.Headers.ContentType);
@@ -93,20 +106,27 @@ public sealed class ObjectTests : IDisposable
     public async Task GetObject_WithAMatchingIfNoneMatch_ReportsNotModified()
     {
         using var s3 = await CreateClientWithBucket();
-        var stored = await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "greeting.txt",
-            ContentBody = "Hello",
-        }, Token);
-
-        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() => s3.GetObjectAsync(
-            new GetObjectRequest
+        var stored = await s3.PutObjectAsync(
+            new PutObjectRequest
             {
                 BucketName = Bucket,
                 Key = "greeting.txt",
-                EtagToNotMatch = stored.ETag,
-            }, Token));
+                ContentBody = "Hello",
+            },
+            Token
+        );
+
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() =>
+            s3.GetObjectAsync(
+                new GetObjectRequest
+                {
+                    BucketName = Bucket,
+                    Key = "greeting.txt",
+                    EtagToNotMatch = stored.ETag,
+                },
+                Token
+            )
+        );
 
         Assert.Equal(HttpStatusCode.NotModified, exception.StatusCode);
     }
@@ -115,20 +135,27 @@ public sealed class ObjectTests : IDisposable
     public async Task GetObject_WithAMismatchedIfMatch_ReportsPreconditionFailed()
     {
         using var s3 = await CreateClientWithBucket();
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "greeting.txt",
-            ContentBody = "Hello",
-        }, Token);
-
-        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() => s3.GetObjectAsync(
-            new GetObjectRequest
+        await s3.PutObjectAsync(
+            new PutObjectRequest
             {
                 BucketName = Bucket,
                 Key = "greeting.txt",
-                EtagToMatch = "\"ABCORZ\"",
-            }, Token));
+                ContentBody = "Hello",
+            },
+            Token
+        );
+
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() =>
+            s3.GetObjectAsync(
+                new GetObjectRequest
+                {
+                    BucketName = Bucket,
+                    Key = "greeting.txt",
+                    EtagToMatch = "\"ABCORZ\"",
+                },
+                Token
+            )
+        );
 
         Assert.Equal(HttpStatusCode.PreconditionFailed, exception.StatusCode);
         Assert.Equal("PreconditionFailed", exception.ErrorCode);
@@ -138,22 +165,29 @@ public sealed class ObjectTests : IDisposable
     public async Task CopyObject_WithAMismatchedSourceETag_ReportsPreconditionFailed()
     {
         using var s3 = await CreateClientWithBucket();
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "song",
-            ContentBody = "content",
-        }, Token);
-
-        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() => s3.CopyObjectAsync(
-            new CopyObjectRequest
+        await s3.PutObjectAsync(
+            new PutObjectRequest
             {
-                SourceBucket = Bucket,
-                SourceKey = "song",
-                DestinationBucket = Bucket,
-                DestinationKey = "copy",
-                ETagToMatch = "\"ABCORZ\"",
-            }, Token));
+                BucketName = Bucket,
+                Key = "song",
+                ContentBody = "content",
+            },
+            Token
+        );
+
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() =>
+            s3.CopyObjectAsync(
+                new CopyObjectRequest
+                {
+                    SourceBucket = Bucket,
+                    SourceKey = "song",
+                    DestinationBucket = Bucket,
+                    DestinationKey = "copy",
+                    ETagToMatch = "\"ABCORZ\"",
+                },
+                Token
+            )
+        );
 
         Assert.Equal("PreconditionFailed", exception.ErrorCode);
     }
@@ -171,8 +205,9 @@ public sealed class ObjectTests : IDisposable
         };
 
         await s3.PutObjectAsync(request, Token);
-        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
-            () => s3.PutObjectAsync(request, Token));
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() =>
+            s3.PutObjectAsync(request, Token)
+        );
 
         Assert.Equal(HttpStatusCode.PreconditionFailed, exception.StatusCode);
         Assert.Equal("PreconditionFailed", exception.ErrorCode);
@@ -182,21 +217,28 @@ public sealed class ObjectTests : IDisposable
     public async Task PutObject_WithAMismatchedIfMatch_ReportsPreconditionFailed()
     {
         using var s3 = await CreateClientWithBucket();
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "guarded.txt",
-            ContentBody = "first",
-        }, Token);
-
-        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() => s3.PutObjectAsync(
+        await s3.PutObjectAsync(
             new PutObjectRequest
             {
                 BucketName = Bucket,
                 Key = "guarded.txt",
-                ContentBody = "second",
-                IfMatch = "\"ABCORZ\"",
-            }, Token));
+                ContentBody = "first",
+            },
+            Token
+        );
+
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() =>
+            s3.PutObjectAsync(
+                new PutObjectRequest
+                {
+                    BucketName = Bucket,
+                    Key = "guarded.txt",
+                    ContentBody = "second",
+                    IfMatch = "\"ABCORZ\"",
+                },
+                Token
+            )
+        );
 
         Assert.Equal("PreconditionFailed", exception.ErrorCode);
     }
@@ -232,25 +274,31 @@ public sealed class ObjectTests : IDisposable
     public async Task GetObject_WithResponseHeaderOverrides_ServesThemInPlaceOfTheStoredOnes()
     {
         using var s3 = await CreateClientWithBucket();
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "report.txt",
-            ContentBody = "content",
-            ContentType = "text/plain",
-        }, Token);
-
-        using var response = await s3.GetObjectAsync(new GetObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "report.txt",
-            ResponseHeaderOverrides =
+        await s3.PutObjectAsync(
+            new PutObjectRequest
             {
-                ContentType = "application/x-report",
-                ContentDisposition = "attachment; filename=report.txt",
-                CacheControl = "no-cache",
+                BucketName = Bucket,
+                Key = "report.txt",
+                ContentBody = "content",
+                ContentType = "text/plain",
             },
-        }, Token);
+            Token
+        );
+
+        using var response = await s3.GetObjectAsync(
+            new GetObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "report.txt",
+                ResponseHeaderOverrides =
+                {
+                    ContentType = "application/x-report",
+                    ContentDisposition = "attachment; filename=report.txt",
+                    CacheControl = "no-cache",
+                },
+            },
+            Token
+        );
 
         Assert.Equal("application/x-report", response.Headers.ContentType);
         Assert.Equal("attachment; filename=report.txt", response.Headers.ContentDisposition);
@@ -264,15 +312,19 @@ public sealed class ObjectTests : IDisposable
     {
         using var s3 = await CreateClientWithBucket();
 
-        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
-            () => s3.PutObjectAsync(new PutObjectRequest
-            {
-                BucketName = Bucket,
-                Key = "checked.txt",
-                ContentBody = "content",
-                ChecksumAlgorithm = ChecksumAlgorithm.SHA256,
-                ChecksumSHA256 = "arcu6553sHVAiX4MjW0j7I7vD4w6R+Gz9Ok0Q9lTa+0=",
-            }, Token));
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() =>
+            s3.PutObjectAsync(
+                new PutObjectRequest
+                {
+                    BucketName = Bucket,
+                    Key = "checked.txt",
+                    ContentBody = "content",
+                    ChecksumAlgorithm = ChecksumAlgorithm.SHA256,
+                    ChecksumSHA256 = "arcu6553sHVAiX4MjW0j7I7vD4w6R+Gz9Ok0Q9lTa+0=",
+                },
+                Token
+            )
+        );
 
         Assert.Equal("BadDigest", exception.ErrorCode);
         Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
@@ -283,20 +335,26 @@ public sealed class ObjectTests : IDisposable
     {
         using var s3 = await CreateClientWithBucket();
 
-        var put = await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "checked.txt",
-            ContentBody = "Hello, S3Harp!",
-            ChecksumAlgorithm = ChecksumAlgorithm.SHA256,
-        }, Token);
+        var put = await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "checked.txt",
+                ContentBody = "Hello, S3Harp!",
+                ChecksumAlgorithm = ChecksumAlgorithm.SHA256,
+            },
+            Token
+        );
         var silent = await s3.GetObjectMetadataAsync(Bucket, "checked.txt", Token);
-        var enabled = await s3.GetObjectMetadataAsync(new GetObjectMetadataRequest
-        {
-            BucketName = Bucket,
-            Key = "checked.txt",
-            ChecksumMode = ChecksumMode.ENABLED,
-        }, Token);
+        var enabled = await s3.GetObjectMetadataAsync(
+            new GetObjectMetadataRequest
+            {
+                BucketName = Bucket,
+                Key = "checked.txt",
+                ChecksumMode = ChecksumMode.ENABLED,
+            },
+            Token
+        );
 
         Assert.Equal("Aj0Lx1vWnbGF+irlCT3Pa4HNGctHtn3/Q49ApNekoy8=", put.ChecksumSHA256);
         Assert.Null(silent.ChecksumSHA256);
@@ -309,12 +367,15 @@ public sealed class ObjectTests : IDisposable
     {
         using var s3 = await CreateClientWithBucket();
 
-        var put = await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "default.txt",
-            ContentBody = "Hello, S3Harp!",
-        }, Token);
+        var put = await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "default.txt",
+                ContentBody = "Hello, S3Harp!",
+            },
+            Token
+        );
 
         Assert.Equal("NadAdg==", put.ChecksumCRC32);
     }
@@ -325,18 +386,23 @@ public sealed class ObjectTests : IDisposable
         using var pathStyle = await CreateClientWithBucket();
         using var virtualHosted = factory.CreateS3Client(virtualHosted: true);
 
-        await virtualHosted.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "hosted.txt",
-            ContentBody = "via the host",
-        }, Token);
+        await virtualHosted.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "hosted.txt",
+                ContentBody = "via the host",
+            },
+            Token
+        );
 
         using var response = await pathStyle.GetObjectAsync(Bucket, "hosted.txt", Token);
         using var reader = new StreamReader(response.ResponseStream);
         Assert.Equal("via the host", await reader.ReadToEndAsync(Token));
         var listed = await virtualHosted.ListObjectsV2Async(
-            new ListObjectsV2Request { BucketName = Bucket }, Token);
+            new ListObjectsV2Request { BucketName = Bucket },
+            Token
+        );
         Assert.Equal(["hosted.txt"], (listed.S3Objects ?? []).Select(o => o.Key));
     }
 
@@ -345,12 +411,15 @@ public sealed class ObjectTests : IDisposable
     {
         using var s3 = await CreateClientWithBucket();
 
-        var response = await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "known.txt",
-            ContentBody = "hello world",
-        }, Token);
+        var response = await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "known.txt",
+                ContentBody = "hello world",
+            },
+            Token
+        );
 
         Assert.Equal("\"5eb63bbbe01eeed093cb22bb8f5acdc3\"", response.ETag);
     }
@@ -361,12 +430,15 @@ public sealed class ObjectTests : IDisposable
         using var s3 = await CreateClientWithBucket();
         var content = RandomNumberGenerator.GetBytes(300 * 1024);
 
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "large.bin",
-            InputStream = new MemoryStream(content),
-        }, Token);
+        await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "large.bin",
+                InputStream = new MemoryStream(content),
+            },
+            Token
+        );
         using var response = await s3.GetObjectAsync(Bucket, "large.bin", Token);
 
         using var received = new MemoryStream();
@@ -380,12 +452,15 @@ public sealed class ObjectTests : IDisposable
         using var s3 = await CreateClientWithBucket();
         const string key = "folder/sub folder/file with spaces.txt";
 
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = key,
-            ContentBody = "nested",
-        }, Token);
+        await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = key,
+                ContentBody = "nested",
+            },
+            Token
+        );
         using var response = await s3.GetObjectAsync(Bucket, key, Token);
 
         using var reader = new StreamReader(response.ResponseStream);
@@ -397,19 +472,25 @@ public sealed class ObjectTests : IDisposable
     {
         using var s3 = await CreateClientWithBucket();
         var content = RandomNumberGenerator.GetBytes(300 * 1024);
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "ranged.bin",
-            InputStream = new MemoryStream(content),
-        }, Token);
+        await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "ranged.bin",
+                InputStream = new MemoryStream(content),
+            },
+            Token
+        );
 
-        using var response = await s3.GetObjectAsync(new GetObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "ranged.bin",
-            ByteRange = new ByteRange(0, 99),
-        }, Token);
+        using var response = await s3.GetObjectAsync(
+            new GetObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "ranged.bin",
+                ByteRange = new ByteRange(0, 99),
+            },
+            Token
+        );
 
         Assert.Equal(HttpStatusCode.PartialContent, response.HttpStatusCode);
         Assert.Equal(100, response.ContentLength);
@@ -423,22 +504,28 @@ public sealed class ObjectTests : IDisposable
     {
         using var s3 = await CreateClientWithBucket();
         var content = RandomNumberGenerator.GetBytes(300 * 1024);
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "chunked-download.bin",
-            InputStream = new MemoryStream(content),
-        }, Token);
+        await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "chunked-download.bin",
+                InputStream = new MemoryStream(content),
+            },
+            Token
+        );
 
         using var reassembled = new MemoryStream();
         foreach (var (from, to) in new[] { (0L, 149_999L), (150_000L, 307_199L) })
         {
-            using var response = await s3.GetObjectAsync(new GetObjectRequest
-            {
-                BucketName = Bucket,
-                Key = "chunked-download.bin",
-                ByteRange = new ByteRange(from, to),
-            }, Token);
+            using var response = await s3.GetObjectAsync(
+                new GetObjectRequest
+                {
+                    BucketName = Bucket,
+                    Key = "chunked-download.bin",
+                    ByteRange = new ByteRange(from, to),
+                },
+                Token
+            );
             await response.ResponseStream.CopyToAsync(reassembled, Token);
         }
 
@@ -449,12 +536,15 @@ public sealed class ObjectTests : IDisposable
     public async Task HeadObject_ReportsSizeAndETag()
     {
         using var s3 = await CreateClientWithBucket();
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "head.txt",
-            ContentBody = "hello world",
-        }, Token);
+        await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "head.txt",
+                ContentBody = "hello world",
+            },
+            Token
+        );
 
         var metadata = await s3.GetObjectMetadataAsync(Bucket, "head.txt", Token);
 
@@ -466,17 +556,21 @@ public sealed class ObjectTests : IDisposable
     public async Task DeletedObject_IsNoLongerRetrievable()
     {
         using var s3 = await CreateClientWithBucket();
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "doomed.txt",
-            ContentBody = "content",
-        }, Token);
+        await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "doomed.txt",
+                ContentBody = "content",
+            },
+            Token
+        );
 
         await s3.DeleteObjectAsync(Bucket, "doomed.txt", Token);
 
-        var exception = await Assert.ThrowsAsync<NoSuchKeyException>(
-            () => s3.GetObjectAsync(Bucket, "doomed.txt", Token));
+        var exception = await Assert.ThrowsAsync<NoSuchKeyException>(() =>
+            s3.GetObjectAsync(Bucket, "doomed.txt", Token)
+        );
         Assert.Equal(HttpStatusCode.NotFound, exception.StatusCode);
     }
 
@@ -484,73 +578,96 @@ public sealed class ObjectTests : IDisposable
     public async Task DeleteObject_WithAFailingCondition_ThrowsPreconditionFailed()
     {
         using var s3 = await CreateClientWithBucket();
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "guarded.txt",
-            ContentBody = "content",
-        }, Token);
-
-        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
-            () => s3.DeleteObjectAsync(new DeleteObjectRequest
+        await s3.PutObjectAsync(
+            new PutObjectRequest
             {
                 BucketName = Bucket,
                 Key = "guarded.txt",
-                IfMatch = "\"badetag\"",
-            }, Token));
+                ContentBody = "content",
+            },
+            Token
+        );
+
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() =>
+            s3.DeleteObjectAsync(
+                new DeleteObjectRequest
+                {
+                    BucketName = Bucket,
+                    Key = "guarded.txt",
+                    IfMatch = "\"badetag\"",
+                },
+                Token
+            )
+        );
 
         Assert.Equal("PreconditionFailed", exception.ErrorCode);
         Assert.Equal(HttpStatusCode.PreconditionFailed, exception.StatusCode);
         var head = await s3.GetObjectMetadataAsync(Bucket, "guarded.txt", Token);
-        await s3.DeleteObjectAsync(new DeleteObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "guarded.txt",
-            IfMatchSize = head.ContentLength,
-            IfMatchLastModifiedTime = head.LastModified,
-        }, Token);
-        await Assert.ThrowsAsync<NoSuchKeyException>(
-            () => s3.GetObjectAsync(Bucket, "guarded.txt", Token));
+        await s3.DeleteObjectAsync(
+            new DeleteObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "guarded.txt",
+                IfMatchSize = head.ContentLength,
+                IfMatchLastModifiedTime = head.LastModified,
+            },
+            Token
+        );
+        await Assert.ThrowsAsync<NoSuchKeyException>(() =>
+            s3.GetObjectAsync(Bucket, "guarded.txt", Token)
+        );
     }
 
     [Fact]
     public async Task DeleteObjects_ReportsAFailedConditionForThatKeyOnly()
     {
         using var s3 = await CreateClientWithBucket();
-        var put = await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "guarded.txt",
-            ContentBody = "content",
-        }, Token);
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "other.txt",
-            ContentBody = "other",
-        }, Token);
-
-        var exception = await Assert.ThrowsAsync<DeleteObjectsException>(
-            () => s3.DeleteObjectsAsync(new DeleteObjectsRequest
+        var put = await s3.PutObjectAsync(
+            new PutObjectRequest
             {
                 BucketName = Bucket,
-                Objects =
-                [
-                    new KeyVersion { Key = "guarded.txt", ETag = "\"badetag\"" },
-                    new KeyVersion { Key = "other.txt", Size = 5 },
-                ],
-            }, Token));
+                Key = "guarded.txt",
+                ContentBody = "content",
+            },
+            Token
+        );
+        await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "other.txt",
+                ContentBody = "other",
+            },
+            Token
+        );
+
+        var exception = await Assert.ThrowsAsync<DeleteObjectsException>(() =>
+            s3.DeleteObjectsAsync(
+                new DeleteObjectsRequest
+                {
+                    BucketName = Bucket,
+                    Objects =
+                    [
+                        new KeyVersion { Key = "guarded.txt", ETag = "\"badetag\"" },
+                        new KeyVersion { Key = "other.txt", Size = 5 },
+                    ],
+                },
+                Token
+            )
+        );
 
         var error = Assert.Single(exception.Response.DeleteErrors ?? []);
         Assert.Equal("guarded.txt", error.Key);
         Assert.Equal("PreconditionFailed", error.Code);
-        Assert.Equal(
-            ["other.txt"], (exception.Response.DeletedObjects ?? []).Select(d => d.Key));
-        var retried = await s3.DeleteObjectsAsync(new DeleteObjectsRequest
-        {
-            BucketName = Bucket,
-            Objects = [new KeyVersion { Key = "guarded.txt", ETag = put.ETag }],
-        }, Token);
+        Assert.Equal(["other.txt"], (exception.Response.DeletedObjects ?? []).Select(d => d.Key));
+        var retried = await s3.DeleteObjectsAsync(
+            new DeleteObjectsRequest
+            {
+                BucketName = Bucket,
+                Objects = [new KeyVersion { Key = "guarded.txt", ETag = put.ETag }],
+            },
+            Token
+        );
         Assert.Equal(["guarded.txt"], (retried.DeletedObjects ?? []).Select(d => d.Key));
     }
 
@@ -560,29 +677,37 @@ public sealed class ObjectTests : IDisposable
         using var s3 = await CreateClientWithBucket();
         foreach (var key in new[] { "one.txt", "two.txt", "keep.txt" })
         {
-            await s3.PutObjectAsync(new PutObjectRequest
-            {
-                BucketName = Bucket,
-                Key = key,
-                ContentBody = key,
-            }, Token);
+            await s3.PutObjectAsync(
+                new PutObjectRequest
+                {
+                    BucketName = Bucket,
+                    Key = key,
+                    ContentBody = key,
+                },
+                Token
+            );
         }
 
-        var response = await s3.DeleteObjectsAsync(new DeleteObjectsRequest
-        {
-            BucketName = Bucket,
-            Objects =
-            [
-                new KeyVersion { Key = "one.txt" },
-                new KeyVersion { Key = "two.txt" },
-                new KeyVersion { Key = "never-existed.txt" },
-            ],
-        }, Token);
+        var response = await s3.DeleteObjectsAsync(
+            new DeleteObjectsRequest
+            {
+                BucketName = Bucket,
+                Objects =
+                [
+                    new KeyVersion { Key = "one.txt" },
+                    new KeyVersion { Key = "two.txt" },
+                    new KeyVersion { Key = "never-existed.txt" },
+                ],
+            },
+            Token
+        );
 
         Assert.Equal(3, response.DeletedObjects?.Count);
         Assert.Empty(response.DeleteErrors ?? []);
         var remaining = await s3.ListObjectsV2Async(
-            new ListObjectsV2Request { BucketName = Bucket }, Token);
+            new ListObjectsV2Request { BucketName = Bucket },
+            Token
+        );
         Assert.Equal(["keep.txt"], (remaining.S3Objects ?? []).Select(o => o.Key));
     }
 
@@ -590,22 +715,30 @@ public sealed class ObjectTests : IDisposable
     public async Task DeleteObjects_RemovesAKeyThatIsOnlyWhitespace()
     {
         using var s3 = await CreateClientWithBucket();
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = " ",
-            ContentBody = "content",
-        }, Token);
+        await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = " ",
+                ContentBody = "content",
+            },
+            Token
+        );
 
-        var response = await s3.DeleteObjectsAsync(new DeleteObjectsRequest
-        {
-            BucketName = Bucket,
-            Objects = [new KeyVersion { Key = " " }],
-        }, Token);
+        var response = await s3.DeleteObjectsAsync(
+            new DeleteObjectsRequest
+            {
+                BucketName = Bucket,
+                Objects = [new KeyVersion { Key = " " }],
+            },
+            Token
+        );
 
         Assert.Equal([" "], (response.DeletedObjects ?? []).Select(d => d.Key));
         var remaining = await s3.ListObjectsV2Async(
-            new ListObjectsV2Request { BucketName = Bucket }, Token);
+            new ListObjectsV2Request { BucketName = Bucket },
+            Token
+        );
         Assert.Empty(remaining.S3Objects ?? []);
     }
 
@@ -613,29 +746,37 @@ public sealed class ObjectTests : IDisposable
     public async Task DeletingABucketHoldingObjects_ThrowsBucketNotEmpty()
     {
         using var s3 = await CreateClientWithBucket();
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "occupant.txt",
-            ContentBody = "content",
-        }, Token);
+        await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "occupant.txt",
+                ContentBody = "content",
+            },
+            Token
+        );
 
-        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
-            () => s3.DeleteBucketAsync(Bucket, Token));
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() =>
+            s3.DeleteBucketAsync(Bucket, Token)
+        );
 
         Assert.Equal("BucketNotEmpty", exception.ErrorCode);
         Assert.Equal(HttpStatusCode.Conflict, exception.StatusCode);
     }
 
     private static async Task<Uri> PresignedUrl(AmazonS3Client s3, HttpVerb verb) =>
-        new(await s3.GetPreSignedURLAsync(new GetPreSignedUrlRequest
-        {
-            BucketName = Bucket,
-            Key = "greeting.txt",
-            Verb = verb,
-            Protocol = Protocol.HTTP,
-            Expires = DateTime.UtcNow.AddMinutes(5),
-        }));
+        new(
+            await s3.GetPreSignedURLAsync(
+                new GetPreSignedUrlRequest
+                {
+                    BucketName = Bucket,
+                    Key = "greeting.txt",
+                    Verb = verb,
+                    Protocol = Protocol.HTTP,
+                    Expires = DateTime.UtcNow.AddMinutes(5),
+                }
+            )
+        );
 
     public void Dispose() => factory.Dispose();
 

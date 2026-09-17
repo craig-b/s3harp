@@ -16,21 +16,26 @@ public sealed class PresignedUrlTests : IDisposable
     public async Task PresignedGet_DownloadsTheObjectWithoutSdkAuthentication()
     {
         using var s3 = await CreateClientWithBucket();
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "shared.txt",
-            ContentBody = "hello presigned world",
-        }, Token);
+        await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "shared.txt",
+                ContentBody = "hello presigned world",
+            },
+            Token
+        );
 
-        var url = await s3.GetPreSignedURLAsync(new GetPreSignedUrlRequest
-        {
-            BucketName = Bucket,
-            Key = "shared.txt",
-            Verb = HttpVerb.GET,
-            Protocol = Protocol.HTTP,
-            Expires = DateTime.UtcNow.AddMinutes(5),
-        });
+        var url = await s3.GetPreSignedURLAsync(
+            new GetPreSignedUrlRequest
+            {
+                BucketName = Bucket,
+                Key = "shared.txt",
+                Verb = HttpVerb.GET,
+                Protocol = Protocol.HTTP,
+                Expires = DateTime.UtcNow.AddMinutes(5),
+            }
+        );
         var response = await httpClient.GetAsync(new Uri(url), Token);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -42,16 +47,21 @@ public sealed class PresignedUrlTests : IDisposable
     {
         using var s3 = await CreateClientWithBucket();
 
-        var url = await s3.GetPreSignedURLAsync(new GetPreSignedUrlRequest
-        {
-            BucketName = Bucket,
-            Key = "uploaded.txt",
-            Verb = HttpVerb.PUT,
-            Protocol = Protocol.HTTP,
-            Expires = DateTime.UtcNow.AddMinutes(5),
-        });
+        var url = await s3.GetPreSignedURLAsync(
+            new GetPreSignedUrlRequest
+            {
+                BucketName = Bucket,
+                Key = "uploaded.txt",
+                Verb = HttpVerb.PUT,
+                Protocol = Protocol.HTTP,
+                Expires = DateTime.UtcNow.AddMinutes(5),
+            }
+        );
         var response = await httpClient.PutAsync(
-            new Uri(url), new StringContent("uploaded via presigned url"), Token);
+            new Uri(url),
+            new StringContent("uploaded via presigned url"),
+            Token
+        );
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var stored = await s3.GetObjectAsync(Bucket, "uploaded.txt", Token);
@@ -63,21 +73,26 @@ public sealed class PresignedUrlTests : IDisposable
     public async Task ExpiredPresignedUrl_IsRejected()
     {
         using var s3 = await CreateClientWithBucket();
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "gone.txt",
-            ContentBody = "content",
-        }, Token);
+        await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "gone.txt",
+                ContentBody = "content",
+            },
+            Token
+        );
 
-        var url = await s3.GetPreSignedURLAsync(new GetPreSignedUrlRequest
-        {
-            BucketName = Bucket,
-            Key = "gone.txt",
-            Verb = HttpVerb.GET,
-            Protocol = Protocol.HTTP,
-            Expires = DateTime.UtcNow.AddSeconds(1),
-        });
+        var url = await s3.GetPreSignedURLAsync(
+            new GetPreSignedUrlRequest
+            {
+                BucketName = Bucket,
+                Key = "gone.txt",
+                Verb = HttpVerb.GET,
+                Protocol = Protocol.HTTP,
+                Expires = DateTime.UtcNow.AddSeconds(1),
+            }
+        );
         await Task.Delay(TimeSpan.FromSeconds(3), Token);
         var response = await httpClient.GetAsync(new Uri(url), Token);
 

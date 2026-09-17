@@ -9,7 +9,9 @@ public sealed class KeyRangeTests
     [InlineData("docs/", "docs0")]
     [InlineData("a￿", "b")]
     public void PrefixSuccessor_ReturnsTheSmallestStringAboveEveryPrefixedKey(
-        string prefix, string expected)
+        string prefix,
+        string expected
+    )
     {
         Assert.Equal(expected, KeyRange.PrefixSuccessor(prefix));
     }

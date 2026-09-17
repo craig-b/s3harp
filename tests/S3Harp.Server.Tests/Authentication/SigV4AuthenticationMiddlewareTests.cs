@@ -16,8 +16,10 @@ public sealed class SigV4AuthenticationMiddlewareTests
     private const string UnsignedPayload = "UNSIGNED-PAYLOAD";
 
     private static readonly DateTimeOffset Now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
-    private static readonly string Timestamp =
-        Now.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
+    private static readonly string Timestamp = Now.ToString(
+        "yyyyMMdd'T'HHmmss'Z'",
+        CultureInfo.InvariantCulture
+    );
 
     [Fact]
     public async Task RequestWithoutAuthorization_IsRejectedAsAccessDenied()
@@ -63,7 +65,10 @@ public sealed class SigV4AuthenticationMiddlewareTests
         // botocore does whenever a caller supplies a Date header; botocore itself
         // writes the RFC 2822 numeric zone rather than GMT.
         var context = CreateSignedContext(
-            AccessKeyId, SecretAccessKey, dateHeaderFormat: dateFormat);
+            AccessKeyId,
+            SecretAccessKey,
+            dateHeaderFormat: dateFormat
+        );
 
         (context, var nextCalled) = await RunMiddleware(context);
 
@@ -109,10 +114,13 @@ public sealed class SigV4AuthenticationMiddlewareTests
     public async Task StreamingPayload_ReadsBackAsTheDecodedVerifiedContent()
     {
         var context = CreateSignedContext(
-            AccessKeyId, SecretAccessKey,
-            payloadHash: "STREAMING-AWS4-HMAC-SHA256-PAYLOAD");
-        context.Request.Body = new MemoryStream(BuildChunkedWire(
-            SecretAccessKey, HeaderSignature(context), ["Hello, ", "S3Harp!"]));
+            AccessKeyId,
+            SecretAccessKey,
+            payloadHash: "STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
+        );
+        context.Request.Body = new MemoryStream(
+            BuildChunkedWire(SecretAccessKey, HeaderSignature(context), ["Hello, ", "S3Harp!"])
+        );
 
         (context, var nextCalled) = await RunMiddleware(context);
 
@@ -127,8 +135,10 @@ public sealed class SigV4AuthenticationMiddlewareTests
     {
         var body = Encoding.UTF8.GetBytes("Hello, S3Harp!");
         var context = CreateSignedContext(
-            AccessKeyId, SecretAccessKey,
-            payloadHash: SigV4Signer.Sha256Hex(body));
+            AccessKeyId,
+            SecretAccessKey,
+            payloadHash: SigV4Signer.Sha256Hex(body)
+        );
         context.Request.Body = new MemoryStream(body);
 
         (context, var nextCalled) = await RunMiddleware(context);
@@ -143,16 +153,19 @@ public sealed class SigV4AuthenticationMiddlewareTests
     public async Task MismatchedContentSha_FailsWhenTheBodyIsConsumed()
     {
         var context = CreateSignedContext(
-            AccessKeyId, SecretAccessKey,
-            payloadHash: SigV4Signer.Sha256Hex(Encoding.UTF8.GetBytes("declared content")));
+            AccessKeyId,
+            SecretAccessKey,
+            payloadHash: SigV4Signer.Sha256Hex(Encoding.UTF8.GetBytes("declared content"))
+        );
         context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("actual content"));
 
         (context, var nextCalled) = await RunMiddleware(context);
 
         Assert.True(nextCalled());
         using var sink = new MemoryStream();
-        await Assert.ThrowsAsync<PayloadVerificationException>(
-            () => context.Request.Body.CopyToAsync(sink, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<PayloadVerificationException>(() =>
+            context.Request.Body.CopyToAsync(sink, TestContext.Current.CancellationToken)
+        );
     }
 
     [Fact]
@@ -160,7 +173,8 @@ public sealed class SigV4AuthenticationMiddlewareTests
     {
         var body = Encoding.UTF8.GetBytes("Hello, S3Harp!");
         var context = CreateSignedContext(AccessKeyId, SecretAccessKey);
-        context.Request.Headers["x-amz-checksum-sha256"] = "Aj0Lx1vWnbGF+irlCT3Pa4HNGctHtn3/Q49ApNekoy8=";
+        context.Request.Headers["x-amz-checksum-sha256"] =
+            "Aj0Lx1vWnbGF+irlCT3Pa4HNGctHtn3/Q49ApNekoy8=";
         context.Request.Body = new MemoryStream(body);
 
         (context, var nextCalled) = await RunMiddleware(context);
@@ -182,8 +196,9 @@ public sealed class SigV4AuthenticationMiddlewareTests
 
         Assert.True(nextCalled());
         using var sink = new MemoryStream();
-        var exception = await Assert.ThrowsAsync<PayloadVerificationException>(
-            () => context.Request.Body.CopyToAsync(sink, TestContext.Current.CancellationToken));
+        var exception = await Assert.ThrowsAsync<PayloadVerificationException>(() =>
+            context.Request.Body.CopyToAsync(sink, TestContext.Current.CancellationToken)
+        );
         Assert.Equal(S3Errors.BadDigest, exception.Error);
     }
 
@@ -191,15 +206,21 @@ public sealed class SigV4AuthenticationMiddlewareTests
     public async Task OnCompleteMultipartUpload_TheChecksumHeaderIsNotHeldAgainstTheBody()
     {
         var context = CreateSignedContext(
-            AccessKeyId, SecretAccessKey,
+            AccessKeyId,
+            SecretAccessKey,
             shape: context =>
             {
                 context.Request.Method = "POST";
                 context.Request.QueryString = new QueryString("?uploadId=abc");
-                context.Features.GetRequiredFeature<IHttpRequestFeature>().RawTarget = "/demo?uploadId=abc";
-            });
-        context.Request.Headers["x-amz-checksum-sha256"] = "sDGBh5Sl/cL+/VEtpYWyKkP3wHD+lmz/q9Wq8TQpY8c=-2";
-        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("<CompleteMultipartUpload/>"));
+                context.Features.GetRequiredFeature<IHttpRequestFeature>().RawTarget =
+                    "/demo?uploadId=abc";
+            }
+        );
+        context.Request.Headers["x-amz-checksum-sha256"] =
+            "sDGBh5Sl/cL+/VEtpYWyKkP3wHD+lmz/q9Wq8TQpY8c=-2";
+        context.Request.Body = new MemoryStream(
+            Encoding.UTF8.GetBytes("<CompleteMultipartUpload/>")
+        );
 
         (context, var nextCalled) = await RunMiddleware(context);
 
@@ -213,15 +234,24 @@ public sealed class SigV4AuthenticationMiddlewareTests
     [InlineData("NadAdg==", true)]
     [InlineData("AAAAAA==", false)]
     public async Task StreamingTrailerChecksum_IsVerifiedAgainstTheDecodedPayload(
-        string declaredCrc32, bool matches)
+        string declaredCrc32,
+        bool matches
+    )
     {
         var context = CreateSignedContext(
-            AccessKeyId, SecretAccessKey,
-            payloadHash: "STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER");
+            AccessKeyId,
+            SecretAccessKey,
+            payloadHash: "STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER"
+        );
         context.Request.Headers["x-amz-trailer"] = "x-amz-checksum-crc32";
-        context.Request.Body = new MemoryStream(BuildChunkedWire(
-            SecretAccessKey, HeaderSignature(context), ["Hello, ", "S3Harp!"],
-            trailer: ("x-amz-checksum-crc32", declaredCrc32)));
+        context.Request.Body = new MemoryStream(
+            BuildChunkedWire(
+                SecretAccessKey,
+                HeaderSignature(context),
+                ["Hello, ", "S3Harp!"],
+                trailer: ("x-amz-checksum-crc32", declaredCrc32)
+            )
+        );
 
         (context, var nextCalled) = await RunMiddleware(context);
 
@@ -254,7 +284,11 @@ public sealed class SigV4AuthenticationMiddlewareTests
     public async Task ExpiredPresignedRequest_IsRejectedAsAccessDenied()
     {
         var context = CreatePresignedContext(
-            AccessKeyId, SecretAccessKey, signedAt: Now.AddMinutes(-10), expires: 60);
+            AccessKeyId,
+            SecretAccessKey,
+            signedAt: Now.AddMinutes(-10),
+            expires: 60
+        );
 
         (context, var nextCalled) = await RunMiddleware(context);
 
@@ -301,28 +335,33 @@ public sealed class SigV4AuthenticationMiddlewareTests
         string accessKeyId,
         string secretAccessKey,
         DateTimeOffset? signedAt = null,
-        long expires = 300)
+        long expires = 300
+    )
     {
         var context = CreateContext();
         var timestamp = (signedAt ?? Now).ToString(
-            "yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
+            "yyyyMMdd'T'HHmmss'Z'",
+            CultureInfo.InvariantCulture
+        );
         var scope = new CredentialScope(timestamp[..8], "us-east-1", "s3");
 
         var canonicalQuery =
-            "X-Amz-Algorithm=AWS4-HMAC-SHA256" +
-            $"&X-Amz-Credential={Uri.EscapeDataString($"{accessKeyId}/{scope}")}" +
-            $"&X-Amz-Date={timestamp}" +
-            $"&X-Amz-Expires={expires}" +
-            "&X-Amz-SignedHeaders=host";
+            "X-Amz-Algorithm=AWS4-HMAC-SHA256"
+            + $"&X-Amz-Credential={Uri.EscapeDataString($"{accessKeyId}/{scope}")}"
+            + $"&X-Amz-Date={timestamp}"
+            + $"&X-Amz-Expires={expires}"
+            + "&X-Amz-SignedHeaders=host";
         var canonicalRequest =
             $"GET\n/demo\n{canonicalQuery}\nhost:localhost\n\nhost\nUNSIGNED-PAYLOAD";
         var signature = SigV4Signer.SignCanonicalRequest(
-            SigV4Signer.DeriveSigningKey(secretAccessKey, scope), scope, timestamp,
-            canonicalRequest);
+            SigV4Signer.DeriveSigningKey(secretAccessKey, scope),
+            scope,
+            timestamp,
+            canonicalRequest
+        );
 
         var fullQuery = $"{canonicalQuery}&X-Amz-Signature={signature}";
-        context.Features.GetRequiredFeature<IHttpRequestFeature>().RawTarget =
-            $"/demo?{fullQuery}";
+        context.Features.GetRequiredFeature<IHttpRequestFeature>().RawTarget = $"/demo?{fullQuery}";
         context.Request.QueryString = new QueryString($"?{fullQuery}");
         return context;
     }
@@ -330,7 +369,9 @@ public sealed class SigV4AuthenticationMiddlewareTests
     private static string HeaderSignature(DefaultHttpContext context)
     {
         var parsed = SigV4AuthorizationHeader.TryParse(
-            context.Request.Headers.Authorization, out var header);
+            context.Request.Headers.Authorization,
+            out var header
+        );
         Assert.True(parsed);
         return header!.Signature;
     }
@@ -339,7 +380,8 @@ public sealed class SigV4AuthenticationMiddlewareTests
         string secretAccessKey,
         string seedSignature,
         string[] chunks,
-        (string Name, string Value)? trailer = null)
+        (string Name, string Value)? trailer = null
+    )
     {
         var scope = new CredentialScope(Timestamp[..8], "us-east-1", "s3");
         var signingKey = SigV4Signer.DeriveSigningKey(secretAccessKey, scope);
@@ -349,11 +391,20 @@ public sealed class SigV4AuthenticationMiddlewareTests
         foreach (var chunk in chunks.Append(string.Empty))
         {
             var data = Encoding.UTF8.GetBytes(chunk);
-            var stringToSign = string.Join('\n',
-                "AWS4-HMAC-SHA256-PAYLOAD", Timestamp, scope.ToString(), previous,
-                emptyHash, SigV4Signer.Sha256Hex(data));
+            var stringToSign = string.Join(
+                '\n',
+                "AWS4-HMAC-SHA256-PAYLOAD",
+                Timestamp,
+                scope.ToString(),
+                previous,
+                emptyHash,
+                SigV4Signer.Sha256Hex(data)
+            );
             previous = SigV4Signer.Sign(signingKey, stringToSign);
-            wire.Append(CultureInfo.InvariantCulture, $"{data.Length:x};chunk-signature={previous}\r\n");
+            wire.Append(
+                CultureInfo.InvariantCulture,
+                $"{data.Length:x};chunk-signature={previous}\r\n"
+            );
             if (data.Length > 0 || trailer is null)
             {
                 wire.Append(chunk).Append("\r\n");
@@ -363,11 +414,22 @@ public sealed class SigV4AuthenticationMiddlewareTests
         if (trailer is { } line)
         {
             var canonicalTrailer = $"{line.Name}:{line.Value}\n";
-            var trailerSignature = SigV4Signer.Sign(signingKey, string.Join('\n',
-                "AWS4-HMAC-SHA256-TRAILER", Timestamp, scope.ToString(), previous,
-                SigV4Signer.Sha256Hex(Encoding.UTF8.GetBytes(canonicalTrailer))));
+            var trailerSignature = SigV4Signer.Sign(
+                signingKey,
+                string.Join(
+                    '\n',
+                    "AWS4-HMAC-SHA256-TRAILER",
+                    Timestamp,
+                    scope.ToString(),
+                    previous,
+                    SigV4Signer.Sha256Hex(Encoding.UTF8.GetBytes(canonicalTrailer))
+                )
+            );
             wire.Append(CultureInfo.InvariantCulture, $"{line.Name}:{line.Value}\r\n")
-                .Append(CultureInfo.InvariantCulture, $"x-amz-trailer-signature:{trailerSignature}\r\n")
+                .Append(
+                    CultureInfo.InvariantCulture,
+                    $"x-amz-trailer-signature:{trailerSignature}\r\n"
+                )
                 .Append("\r\n");
         }
 
@@ -375,7 +437,8 @@ public sealed class SigV4AuthenticationMiddlewareTests
     }
 
     private static async Task<(DefaultHttpContext Context, Func<bool> NextCalled)> RunMiddleware(
-        DefaultHttpContext context)
+        DefaultHttpContext context
+    )
     {
         var called = false;
         var middleware = new SigV4AuthenticationMiddleware(
@@ -385,7 +448,8 @@ public sealed class SigV4AuthenticationMiddlewareTests
                 return Task.CompletedTask;
             },
             new RootCredentialStore(new RootCredentials(AccessKeyId, SecretAccessKey)),
-            new FixedTimeProvider(Now));
+            new FixedTimeProvider(Now)
+        );
 
         await middleware.InvokeAsync(context);
         return (context, () => called);
@@ -407,12 +471,15 @@ public sealed class SigV4AuthenticationMiddlewareTests
         DateTimeOffset? signedAt = null,
         string payloadHash = UnsignedPayload,
         string? dateHeaderFormat = null,
-        Action<DefaultHttpContext>? shape = null)
+        Action<DefaultHttpContext>? shape = null
+    )
     {
         var context = CreateContext();
         shape?.Invoke(context);
         var timestamp = (signedAt ?? Now).ToString(
-            "yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
+            "yyyyMMdd'T'HHmmss'Z'",
+            CultureInfo.InvariantCulture
+        );
         var scope = new CredentialScope(timestamp[..8], "us-east-1", "s3");
         var dateHeader = dateHeaderFormat is null ? "x-amz-date" : "date";
         context.Request.Headers[dateHeader] = dateHeaderFormat is null
@@ -423,11 +490,15 @@ public sealed class SigV4AuthenticationMiddlewareTests
         string[] signedHeaders = [dateHeader, "host", "x-amz-content-sha256"];
         var canonical = CanonicalRequest.Build(context.Request, signedHeaders, payloadHash);
         var signature = SigV4Signer.SignCanonicalRequest(
-            SigV4Signer.DeriveSigningKey(secretAccessKey, scope), scope, timestamp, canonical);
+            SigV4Signer.DeriveSigningKey(secretAccessKey, scope),
+            scope,
+            timestamp,
+            canonical
+        );
 
         context.Request.Headers.Authorization =
-            $"AWS4-HMAC-SHA256 Credential={accessKeyId}/{scope}, " +
-            $"SignedHeaders={string.Join(';', signedHeaders)}, Signature={signature}";
+            $"AWS4-HMAC-SHA256 Credential={accessKeyId}/{scope}, "
+            + $"SignedHeaders={string.Join(';', signedHeaders)}, Signature={signature}";
         return context;
     }
 

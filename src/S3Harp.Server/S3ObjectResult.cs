@@ -18,8 +18,8 @@ public sealed class S3ObjectResult(
     Stream? content,
     RangeEvaluation? range = null,
     int? partsCount = null,
-    Checksum? checksum = null)
-    : IResult
+    Checksum? checksum = null
+) : IResult
 {
     private const int BufferSize = 64 * 1024;
 
@@ -71,12 +71,18 @@ public sealed class S3ObjectResult(
             if (partial is { } slice)
             {
                 await CopySliceAsync(
-                    content, response.Body, slice.From, slice.To - slice.From + 1,
-                    httpContext.RequestAborted).ConfigureAwait(false);
+                        content,
+                        response.Body,
+                        slice.From,
+                        slice.To - slice.From + 1,
+                        httpContext.RequestAborted
+                    )
+                    .ConfigureAwait(false);
             }
             else
             {
-                await content.CopyToAsync(response.Body, httpContext.RequestAborted)
+                await content
+                    .CopyToAsync(response.Body, httpContext.RequestAborted)
                     .ConfigureAwait(false);
             }
         }
@@ -111,8 +117,12 @@ public sealed class S3ObjectResult(
     }
 
     private static async Task CopySliceAsync(
-        Stream source, Stream destination, long from, long count,
-        CancellationToken cancellationToken)
+        Stream source,
+        Stream destination,
+        long from,
+        long count,
+        CancellationToken cancellationToken
+    )
     {
         source.Seek(from, SeekOrigin.Begin);
         var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
@@ -120,15 +130,19 @@ public sealed class S3ObjectResult(
         {
             while (count > 0)
             {
-                var read = await source.ReadAsync(
-                    buffer.AsMemory(0, (int)Math.Min(count, buffer.Length)), cancellationToken)
+                var read = await source
+                    .ReadAsync(
+                        buffer.AsMemory(0, (int)Math.Min(count, buffer.Length)),
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
                 if (read == 0)
                 {
                     break;
                 }
 
-                await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken)
+                await destination
+                    .WriteAsync(buffer.AsMemory(0, read), cancellationToken)
                     .ConfigureAwait(false);
                 count -= read;
             }

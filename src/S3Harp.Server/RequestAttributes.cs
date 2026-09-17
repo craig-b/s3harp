@@ -17,15 +17,20 @@ public static class RequestAttributes
     {
         ArgumentNullException.ThrowIfNull(request);
         return new ObjectAttributes(
-            request.ContentType, ReadContentHeaders(request.Headers), ReadMetadata(request.Headers));
+            request.ContentType,
+            ReadContentHeaders(request.Headers),
+            ReadMetadata(request.Headers)
+        );
     }
 
-    private static ContentHeaders ReadContentHeaders(IHeaderDictionary headers) => new(
-        Value(headers.CacheControl),
-        Value(headers.ContentDisposition),
-        StoredContentEncoding(headers.ContentEncoding),
-        Value(headers.ContentLanguage),
-        Value(headers.Expires));
+    private static ContentHeaders ReadContentHeaders(IHeaderDictionary headers) =>
+        new(
+            Value(headers.CacheControl),
+            Value(headers.ContentDisposition),
+            StoredContentEncoding(headers.ContentEncoding),
+            Value(headers.ContentLanguage),
+            Value(headers.Expires)
+        );
 
     private static string? StoredContentEncoding(string? header)
     {
@@ -34,11 +39,13 @@ public static class RequestAttributes
             return null;
         }
 
-        var encodings = header.Split(',')
+        var encodings = header
+            .Split(',')
             .Select(encoding => encoding.Trim())
             .Where(encoding =>
                 encoding.Length > 0
-                && !string.Equals(encoding, AwsChunked, StringComparison.OrdinalIgnoreCase))
+                && !string.Equals(encoding, AwsChunked, StringComparison.OrdinalIgnoreCase)
+            )
             .ToList();
         return encodings.Count > 0 ? string.Join(", ", encodings) : null;
     }

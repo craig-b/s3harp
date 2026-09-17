@@ -73,13 +73,20 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         EnsureColumn(connection, "uploads", "checksum_algorithm", "TEXT");
         EnsureColumn(connection, "uploads", "checksum_type", "TEXT");
         EnsureColumn(
-            connection, "parts", "uploaded_at",
-            "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.0000000+00:00'");
+            connection,
+            "parts",
+            "uploaded_at",
+            "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.0000000+00:00'"
+        );
         EnsureColumn(connection, "parts", "checksum", "TEXT");
     }
 
     private static void EnsureColumn(
-        SqliteConnection connection, string table, string column, string definition)
+        SqliteConnection connection,
+        string table,
+        string column,
+        string definition
+    )
     {
         if (ColumnExists(connection, table, column))
         {
@@ -114,21 +121,25 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     private static bool ColumnExists(SqliteConnection connection, string table, string column)
     {
         using var probe = connection.CreateCommand();
-        probe.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = $column";
+        probe.CommandText =
+            $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = $column";
         probe.Parameters.AddWithValue("$column", column);
         return (long)probe.ExecuteScalar()! > 0;
     }
 
     public async Task<bool> TryCreateBucketAsync(
-        string name, DateTimeOffset createdAt, CancellationToken cancellationToken)
+        string name,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken
+    )
     {
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
         {
             var command = connection.CreateCommand();
             command.CommandText =
-                "INSERT INTO buckets (name, created_at) VALUES ($name, $created_at) " +
-                "ON CONFLICT (name) DO NOTHING";
+                "INSERT INTO buckets (name, created_at) VALUES ($name, $created_at) "
+                + "ON CONFLICT (name) DO NOTHING";
             command.Parameters.AddWithValue("$name", name);
             command.Parameters.AddWithValue("$created_at", FormatTimestamp(createdAt));
             return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
@@ -143,12 +154,14 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             var command = connection.CreateCommand();
             command.CommandText = "SELECT 1 FROM buckets WHERE name = $name";
             command.Parameters.AddWithValue("$name", name);
-            return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
+            return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+                is not null;
         }
     }
 
     public async Task<IReadOnlyList<BucketInfo>> ListBucketsAsync(
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
@@ -161,8 +174,9 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 var buckets = new List<BucketInfo>();
                 while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    buckets.Add(new BucketInfo(
-                        reader.GetString(0), ParseTimestamp(reader.GetString(1))));
+                    buckets.Add(
+                        new BucketInfo(reader.GetString(0), ParseTimestamp(reader.GetString(1)))
+                    );
                 }
 
                 return buckets;
@@ -171,7 +185,9 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     }
 
     public async Task<DeleteBucketOutcome> DeleteBucketAsync(
-        string name, CancellationToken cancellationToken)
+        string name,
+        CancellationToken cancellationToken
+    )
     {
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
@@ -203,7 +219,8 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 int deleted;
                 try
                 {
-                    deleted = await deleteBucket.ExecuteNonQueryAsync(cancellationToken)
+                    deleted = await deleteBucket
+                        .ExecuteNonQueryAsync(cancellationToken)
                         .ConfigureAwait(false);
                 }
                 catch (SqliteException exception)
@@ -226,8 +243,11 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     }
 
     public async Task<PutObjectResult> PutObjectAsync(
-        string bucket, ObjectRecord record, WriteCondition? condition,
-        CancellationToken cancellationToken)
+        string bucket,
+        ObjectRecord record,
+        WriteCondition? condition,
+        CancellationToken cancellationToken
+    )
     {
         ArgumentNullException.ThrowIfNull(record);
 
@@ -238,17 +258,30 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             await using (transaction.ConfigureAwait(false))
             {
                 var replaced = await FindObjectAsync(
-                    connection, transaction, bucket, record.Key, cancellationToken)
+                        connection,
+                        transaction,
+                        bucket,
+                        record.Key,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
-                if (condition?.Check(replaced) is { } refusal
-                    && refusal != WriteConditionResult.Satisfied)
+                if (
+                    condition?.Check(replaced) is { } refusal
+                    && refusal != WriteConditionResult.Satisfied
+                )
                 {
                     return PutObjectResult.Refused(refusal);
                 }
 
                 try
                 {
-                    await UpsertObjectAsync(connection, transaction, bucket, record, cancellationToken)
+                    await UpsertObjectAsync(
+                            connection,
+                            transaction,
+                            bucket,
+                            record,
+                            cancellationToken
+                        )
                         .ConfigureAwait(false);
                 }
                 catch (SqliteException exception)
@@ -264,12 +297,21 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     }
 
     public async Task<ObjectRecord?> FindObjectAsync(
-        string bucket, string key, CancellationToken cancellationToken)
+        string bucket,
+        string key,
+        CancellationToken cancellationToken
+    )
     {
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
         {
-            return await FindObjectAsync(connection, transaction: null, bucket, key, cancellationToken)
+            return await FindObjectAsync(
+                    connection,
+                    transaction: null,
+                    bucket,
+                    key,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
     }
@@ -279,7 +321,8 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         SqliteTransaction? transaction,
         string bucket,
         string key,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -300,8 +343,12 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     }
 
     public async Task<IReadOnlyList<ObjectRecord>> ScanObjectsAsync(
-        string bucket, string prefix, string fromKey, int limit,
-        CancellationToken cancellationToken)
+        string bucket,
+        string prefix,
+        string fromKey,
+        int limit,
+        CancellationToken cancellationToken
+    )
     {
         var lowerBound = string.CompareOrdinal(fromKey, prefix) > 0 ? fromKey : prefix;
         var upperBound = KeyRange.PrefixSuccessor(prefix);
@@ -336,7 +383,11 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     }
 
     public async Task<DeleteObjectResult> DeleteObjectAsync(
-        string bucket, string key, DeleteCondition? condition, CancellationToken cancellationToken)
+        string bucket,
+        string key,
+        DeleteCondition? condition,
+        CancellationToken cancellationToken
+    )
     {
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
@@ -344,7 +395,13 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             var transaction = connection.BeginTransaction();
             await using (transaction.ConfigureAwait(false))
             {
-                var existing = await FindObjectAsync(connection, transaction, bucket, key, cancellationToken)
+                var existing = await FindObjectAsync(
+                        connection,
+                        transaction,
+                        bucket,
+                        key,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
                 if (existing is null)
                 {
@@ -369,7 +426,10 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     }
 
     public async Task<bool> TryCreateUploadAsync(
-        string bucket, MultipartUpload upload, CancellationToken cancellationToken)
+        string bucket,
+        MultipartUpload upload,
+        CancellationToken cancellationToken
+    )
     {
         ArgumentNullException.ThrowIfNull(upload);
 
@@ -389,17 +449,24 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             command.Parameters.AddWithValue("$bucket", bucket);
             command.Parameters.AddWithValue("$key", upload.Key);
             command.Parameters.AddWithValue(
-                "$content_type", (object?)upload.ContentType ?? DBNull.Value);
+                "$content_type",
+                (object?)upload.ContentType ?? DBNull.Value
+            );
             command.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(upload.Metadata));
             command.Parameters.AddWithValue(
-                "$content_headers", WriteContentHeaders(upload.ContentHeaders));
+                "$content_headers",
+                WriteContentHeaders(upload.ContentHeaders)
+            );
             command.Parameters.AddWithValue("$initiated_at", FormatTimestamp(upload.InitiatedAt));
-            command.Parameters.AddWithValue("$checksum_algorithm", upload.ChecksumAlgorithm.ToString());
+            command.Parameters.AddWithValue(
+                "$checksum_algorithm",
+                upload.ChecksumAlgorithm.ToString()
+            );
             command.Parameters.AddWithValue("$checksum_type", upload.ChecksumType.ToString());
             try
             {
-                return await command.ExecuteNonQueryAsync(cancellationToken)
-                    .ConfigureAwait(false) == 1;
+                return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false)
+                    == 1;
             }
             catch (SqliteException exception)
                 when (exception.SqliteErrorCode == SqliteConstraintViolation)
@@ -410,7 +477,11 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     }
 
     public async Task<MultipartUpload?> FindUploadAsync(
-        string bucket, string key, string uploadId, CancellationToken cancellationToken)
+        string bucket,
+        string key,
+        string uploadId,
+        CancellationToken cancellationToken
+    )
     {
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
@@ -425,18 +496,25 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                         key,
                         reader.IsDBNull(0) ? null : reader.GetString(0),
                         ReadContentHeaders(reader.GetString(3)),
-                        JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(1))!,
+                        JsonSerializer.Deserialize<Dictionary<string, string>>(
+                            reader.GetString(1)
+                        )!,
                         ReadEnum(reader, 4, ChecksumAlgorithm.Crc64Nvme),
                         ReadEnum(reader, 5, ChecksumType.FullObject),
-                        ParseTimestamp(reader.GetString(2)))
+                        ParseTimestamp(reader.GetString(2))
+                    )
                     : null;
             }
         }
     }
 
     public async Task<PutPartResult> PutPartAsync(
-        string bucket, string key, string uploadId, PartRecord part,
-        CancellationToken cancellationToken)
+        string bucket,
+        string key,
+        string uploadId,
+        PartRecord part,
+        CancellationToken cancellationToken
+    )
     {
         ArgumentNullException.ThrowIfNull(part);
 
@@ -446,8 +524,17 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             var transaction = connection.BeginTransaction();
             await using (transaction.ConfigureAwait(false))
             {
-                if (!await UploadExistsAsync(connection, transaction, bucket, key, uploadId, cancellationToken)
-                    .ConfigureAwait(false))
+                if (
+                    !await UploadExistsAsync(
+                            connection,
+                            transaction,
+                            bucket,
+                            key,
+                            uploadId,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false)
+                )
                 {
                     return new PutPartResult(UploadExists: false, null);
                 }
@@ -458,8 +545,8 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                     "SELECT blob_id FROM parts WHERE upload_id = $upload_id AND part_number = $number";
                 find.Parameters.AddWithValue("$upload_id", uploadId);
                 find.Parameters.AddWithValue("$number", part.PartNumber);
-                var replaced = (string?)await find.ExecuteScalarAsync(cancellationToken)
-                    .ConfigureAwait(false);
+                var replaced = (string?)
+                    await find.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
 
                 var upsert = connection.CreateCommand();
                 upsert.Transaction = transaction;
@@ -487,7 +574,11 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     }
 
     public async Task<IReadOnlyList<PartRecord>> ListPartsAsync(
-        string bucket, string key, string uploadId, CancellationToken cancellationToken)
+        string bucket,
+        string key,
+        string uploadId,
+        CancellationToken cancellationToken
+    )
     {
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
@@ -509,10 +600,16 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 var parts = new List<PartRecord>();
                 while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    parts.Add(new PartRecord(
-                        reader.GetInt32(0), reader.GetString(1), reader.GetInt64(2), reader.GetString(3),
-                        reader.IsDBNull(5) ? null : reader.GetString(5),
-                        ParseTimestamp(reader.GetString(4))));
+                    parts.Add(
+                        new PartRecord(
+                            reader.GetInt32(0),
+                            reader.GetString(1),
+                            reader.GetInt64(2),
+                            reader.GetString(3),
+                            reader.IsDBNull(5) ? null : reader.GetString(5),
+                            ParseTimestamp(reader.GetString(4))
+                        )
+                    );
                 }
 
                 return parts;
@@ -521,7 +618,9 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     }
 
     public async Task<IReadOnlyList<MultipartUpload>> ListUploadsAsync(
-        string bucket, CancellationToken cancellationToken)
+        string bucket,
+        CancellationToken cancellationToken
+    )
     {
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
@@ -540,15 +639,20 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 var uploads = new List<MultipartUpload>();
                 while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    uploads.Add(new MultipartUpload(
-                        reader.GetString(0),
-                        reader.GetString(1),
-                        reader.IsDBNull(2) ? null : reader.GetString(2),
-                        ReadContentHeaders(reader.GetString(5)),
-                        JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(3))!,
-                        ReadEnum(reader, 6, ChecksumAlgorithm.Crc64Nvme),
-                        ReadEnum(reader, 7, ChecksumType.FullObject),
-                        ParseTimestamp(reader.GetString(4))));
+                    uploads.Add(
+                        new MultipartUpload(
+                            reader.GetString(0),
+                            reader.GetString(1),
+                            reader.IsDBNull(2) ? null : reader.GetString(2),
+                            ReadContentHeaders(reader.GetString(5)),
+                            JsonSerializer.Deserialize<Dictionary<string, string>>(
+                                reader.GetString(3)
+                            )!,
+                            ReadEnum(reader, 6, ChecksumAlgorithm.Crc64Nvme),
+                            ReadEnum(reader, 7, ChecksumType.FullObject),
+                            ParseTimestamp(reader.GetString(4))
+                        )
+                    );
                 }
 
                 return uploads;
@@ -557,8 +661,12 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     }
 
     public async Task<CompleteUploadResult> CompleteUploadAsync(
-        string bucket, string uploadId, ObjectRecord record, WriteCondition? condition,
-        CancellationToken cancellationToken)
+        string bucket,
+        string uploadId,
+        ObjectRecord record,
+        WriteCondition? condition,
+        CancellationToken cancellationToken
+    )
     {
         ArgumentNullException.ThrowIfNull(record);
 
@@ -568,36 +676,63 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             var transaction = connection.BeginTransaction();
             await using (transaction.ConfigureAwait(false))
             {
-                if (!await UploadExistsAsync(
-                        connection, transaction, bucket, record.Key, uploadId, cancellationToken)
-                    .ConfigureAwait(false))
+                if (
+                    !await UploadExistsAsync(
+                            connection,
+                            transaction,
+                            bucket,
+                            record.Key,
+                            uploadId,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false)
+                )
                 {
                     return CompleteUploadResult.NoSuchUpload;
                 }
 
                 var replaced = await FindObjectAsync(
-                    connection, transaction, bucket, record.Key, cancellationToken)
+                        connection,
+                        transaction,
+                        bucket,
+                        record.Key,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
-                if (condition?.Check(replaced) is { } refusal
-                    && refusal != WriteConditionResult.Satisfied)
+                if (
+                    condition?.Check(replaced) is { } refusal
+                    && refusal != WriteConditionResult.Satisfied
+                )
                 {
                     return CompleteUploadResult.Refused(refusal);
                 }
 
                 var partBlobs = await DeleteUploadRowsAsync(
-                    connection, transaction, uploadId, cancellationToken).ConfigureAwait(false);
+                        connection,
+                        transaction,
+                        uploadId,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
                 await UpsertObjectAsync(connection, transaction, bucket, record, cancellationToken)
                     .ConfigureAwait(false);
 
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                 return new CompleteUploadResult(
-                    CompleteUploadStatus.Completed, replaced?.BlobId, partBlobs);
+                    CompleteUploadStatus.Completed,
+                    replaced?.BlobId,
+                    partBlobs
+                );
             }
         }
     }
 
     public async Task<IReadOnlyList<string>?> DeleteUploadAsync(
-        string bucket, string key, string uploadId, CancellationToken cancellationToken)
+        string bucket,
+        string key,
+        string uploadId,
+        CancellationToken cancellationToken
+    )
     {
         var connection = OpenConnection();
         await using (connection.ConfigureAwait(false))
@@ -605,14 +740,28 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             var transaction = connection.BeginTransaction();
             await using (transaction.ConfigureAwait(false))
             {
-                if (!await UploadExistsAsync(connection, transaction, bucket, key, uploadId, cancellationToken)
-                    .ConfigureAwait(false))
+                if (
+                    !await UploadExistsAsync(
+                            connection,
+                            transaction,
+                            bucket,
+                            key,
+                            uploadId,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false)
+                )
                 {
                     return null;
                 }
 
                 var partBlobs = await DeleteUploadRowsAsync(
-                    connection, transaction, uploadId, cancellationToken).ConfigureAwait(false);
+                        connection,
+                        transaction,
+                        uploadId,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                 return partBlobs;
             }
@@ -622,7 +771,11 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     public void Dispose() => SqliteConnection.ClearPool(new SqliteConnection(connectionString));
 
     private static SqliteCommand CreateFindUploadCommand(
-        SqliteConnection connection, string bucket, string key, string uploadId)
+        SqliteConnection connection,
+        string bucket,
+        string key,
+        string uploadId
+    )
     {
         var command = connection.CreateCommand();
         command.CommandText = """
@@ -643,7 +796,8 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         string bucket,
         string key,
         string uploadId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -652,7 +806,8 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         command.Parameters.AddWithValue("$upload_id", uploadId);
         command.Parameters.AddWithValue("$bucket", bucket);
         command.Parameters.AddWithValue("$key", key);
-        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
+        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+            is not null;
     }
 
     private static async Task UpsertObjectAsync(
@@ -660,7 +815,8 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         SqliteTransaction transaction,
         string bucket,
         ObjectRecord record,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var upsert = connection.CreateCommand();
         upsert.Transaction = transaction;
@@ -687,16 +843,26 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         upsert.Parameters.AddWithValue("$blob_id", record.BlobId);
         upsert.Parameters.AddWithValue("$size", record.Size);
         upsert.Parameters.AddWithValue("$etag", record.ETag);
-        upsert.Parameters.AddWithValue("$content_type", (object?)record.ContentType ?? DBNull.Value);
+        upsert.Parameters.AddWithValue(
+            "$content_type",
+            (object?)record.ContentType ?? DBNull.Value
+        );
         upsert.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(record.Metadata));
         upsert.Parameters.AddWithValue("$last_modified", FormatTimestamp(record.LastModified));
-        upsert.Parameters.AddWithValue("$content_headers", WriteContentHeaders(record.ContentHeaders));
-        upsert.Parameters.AddWithValue("$parts", JsonSerializer.Serialize(record.Parts, ContentHeadersJson));
+        upsert.Parameters.AddWithValue(
+            "$content_headers",
+            WriteContentHeaders(record.ContentHeaders)
+        );
+        upsert.Parameters.AddWithValue(
+            "$parts",
+            JsonSerializer.Serialize(record.Parts, ContentHeadersJson)
+        );
         upsert.Parameters.AddWithValue(
             "$checksum",
             record.Checksum is null
                 ? DBNull.Value
-                : JsonSerializer.Serialize(record.Checksum, ChecksumJson));
+                : JsonSerializer.Serialize(record.Checksum, ChecksumJson)
+        );
         await upsert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -704,14 +870,16 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         SqliteConnection connection,
         SqliteTransaction transaction,
         string uploadId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var deleteParts = connection.CreateCommand();
         deleteParts.Transaction = transaction;
         deleteParts.CommandText =
             "DELETE FROM parts WHERE upload_id = $upload_id RETURNING blob_id";
         deleteParts.Parameters.AddWithValue("$upload_id", uploadId);
-        var partBlobs = await ReadStringsAsync(deleteParts, cancellationToken).ConfigureAwait(false);
+        var partBlobs = await ReadStringsAsync(deleteParts, cancellationToken)
+            .ConfigureAwait(false);
 
         var deleteUpload = connection.CreateCommand();
         deleteUpload.Transaction = transaction;
@@ -723,7 +891,9 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
 
     /// <summary>Runs the command and collects the first column of every row.</summary>
     private static async Task<IReadOnlyList<string>> ReadStringsAsync(
-        SqliteCommand command, CancellationToken cancellationToken)
+        SqliteCommand command,
+        CancellationToken cancellationToken
+    )
     {
         var values = new List<string>();
         var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -738,17 +908,21 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         return values;
     }
 
-    private static ObjectRecord ReadObjectRecord(SqliteDataReader reader) => new(
-        reader.GetString(0),
-        reader.GetString(1),
-        reader.GetInt64(2),
-        reader.GetString(3),
-        JsonSerializer.Deserialize<CompletedPart[]>(reader.GetString(8), ContentHeadersJson)!,
-        reader.IsDBNull(9) ? null : JsonSerializer.Deserialize<Checksum>(reader.GetString(9), ChecksumJson),
-        reader.IsDBNull(4) ? null : reader.GetString(4),
-        ReadContentHeaders(reader.GetString(7)),
-        JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(5))!,
-        ParseTimestamp(reader.GetString(6)));
+    private static ObjectRecord ReadObjectRecord(SqliteDataReader reader) =>
+        new(
+            reader.GetString(0),
+            reader.GetString(1),
+            reader.GetInt64(2),
+            reader.GetString(3),
+            JsonSerializer.Deserialize<CompletedPart[]>(reader.GetString(8), ContentHeadersJson)!,
+            reader.IsDBNull(9)
+                ? null
+                : JsonSerializer.Deserialize<Checksum>(reader.GetString(9), ChecksumJson),
+            reader.IsDBNull(4) ? null : reader.GetString(4),
+            ReadContentHeaders(reader.GetString(7)),
+            JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(5))!,
+            ParseTimestamp(reader.GetString(6))
+        );
 
     private static readonly JsonSerializerOptions ChecksumJson = new()
     {

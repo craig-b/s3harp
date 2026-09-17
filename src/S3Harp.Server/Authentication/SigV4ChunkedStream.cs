@@ -17,7 +17,8 @@ public sealed class SigV4ChunkedStream(
     string timestamp,
     string seedSignature,
     bool signedTrailer = false,
-    ChecksumAlgorithm? trailerChecksum = null) : Stream
+    ChecksumAlgorithm? trailerChecksum = null
+) : Stream
 {
     private const int MaxHeaderLength = 1024;
     private const long MaxChunkSize = 16 * 1024 * 1024;
@@ -25,11 +26,13 @@ public sealed class SigV4ChunkedStream(
 
     private static readonly string EmptyHash = SigV4Signer.Sha256Hex([]);
 
-    private readonly IncrementalChecksum? checksum =
-        trailerChecksum is { } algorithm ? ChecksumAlgorithms.Create(algorithm) : null;
+    private readonly IncrementalChecksum? checksum = trailerChecksum is { } algorithm
+        ? ChecksumAlgorithms.Create(algorithm)
+        : null;
 
-    private readonly string? checksumTrailer =
-        trailerChecksum is { } named ? ChecksumHeaders.HeaderName(named) : null;
+    private readonly string? checksumTrailer = trailerChecksum is { } named
+        ? ChecksumHeaders.HeaderName(named)
+        : null;
 
     private string previousSignature = seedSignature;
     private byte[] currentChunk = [];
@@ -51,7 +54,9 @@ public sealed class SigV4ChunkedStream(
     }
 
     public override async ValueTask<int> ReadAsync(
-        Memory<byte> buffer, CancellationToken cancellationToken = default)
+        Memory<byte> buffer,
+        CancellationToken cancellationToken = default
+    )
     {
         while (!finished && positionInChunk >= currentChunk.Length)
         {
@@ -72,9 +77,7 @@ public sealed class SigV4ChunkedStream(
     public override int Read(byte[] buffer, int offset, int count) =>
         ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
 
-    public override void Flush()
-    {
-    }
+    public override void Flush() { }
 
     public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
 
@@ -87,11 +90,16 @@ public sealed class SigV4ChunkedStream(
     {
         var header = await ReadHeaderLineAsync(cancellationToken).ConfigureAwait(false);
         var separator = header.IndexOf(SignaturePrefix, StringComparison.Ordinal);
-        if (separator <= 0
+        if (
+            separator <= 0
             || !long.TryParse(
-                header.AsSpan(0, separator), NumberStyles.HexNumber,
-                CultureInfo.InvariantCulture, out var size)
-            || size is < 0 or > MaxChunkSize)
+                header.AsSpan(0, separator),
+                NumberStyles.HexNumber,
+                CultureInfo.InvariantCulture,
+                out var size
+            )
+            || size is < 0 or > MaxChunkSize
+        )
         {
             throw new InvalidDataException("The chunk header is malformed.");
         }
@@ -100,13 +108,15 @@ public sealed class SigV4ChunkedStream(
         var data = new byte[size];
         await inner.ReadExactlyAsync(data, cancellationToken).ConfigureAwait(false);
 
-        var stringToSign = string.Join('\n',
+        var stringToSign = string.Join(
+            '\n',
             "AWS4-HMAC-SHA256-PAYLOAD",
             timestamp,
             scope.ToString(),
             previousSignature,
             EmptyHash,
-            SigV4Signer.Sha256Hex(data));
+            SigV4Signer.Sha256Hex(data)
+        );
         var expectedSignature = SigV4Signer.Sign(signingKey, stringToSign);
         if (!SigV4Signer.SignaturesEqual(expectedSignature, presentedSignature))
         {
@@ -136,8 +146,10 @@ public sealed class SigV4ChunkedStream(
         var canonicalTrailer = new StringBuilder();
         var trailers = new List<(string Name, string Value)>();
         string? presentedSignature = null;
-        while (await ReadHeaderLineAsync(cancellationToken).ConfigureAwait(false) is
-            { Length: > 0 } line)
+        while (
+            await ReadHeaderLineAsync(cancellationToken).ConfigureAwait(false)
+                is { Length: > 0 } line
+        )
         {
             var separator = line.IndexOf(':', StringComparison.Ordinal);
             if (separator <= 0)
@@ -163,14 +175,20 @@ public sealed class SigV4ChunkedStream(
             throw new PayloadVerificationException(S3Errors.SignatureDoesNotMatch);
         }
 
-        var stringToSign = string.Join('\n',
+        var stringToSign = string.Join(
+            '\n',
             "AWS4-HMAC-SHA256-TRAILER",
             timestamp,
             scope.ToString(),
             previousSignature,
-            SigV4Signer.Sha256Hex(Encoding.UTF8.GetBytes(canonicalTrailer.ToString())));
-        if (!SigV4Signer.SignaturesEqual(
-                SigV4Signer.Sign(signingKey, stringToSign), presentedSignature))
+            SigV4Signer.Sha256Hex(Encoding.UTF8.GetBytes(canonicalTrailer.ToString()))
+        );
+        if (
+            !SigV4Signer.SignaturesEqual(
+                SigV4Signer.Sign(signingKey, stringToSign),
+                presentedSignature
+            )
+        )
         {
             throw new PayloadVerificationException(S3Errors.SignatureDoesNotMatch);
         }
@@ -180,8 +198,9 @@ public sealed class SigV4ChunkedStream(
             return;
         }
 
-        var declared = trailers.FirstOrDefault(
-            trailer => string.Equals(trailer.Name, checksumTrailer, StringComparison.OrdinalIgnoreCase));
+        var declared = trailers.FirstOrDefault(trailer =>
+            string.Equals(trailer.Name, checksumTrailer, StringComparison.OrdinalIgnoreCase)
+        );
         if (declared.Name is null)
         {
             throw new PayloadVerificationException(S3Errors.IncompleteBody);

@@ -21,7 +21,9 @@ public sealed class PreconditionsTests
     public void IfMatch_MatchingTheETag_Proceeds(string header)
     {
         Assert.Equal(
-            PreconditionOutcome.Proceed, Evaluate(new ConditionalHeaders(IfMatch: header)));
+            PreconditionOutcome.Proceed,
+            Evaluate(new ConditionalHeaders(IfMatch: header))
+        );
     }
 
     [Fact]
@@ -29,7 +31,8 @@ public sealed class PreconditionsTests
     {
         Assert.Equal(
             PreconditionOutcome.PreconditionFailed,
-            Evaluate(new ConditionalHeaders(IfMatch: "\"ABCORZ\"")));
+            Evaluate(new ConditionalHeaders(IfMatch: "\"ABCORZ\""))
+        );
     }
 
     [Theory]
@@ -39,14 +42,18 @@ public sealed class PreconditionsTests
     public void IfNoneMatch_MatchingTheETag_IsNotModified(string header)
     {
         Assert.Equal(
-            PreconditionOutcome.NotModified, Evaluate(new ConditionalHeaders(IfNoneMatch: header)));
+            PreconditionOutcome.NotModified,
+            Evaluate(new ConditionalHeaders(IfNoneMatch: header))
+        );
     }
 
     [Fact]
     public void IfNoneMatch_MissingTheETag_Proceeds()
     {
         Assert.Equal(
-            PreconditionOutcome.Proceed, Evaluate(new ConditionalHeaders(IfNoneMatch: "\"ABCORZ\"")));
+            PreconditionOutcome.Proceed,
+            Evaluate(new ConditionalHeaders(IfNoneMatch: "\"ABCORZ\""))
+        );
     }
 
     [Theory]
@@ -54,7 +61,10 @@ public sealed class PreconditionsTests
     [InlineData("Wed, 16 Sep 2026 12:00:01 GMT", PreconditionOutcome.NotModified)]
     [InlineData("Wed, 16 Sep 2026 11:59:59 GMT", PreconditionOutcome.Proceed)]
     [InlineData("not a date", PreconditionOutcome.Proceed)]
-    public void IfModifiedSince_ComparesAtSecondPrecision(string header, PreconditionOutcome expected)
+    public void IfModifiedSince_ComparesAtSecondPrecision(
+        string header,
+        PreconditionOutcome expected
+    )
     {
         Assert.Equal(expected, Evaluate(new ConditionalHeaders(IfModifiedSince: header)));
     }
@@ -65,7 +75,9 @@ public sealed class PreconditionsTests
     [InlineData("Sat, 29 Oct 1994 19:43:31 GMT", PreconditionOutcome.PreconditionFailed)]
     [InlineData("not a date", PreconditionOutcome.Proceed)]
     public void IfUnmodifiedSince_ComparesAtSecondPrecision(
-        string header, PreconditionOutcome expected)
+        string header,
+        PreconditionOutcome expected
+    )
     {
         Assert.Equal(expected, Evaluate(new ConditionalHeaders(IfUnmodifiedSince: header)));
     }
@@ -74,7 +86,9 @@ public sealed class PreconditionsTests
     public void IfMatch_OutranksIfUnmodifiedSince()
     {
         var headers = new ConditionalHeaders(
-            IfMatch: $"\"{ETag}\"", IfUnmodifiedSince: "Sat, 29 Oct 1994 19:43:31 GMT");
+            IfMatch: $"\"{ETag}\"",
+            IfUnmodifiedSince: "Sat, 29 Oct 1994 19:43:31 GMT"
+        );
 
         Assert.Equal(PreconditionOutcome.Proceed, Evaluate(headers));
     }
@@ -83,7 +97,9 @@ public sealed class PreconditionsTests
     public void IfNoneMatch_OutranksIfModifiedSince()
     {
         var headers = new ConditionalHeaders(
-            IfNoneMatch: $"\"{ETag}\"", IfModifiedSince: "Sat, 29 Oct 1994 19:43:31 GMT");
+            IfNoneMatch: $"\"{ETag}\"",
+            IfModifiedSince: "Sat, 29 Oct 1994 19:43:31 GMT"
+        );
 
         Assert.Equal(PreconditionOutcome.NotModified, Evaluate(headers));
     }

@@ -19,34 +19,43 @@ public sealed class MultipartTests : IDisposable
         var firstPart = RandomNumberGenerator.GetBytes(5 * 1024 * 1024);
         var secondPart = RandomNumberGenerator.GetBytes(64 * 1024);
 
-        var initiate = await s3.InitiateMultipartUploadAsync(new InitiateMultipartUploadRequest
-        {
-            BucketName = Bucket,
-            Key = "assembled.bin",
-            ContentType = "application/x-s3harp",
-            Metadata = { ["note"] = "multipart" },
-        }, Token);
+        var initiate = await s3.InitiateMultipartUploadAsync(
+            new InitiateMultipartUploadRequest
+            {
+                BucketName = Bucket,
+                Key = "assembled.bin",
+                ContentType = "application/x-s3harp",
+                Metadata = { ["note"] = "multipart" },
+            },
+            Token
+        );
         var uploaded = new List<PartETag>();
         foreach (var (bytes, number) in new[] { (firstPart, 1), (secondPart, 2) })
         {
-            var part = await s3.UploadPartAsync(new UploadPartRequest
+            var part = await s3.UploadPartAsync(
+                new UploadPartRequest
+                {
+                    BucketName = Bucket,
+                    Key = "assembled.bin",
+                    UploadId = initiate.UploadId,
+                    PartNumber = number,
+                    InputStream = new MemoryStream(bytes),
+                },
+                Token
+            );
+            uploaded.Add(new PartETag(number, part.ETag));
+        }
+
+        var completed = await s3.CompleteMultipartUploadAsync(
+            new CompleteMultipartUploadRequest
             {
                 BucketName = Bucket,
                 Key = "assembled.bin",
                 UploadId = initiate.UploadId,
-                PartNumber = number,
-                InputStream = new MemoryStream(bytes),
-            }, Token);
-            uploaded.Add(new PartETag(number, part.ETag));
-        }
-
-        var completed = await s3.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
-        {
-            BucketName = Bucket,
-            Key = "assembled.bin",
-            UploadId = initiate.UploadId,
-            PartETags = uploaded,
-        }, Token);
+                PartETags = uploaded,
+            },
+            Token
+        );
 
         Assert.EndsWith("-2\"", completed.ETag, StringComparison.Ordinal);
         using var response = await s3.GetObjectAsync(Bucket, "assembled.bin", Token);
@@ -65,12 +74,15 @@ public sealed class MultipartTests : IDisposable
         var secondPart = RandomNumberGenerator.GetBytes(64 * 1024);
         var etag = await CompleteTwoPartUpload(s3, "parts.bin", firstPart, secondPart);
 
-        using var response = await s3.GetObjectAsync(new GetObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "parts.bin",
-            PartNumber = 2,
-        }, Token);
+        using var response = await s3.GetObjectAsync(
+            new GetObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "parts.bin",
+                PartNumber = 2,
+            },
+            Token
+        );
         using var received = new MemoryStream();
         await response.ResponseStream.CopyToAsync(received, Token);
 
@@ -78,12 +90,15 @@ public sealed class MultipartTests : IDisposable
         Assert.Equal(secondPart, received.ToArray());
         Assert.Equal(2, response.PartsCount);
         Assert.Equal(etag, response.ETag);
-        var head = await s3.GetObjectMetadataAsync(new GetObjectMetadataRequest
-        {
-            BucketName = Bucket,
-            Key = "parts.bin",
-            PartNumber = 1,
-        }, Token);
+        var head = await s3.GetObjectMetadataAsync(
+            new GetObjectMetadataRequest
+            {
+                BucketName = Bucket,
+                Key = "parts.bin",
+                PartNumber = 1,
+            },
+            Token
+        );
         Assert.Equal(firstPart.Length, head.ContentLength);
         Assert.Equal(2, head.PartsCount);
     }
@@ -92,16 +107,19 @@ public sealed class MultipartTests : IDisposable
     public async Task GetObject_ByAPartNumberBeyondTheLast_ThrowsInvalidPart()
     {
         using var s3 = await CreateClientWithBucket();
-        await CompleteTwoPartUpload(
-            s3, "parts.bin", new byte[5 * 1024 * 1024], new byte[1024]);
+        await CompleteTwoPartUpload(s3, "parts.bin", new byte[5 * 1024 * 1024], new byte[1024]);
 
-        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
-            () => s3.GetObjectAsync(new GetObjectRequest
-            {
-                BucketName = Bucket,
-                Key = "parts.bin",
-                PartNumber = 3,
-            }, Token));
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() =>
+            s3.GetObjectAsync(
+                new GetObjectRequest
+                {
+                    BucketName = Bucket,
+                    Key = "parts.bin",
+                    PartNumber = 3,
+                },
+                Token
+            )
+        );
 
         Assert.Equal("InvalidPart", exception.ErrorCode);
         Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
@@ -111,55 +129,81 @@ public sealed class MultipartTests : IDisposable
     public async Task MultipartUpload_WithSha256_ReportsPartAndCompositeChecksums()
     {
         using var s3 = await CreateClientWithBucket();
-        var initiate = await s3.InitiateMultipartUploadAsync(new InitiateMultipartUploadRequest
-        {
-            BucketName = Bucket,
-            Key = "summed.bin",
-            ChecksumAlgorithm = ChecksumAlgorithm.SHA256,
-        }, Token);
-        var uploaded = new List<PartETag>();
-        foreach (var (bytes, number) in new[] { (new byte[5 * 1024 * 1024], 1), (new byte[1024], 2) })
-        {
-            var part = await s3.UploadPartAsync(new UploadPartRequest
+        var initiate = await s3.InitiateMultipartUploadAsync(
+            new InitiateMultipartUploadRequest
             {
                 BucketName = Bucket,
                 Key = "summed.bin",
-                UploadId = initiate.UploadId,
-                PartNumber = number,
-                InputStream = new MemoryStream(bytes),
                 ChecksumAlgorithm = ChecksumAlgorithm.SHA256,
-            }, Token);
+            },
+            Token
+        );
+        var uploaded = new List<PartETag>();
+        foreach (
+            var (bytes, number) in new[] { (new byte[5 * 1024 * 1024], 1), (new byte[1024], 2) }
+        )
+        {
+            var part = await s3.UploadPartAsync(
+                new UploadPartRequest
+                {
+                    BucketName = Bucket,
+                    Key = "summed.bin",
+                    UploadId = initiate.UploadId,
+                    PartNumber = number,
+                    InputStream = new MemoryStream(bytes),
+                    ChecksumAlgorithm = ChecksumAlgorithm.SHA256,
+                },
+                Token
+            );
             Assert.NotNull(part.ChecksumSHA256);
             uploaded.Add(new PartETag(number, part.ETag) { ChecksumSHA256 = part.ChecksumSHA256 });
         }
 
-        var completed = await s3.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
-        {
-            BucketName = Bucket,
-            Key = "summed.bin",
-            UploadId = initiate.UploadId,
-            PartETags = uploaded,
-        }, Token);
-        var head = await s3.GetObjectMetadataAsync(new GetObjectMetadataRequest
-        {
-            BucketName = Bucket,
-            Key = "summed.bin",
-            ChecksumMode = ChecksumMode.ENABLED,
-        }, Token);
-        using var secondPart = await s3.GetObjectAsync(new GetObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "summed.bin",
-            PartNumber = 2,
-            ChecksumMode = ChecksumMode.ENABLED,
-        }, Token);
+        var completed = await s3.CompleteMultipartUploadAsync(
+            new CompleteMultipartUploadRequest
+            {
+                BucketName = Bucket,
+                Key = "summed.bin",
+                UploadId = initiate.UploadId,
+                PartETags = uploaded,
+            },
+            Token
+        );
+        var head = await s3.GetObjectMetadataAsync(
+            new GetObjectMetadataRequest
+            {
+                BucketName = Bucket,
+                Key = "summed.bin",
+                ChecksumMode = ChecksumMode.ENABLED,
+            },
+            Token
+        );
+        using var secondPart = await s3.GetObjectAsync(
+            new GetObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "summed.bin",
+                PartNumber = 2,
+                ChecksumMode = ChecksumMode.ENABLED,
+            },
+            Token
+        );
 
-        var attributes = await s3.GetObjectAttributesAsync(new GetObjectAttributesRequest
-        {
-            BucketName = Bucket,
-            Key = "summed.bin",
-            ObjectAttributes = [ObjectAttributes.ETag, ObjectAttributes.Checksum, ObjectAttributes.ObjectParts, ObjectAttributes.ObjectSize],
-        }, Token);
+        var attributes = await s3.GetObjectAttributesAsync(
+            new GetObjectAttributesRequest
+            {
+                BucketName = Bucket,
+                Key = "summed.bin",
+                ObjectAttributes =
+                [
+                    ObjectAttributes.ETag,
+                    ObjectAttributes.Checksum,
+                    ObjectAttributes.ObjectParts,
+                    ObjectAttributes.ObjectSize,
+                ],
+            },
+            Token
+        );
 
         Assert.Equal(ChecksumAlgorithm.SHA256, initiate.ChecksumAlgorithm);
         Assert.Equal(ChecksumType.COMPOSITE, initiate.ChecksumType);
@@ -169,7 +213,8 @@ public sealed class MultipartTests : IDisposable
         Assert.Equal(5 * 1024 * 1024 + 1024, attributes.ObjectSize);
         Assert.Equal(
             uploaded.Select(part => part.ChecksumSHA256),
-            (attributes.ObjectParts.Parts ?? []).Select(part => part.ChecksumSHA256));
+            (attributes.ObjectParts.Parts ?? []).Select(part => part.ChecksumSHA256)
+        );
         Assert.EndsWith("-2", completed.ChecksumSHA256, StringComparison.Ordinal);
         Assert.Equal(ChecksumType.COMPOSITE, completed.ChecksumType);
         Assert.Equal(completed.ChecksumSHA256, head.ChecksumSHA256);
@@ -181,37 +226,52 @@ public sealed class MultipartTests : IDisposable
     {
         using var s3 = await CreateClientWithBucket();
         var source = RandomNumberGenerator.GetBytes(6 * 1024 * 1024);
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "source.bin",
-            InputStream = new MemoryStream(source),
-        }, Token);
+        await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "source.bin",
+                InputStream = new MemoryStream(source),
+            },
+            Token
+        );
         var initiate = await s3.InitiateMultipartUploadAsync(Bucket, "copied.bin", Token);
         var uploaded = new List<PartETag>();
-        foreach (var (first, last, number) in new[] { (0L, 5L * 1024 * 1024 - 1, 1), (5L * 1024 * 1024, source.LongLength - 1, 2) })
-        {
-            var part = await s3.CopyPartAsync(new CopyPartRequest
+        foreach (
+            var (first, last, number) in new[]
             {
-                SourceBucket = Bucket,
-                SourceKey = "source.bin",
-                DestinationBucket = Bucket,
-                DestinationKey = "copied.bin",
-                UploadId = initiate.UploadId,
-                PartNumber = number,
-                FirstByte = first,
-                LastByte = last,
-            }, Token);
+                (0L, 5L * 1024 * 1024 - 1, 1),
+                (5L * 1024 * 1024, source.LongLength - 1, 2),
+            }
+        )
+        {
+            var part = await s3.CopyPartAsync(
+                new CopyPartRequest
+                {
+                    SourceBucket = Bucket,
+                    SourceKey = "source.bin",
+                    DestinationBucket = Bucket,
+                    DestinationKey = "copied.bin",
+                    UploadId = initiate.UploadId,
+                    PartNumber = number,
+                    FirstByte = first,
+                    LastByte = last,
+                },
+                Token
+            );
             uploaded.Add(new PartETag(number, part.ETag));
         }
 
-        await s3.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
-        {
-            BucketName = Bucket,
-            Key = "copied.bin",
-            UploadId = initiate.UploadId,
-            PartETags = uploaded,
-        }, Token);
+        await s3.CompleteMultipartUploadAsync(
+            new CompleteMultipartUploadRequest
+            {
+                BucketName = Bucket,
+                Key = "copied.bin",
+                UploadId = initiate.UploadId,
+                PartETags = uploaded,
+            },
+            Token
+        );
 
         using var response = await s3.GetObjectAsync(Bucket, "copied.bin", Token);
         using var received = new MemoryStream();
@@ -227,25 +287,32 @@ public sealed class MultipartTests : IDisposable
         var parts = new List<PartETag>();
         for (var number = 1; number <= 2; number++)
         {
-            var part = await s3.UploadPartAsync(new UploadPartRequest
-            {
-                BucketName = Bucket,
-                Key = "small-parts.bin",
-                UploadId = upload.UploadId,
-                PartNumber = number,
-                InputStream = new MemoryStream(new byte[1024]),
-            }, Token);
+            var part = await s3.UploadPartAsync(
+                new UploadPartRequest
+                {
+                    BucketName = Bucket,
+                    Key = "small-parts.bin",
+                    UploadId = upload.UploadId,
+                    PartNumber = number,
+                    InputStream = new MemoryStream(new byte[1024]),
+                },
+                Token
+            );
             parts.Add(new PartETag(number, part.ETag));
         }
 
-        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
-            () => s3.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
-            {
-                BucketName = Bucket,
-                Key = "small-parts.bin",
-                UploadId = upload.UploadId,
-                PartETags = parts,
-            }, Token));
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() =>
+            s3.CompleteMultipartUploadAsync(
+                new CompleteMultipartUploadRequest
+                {
+                    BucketName = Bucket,
+                    Key = "small-parts.bin",
+                    UploadId = upload.UploadId,
+                    PartETags = parts,
+                },
+                Token
+            )
+        );
 
         Assert.Equal("EntityTooSmall", exception.ErrorCode);
         Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
@@ -256,14 +323,17 @@ public sealed class MultipartTests : IDisposable
     {
         using var s3 = await CreateClientWithBucket();
         var initiate = await s3.InitiateMultipartUploadAsync(Bucket, "twice.bin", Token);
-        var part = await s3.UploadPartAsync(new UploadPartRequest
-        {
-            BucketName = Bucket,
-            Key = "twice.bin",
-            UploadId = initiate.UploadId,
-            PartNumber = 1,
-            InputStream = new MemoryStream(new byte[1024]),
-        }, Token);
+        var part = await s3.UploadPartAsync(
+            new UploadPartRequest
+            {
+                BucketName = Bucket,
+                Key = "twice.bin",
+                UploadId = initiate.UploadId,
+                PartNumber = 1,
+                InputStream = new MemoryStream(new byte[1024]),
+            },
+            Token
+        );
         var request = new CompleteMultipartUploadRequest
         {
             BucketName = Bucket,
@@ -283,25 +353,32 @@ public sealed class MultipartTests : IDisposable
     {
         using var s3 = await CreateClientWithBucket();
         var initiate = await s3.InitiateMultipartUploadAsync(Bucket, "doomed.bin", Token);
-        var part = await s3.UploadPartAsync(new UploadPartRequest
-        {
-            BucketName = Bucket,
-            Key = "doomed.bin",
-            UploadId = initiate.UploadId,
-            PartNumber = 1,
-            InputStream = new MemoryStream(new byte[1024]),
-        }, Token);
-
-        await s3.AbortMultipartUploadAsync(Bucket, "doomed.bin", initiate.UploadId, Token);
-
-        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
-            () => s3.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
+        var part = await s3.UploadPartAsync(
+            new UploadPartRequest
             {
                 BucketName = Bucket,
                 Key = "doomed.bin",
                 UploadId = initiate.UploadId,
-                PartETags = [new PartETag(1, part.ETag)],
-            }, Token));
+                PartNumber = 1,
+                InputStream = new MemoryStream(new byte[1024]),
+            },
+            Token
+        );
+
+        await s3.AbortMultipartUploadAsync(Bucket, "doomed.bin", initiate.UploadId, Token);
+
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() =>
+            s3.CompleteMultipartUploadAsync(
+                new CompleteMultipartUploadRequest
+                {
+                    BucketName = Bucket,
+                    Key = "doomed.bin",
+                    UploadId = initiate.UploadId,
+                    PartETags = [new PartETag(1, part.ETag)],
+                },
+                Token
+            )
+        );
         Assert.Equal("NoSuchUpload", exception.ErrorCode);
     }
 
@@ -310,14 +387,17 @@ public sealed class MultipartTests : IDisposable
     {
         using var s3 = await CreateClientWithBucket();
         var initiate = await s3.InitiateMultipartUploadAsync(Bucket, "inspect.bin", Token);
-        var part = await s3.UploadPartAsync(new UploadPartRequest
-        {
-            BucketName = Bucket,
-            Key = "inspect.bin",
-            UploadId = initiate.UploadId,
-            PartNumber = 1,
-            InputStream = new MemoryStream(new byte[2048]),
-        }, Token);
+        var part = await s3.UploadPartAsync(
+            new UploadPartRequest
+            {
+                BucketName = Bucket,
+                Key = "inspect.bin",
+                UploadId = initiate.UploadId,
+                PartNumber = 1,
+                InputStream = new MemoryStream(new byte[2048]),
+            },
+            Token
+        );
 
         var response = await s3.ListPartsAsync(Bucket, "inspect.bin", initiate.UploadId, Token);
 
@@ -327,7 +407,9 @@ public sealed class MultipartTests : IDisposable
         Assert.Equal(part.ETag, listed.ETag);
         Assert.InRange(
             listed.LastModified ?? DateTime.MinValue,
-            DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow.AddMinutes(5));
+            DateTime.UtcNow.AddMinutes(-5),
+            DateTime.UtcNow.AddMinutes(5)
+        );
     }
 
     [Fact]
@@ -337,31 +419,40 @@ public sealed class MultipartTests : IDisposable
         var initiate = await s3.InitiateMultipartUploadAsync(Bucket, "paged.bin", Token);
         foreach (var number in new[] { 1, 2, 3 })
         {
-            await s3.UploadPartAsync(new UploadPartRequest
+            await s3.UploadPartAsync(
+                new UploadPartRequest
+                {
+                    BucketName = Bucket,
+                    Key = "paged.bin",
+                    UploadId = initiate.UploadId,
+                    PartNumber = number,
+                    InputStream = new MemoryStream(new byte[16]),
+                },
+                Token
+            );
+        }
+
+        var first = await s3.ListPartsAsync(
+            new ListPartsRequest
             {
                 BucketName = Bucket,
                 Key = "paged.bin",
                 UploadId = initiate.UploadId,
-                PartNumber = number,
-                InputStream = new MemoryStream(new byte[16]),
-            }, Token);
-        }
-
-        var first = await s3.ListPartsAsync(new ListPartsRequest
-        {
-            BucketName = Bucket,
-            Key = "paged.bin",
-            UploadId = initiate.UploadId,
-            MaxParts = 2,
-        }, Token);
-        var second = await s3.ListPartsAsync(new ListPartsRequest
-        {
-            BucketName = Bucket,
-            Key = "paged.bin",
-            UploadId = initiate.UploadId,
-            MaxParts = 2,
-            PartNumberMarker = "2",
-        }, Token);
+                MaxParts = 2,
+            },
+            Token
+        );
+        var second = await s3.ListPartsAsync(
+            new ListPartsRequest
+            {
+                BucketName = Bucket,
+                Key = "paged.bin",
+                UploadId = initiate.UploadId,
+                MaxParts = 2,
+                PartNumberMarker = "2",
+            },
+            Token
+        );
 
         Assert.Equal([1, 2], (first.Parts ?? []).Select(p => p.PartNumber));
         Assert.True(first.IsTruncated);
@@ -377,7 +468,9 @@ public sealed class MultipartTests : IDisposable
         var initiate = await s3.InitiateMultipartUploadAsync(Bucket, "pending.bin", Token);
 
         var response = await s3.ListMultipartUploadsAsync(
-            new ListMultipartUploadsRequest { BucketName = Bucket }, Token);
+            new ListMultipartUploadsRequest { BucketName = Bucket },
+            Token
+        );
 
         var upload = Assert.Single(response.MultipartUploads ?? []);
         Assert.Equal("pending.bin", upload.Key);
@@ -388,15 +481,19 @@ public sealed class MultipartTests : IDisposable
     public async Task CopyingAnObjectOntoItself_ThrowsInvalidRequest()
     {
         using var s3 = await CreateClientWithBucket();
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "same.txt",
-            ContentBody = "hello",
-        }, Token);
+        await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "same.txt",
+                ContentBody = "hello",
+            },
+            Token
+        );
 
-        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
-            () => s3.CopyObjectAsync(Bucket, "same.txt", Bucket, "same.txt", Token));
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() =>
+            s3.CopyObjectAsync(Bucket, "same.txt", Bucket, "same.txt", Token)
+        );
 
         Assert.Equal("InvalidRequest", exception.ErrorCode);
         Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
@@ -406,13 +503,16 @@ public sealed class MultipartTests : IDisposable
     public async Task CopiedObject_MatchesTheSourceContentAndETag()
     {
         using var s3 = await CreateClientWithBucket();
-        await s3.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = Bucket,
-            Key = "src.txt",
-            ContentBody = "hello world",
-            Metadata = { ["note"] = "kept" },
-        }, Token);
+        await s3.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = Bucket,
+                Key = "src.txt",
+                ContentBody = "hello world",
+                Metadata = { ["note"] = "kept" },
+            },
+            Token
+        );
 
         var copy = await s3.CopyObjectAsync(Bucket, "src.txt", Bucket, "dst.txt", Token);
 
@@ -429,30 +529,40 @@ public sealed class MultipartTests : IDisposable
 
     /// <summary>Uploads and completes the two parts, returning the object's ETag.</summary>
     private static async Task<string> CompleteTwoPartUpload(
-        AmazonS3Client s3, string key, byte[] firstPart, byte[] secondPart)
+        AmazonS3Client s3,
+        string key,
+        byte[] firstPart,
+        byte[] secondPart
+    )
     {
         var initiate = await s3.InitiateMultipartUploadAsync(Bucket, key, Token);
         var uploaded = new List<PartETag>();
         foreach (var (bytes, number) in new[] { (firstPart, 1), (secondPart, 2) })
         {
-            var part = await s3.UploadPartAsync(new UploadPartRequest
+            var part = await s3.UploadPartAsync(
+                new UploadPartRequest
+                {
+                    BucketName = Bucket,
+                    Key = key,
+                    UploadId = initiate.UploadId,
+                    PartNumber = number,
+                    InputStream = new MemoryStream(bytes),
+                },
+                Token
+            );
+            uploaded.Add(new PartETag(number, part.ETag));
+        }
+
+        var completed = await s3.CompleteMultipartUploadAsync(
+            new CompleteMultipartUploadRequest
             {
                 BucketName = Bucket,
                 Key = key,
                 UploadId = initiate.UploadId,
-                PartNumber = number,
-                InputStream = new MemoryStream(bytes),
-            }, Token);
-            uploaded.Add(new PartETag(number, part.ETag));
-        }
-
-        var completed = await s3.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
-        {
-            BucketName = Bucket,
-            Key = key,
-            UploadId = initiate.UploadId,
-            PartETags = uploaded,
-        }, Token);
+                PartETags = uploaded,
+            },
+            Token
+        );
         return completed.ETag;
     }
 

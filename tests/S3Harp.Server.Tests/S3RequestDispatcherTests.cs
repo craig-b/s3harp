@@ -13,8 +13,10 @@ public sealed class S3RequestDispatcherTests : IDisposable
     private static readonly XNamespace S3Namespace = "http://s3.amazonaws.com/doc/2006-03-01/";
     private static readonly DateTimeOffset Now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
 
-    private readonly string root =
-        Path.Combine(Path.GetTempPath(), $"s3harp-dispatch-{Guid.NewGuid():N}");
+    private readonly string root = Path.Combine(
+        Path.GetTempPath(),
+        $"s3harp-dispatch-{Guid.NewGuid():N}"
+    );
 
     private readonly InMemoryMetadataIndex index = new();
     private readonly S3RequestDispatcher dispatcher;
@@ -24,11 +26,15 @@ public sealed class S3RequestDispatcherTests : IDisposable
         dispatcher = new S3RequestDispatcher(
             index,
             new StorageEngine(
-                index, new BlobStore(root), new FixedTimeProvider(Now),
-                new StorageLimits(MinimumPartSize: 5)),
+                index,
+                new BlobStore(root),
+                new FixedTimeProvider(Now),
+                new StorageLimits(MinimumPartSize: 5)
+            ),
             new RootCredentials(AccessKeyId, "secret"),
             new FixedTimeProvider(Now),
-            new ServiceDomain("localhost"));
+            new ServiceDomain("localhost")
+        );
     }
 
     public void Dispose() => Directory.Delete(root, recursive: true);
@@ -112,15 +118,22 @@ public sealed class S3RequestDispatcherTests : IDisposable
         var root = ReadBody(context).Root;
         Assert.NotNull(root);
         Assert.Equal(S3Namespace + "ListAllMyBucketsResult", root.Name);
-        Assert.Equal(AccessKeyId, root.Element(S3Namespace + "Owner")?.Element(S3Namespace + "ID")?.Value);
-        var buckets = root.Element(S3Namespace + "Buckets")?.Elements(S3Namespace + "Bucket").ToArray();
+        Assert.Equal(
+            AccessKeyId,
+            root.Element(S3Namespace + "Owner")?.Element(S3Namespace + "ID")?.Value
+        );
+        var buckets = root.Element(S3Namespace + "Buckets")
+            ?.Elements(S3Namespace + "Bucket")
+            .ToArray();
         Assert.NotNull(buckets);
         Assert.Equal(
             ["alpha", "zebra"],
-            buckets.Select(b => b.Element(S3Namespace + "Name")?.Value));
+            buckets.Select(b => b.Element(S3Namespace + "Name")?.Value)
+        );
         Assert.Equal(
             "2026-09-16T12:00:00.000Z",
-            buckets[0].Element(S3Namespace + "CreationDate")?.Value);
+            buckets[0].Element(S3Namespace + "CreationDate")?.Value
+        );
     }
 
     [Fact]
@@ -145,10 +158,12 @@ public sealed class S3RequestDispatcherTests : IDisposable
         Assert.Equal("11", contents.Element(S3Namespace + "Size")?.Value);
         Assert.Equal(
             "\"5eb63bbbe01eeed093cb22bb8f5acdc3\"",
-            contents.Element(S3Namespace + "ETag")?.Value);
+            contents.Element(S3Namespace + "ETag")?.Value
+        );
         Assert.Equal(
             "2026-09-16T12:00:00.000Z",
-            contents.Element(S3Namespace + "LastModified")?.Value);
+            contents.Element(S3Namespace + "LastModified")?.Value
+        );
         var commonPrefix = Assert.Single(root.Elements(S3Namespace + "CommonPrefixes"));
         Assert.Equal("docs/", commonPrefix.Element(S3Namespace + "Prefix")?.Value);
     }
@@ -162,22 +177,29 @@ public sealed class S3RequestDispatcherTests : IDisposable
             await Dispatch("PUT", $"/my-bucket/{key}", body: key);
         }
 
-        var first = ReadBody(await Dispatch(
-            "GET", "/my-bucket", query: "?list-type=2&max-keys=2")).Root;
+        var first = ReadBody(
+            await Dispatch("GET", "/my-bucket", query: "?list-type=2&max-keys=2")
+        ).Root;
         Assert.NotNull(first);
         Assert.Equal("true", first.Element(S3Namespace + "IsTruncated")?.Value);
         var token = first.Element(S3Namespace + "NextContinuationToken")?.Value;
         Assert.False(string.IsNullOrEmpty(token));
 
-        var second = ReadBody(await Dispatch(
-            "GET", "/my-bucket",
-            query: $"?list-type=2&max-keys=2&continuation-token={Uri.EscapeDataString(token)}")).Root;
+        var second = ReadBody(
+            await Dispatch(
+                "GET",
+                "/my-bucket",
+                query: $"?list-type=2&max-keys=2&continuation-token={Uri.EscapeDataString(token)}"
+            )
+        ).Root;
         Assert.NotNull(second);
         Assert.Equal("false", second.Element(S3Namespace + "IsTruncated")?.Value);
         Assert.Equal(
             ["c"],
-            second.Elements(S3Namespace + "Contents")
-                .Select(c => c.Element(S3Namespace + "Key")?.Value));
+            second
+                .Elements(S3Namespace + "Contents")
+                .Select(c => c.Element(S3Namespace + "Key")?.Value)
+        );
     }
 
     [Fact]
@@ -189,14 +211,16 @@ public sealed class S3RequestDispatcherTests : IDisposable
             await Dispatch("PUT", $"/my-bucket/{key}", body: key);
         }
 
-        var root = ReadBody(await Dispatch(
-            "GET", "/my-bucket", query: "?list-type=2&start-after=a")).Root;
+        var root = ReadBody(
+            await Dispatch("GET", "/my-bucket", query: "?list-type=2&start-after=a")
+        ).Root;
 
         Assert.NotNull(root);
         Assert.Equal(
             ["b", "c"],
             root.Elements(S3Namespace + "Contents")
-                .Select(c => c.Element(S3Namespace + "Key")?.Value));
+                .Select(c => c.Element(S3Namespace + "Key")?.Value)
+        );
     }
 
     [Fact]
@@ -207,15 +231,17 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/docs/nested key.txt", body: "2");
 
         var context = await Dispatch(
-            "GET", "/my-bucket", query: "?list-type=2&encoding-type=url&delimiter=%2F");
+            "GET",
+            "/my-bucket",
+            query: "?list-type=2&encoding-type=url&delimiter=%2F"
+        );
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         var root = ReadBody(context).Root;
         Assert.NotNull(root);
         Assert.Equal("url", root.Element(S3Namespace + "EncodingType")?.Value);
         var contents = Assert.Single(root.Elements(S3Namespace + "Contents"));
-        Assert.Equal(
-            "plus%2Band%20space.txt", contents.Element(S3Namespace + "Key")?.Value);
+        Assert.Equal("plus%2Band%20space.txt", contents.Element(S3Namespace + "Key")?.Value);
         var commonPrefix = Assert.Single(root.Elements(S3Namespace + "CommonPrefixes"));
         Assert.Equal("docs/", commonPrefix.Element(S3Namespace + "Prefix")?.Value);
     }
@@ -226,7 +252,10 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
 
         var context = await Dispatch(
-            "GET", "/my-bucket", query: "?list-type=2&encoding-type=base64");
+            "GET",
+            "/my-bucket",
+            query: "?list-type=2&encoding-type=base64"
+        );
 
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         Assert.Equal("InvalidArgument", ReadErrorCode(context));
@@ -279,15 +308,18 @@ public sealed class S3RequestDispatcherTests : IDisposable
         Assert.Equal("true", first.Element(S3Namespace + "IsTruncated")?.Value);
         Assert.Null(first.Element(S3Namespace + "NextMarker"));
 
-        var second = ReadBody(await Dispatch(
-            "GET", "/my-bucket", query: "?max-keys=2&marker=b")).Root;
+        var second = ReadBody(
+            await Dispatch("GET", "/my-bucket", query: "?max-keys=2&marker=b")
+        ).Root;
         Assert.NotNull(second);
         Assert.Equal("b", second.Element(S3Namespace + "Marker")?.Value);
         Assert.Equal("false", second.Element(S3Namespace + "IsTruncated")?.Value);
         Assert.Equal(
             ["c"],
-            second.Elements(S3Namespace + "Contents")
-                .Select(c => c.Element(S3Namespace + "Key")?.Value));
+            second
+                .Elements(S3Namespace + "Contents")
+                .Select(c => c.Element(S3Namespace + "Key")?.Value)
+        );
     }
 
     [Fact]
@@ -299,20 +331,24 @@ public sealed class S3RequestDispatcherTests : IDisposable
             await Dispatch("PUT", $"/my-bucket/{key}", body: key);
         }
 
-        var first = ReadBody(await Dispatch(
-            "GET", "/my-bucket", query: "?max-keys=2&delimiter=%2F")).Root;
+        var first = ReadBody(
+            await Dispatch("GET", "/my-bucket", query: "?max-keys=2&delimiter=%2F")
+        ).Root;
         Assert.NotNull(first);
         Assert.Equal("true", first.Element(S3Namespace + "IsTruncated")?.Value);
         Assert.Equal("docs/", first.Element(S3Namespace + "NextMarker")?.Value);
 
-        var second = ReadBody(await Dispatch(
-            "GET", "/my-bucket", query: "?max-keys=2&delimiter=%2F&marker=docs%2F")).Root;
+        var second = ReadBody(
+            await Dispatch("GET", "/my-bucket", query: "?max-keys=2&delimiter=%2F&marker=docs%2F")
+        ).Root;
         Assert.NotNull(second);
         Assert.Empty(second.Elements(S3Namespace + "CommonPrefixes"));
         Assert.Equal(
             ["z"],
-            second.Elements(S3Namespace + "Contents")
-                .Select(c => c.Element(S3Namespace + "Key")?.Value));
+            second
+                .Elements(S3Namespace + "Contents")
+                .Select(c => c.Element(S3Namespace + "Key")?.Value)
+        );
     }
 
     [Fact]
@@ -340,11 +376,16 @@ public sealed class S3RequestDispatcherTests : IDisposable
         Assert.Equal("11", version.Element(S3Namespace + "Size")?.Value);
         Assert.Equal(
             "\"5eb63bbbe01eeed093cb22bb8f5acdc3\"",
-            version.Element(S3Namespace + "ETag")?.Value);
+            version.Element(S3Namespace + "ETag")?.Value
+        );
         Assert.Equal(
             "2026-09-16T12:00:00.000Z",
-            version.Element(S3Namespace + "LastModified")?.Value);
-        Assert.Equal(AccessKeyId, version.Element(S3Namespace + "Owner")?.Element(S3Namespace + "ID")?.Value);
+            version.Element(S3Namespace + "LastModified")?.Value
+        );
+        Assert.Equal(
+            AccessKeyId,
+            version.Element(S3Namespace + "Owner")?.Element(S3Namespace + "ID")?.Value
+        );
         Assert.Empty(root.Elements(S3Namespace + "DeleteMarker"));
         var commonPrefix = Assert.Single(root.Elements(S3Namespace + "CommonPrefixes"));
         Assert.Equal("docs/", commonPrefix.Element(S3Namespace + "Prefix")?.Value);
@@ -359,16 +400,21 @@ public sealed class S3RequestDispatcherTests : IDisposable
             await Dispatch("PUT", $"/my-bucket/{key}", body: key);
         }
 
-        var first = ReadBody(await Dispatch(
-            "GET", "/my-bucket", query: "?versions&max-keys=2&delimiter=%2F")).Root;
+        var first = ReadBody(
+            await Dispatch("GET", "/my-bucket", query: "?versions&max-keys=2&delimiter=%2F")
+        ).Root;
         Assert.NotNull(first);
         Assert.Equal("true", first.Element(S3Namespace + "IsTruncated")?.Value);
         Assert.Equal("docs/", first.Element(S3Namespace + "NextKeyMarker")?.Value);
         Assert.Equal("null", first.Element(S3Namespace + "NextVersionIdMarker")?.Value);
 
-        var second = ReadBody(await Dispatch(
-            "GET", "/my-bucket",
-            query: "?versions&max-keys=2&delimiter=%2F&key-marker=docs%2F&version-id-marker=null")).Root;
+        var second = ReadBody(
+            await Dispatch(
+                "GET",
+                "/my-bucket",
+                query: "?versions&max-keys=2&delimiter=%2F&key-marker=docs%2F&version-id-marker=null"
+            )
+        ).Root;
         Assert.NotNull(second);
         Assert.Equal("docs/", second.Element(S3Namespace + "KeyMarker")?.Value);
         Assert.Equal("null", second.Element(S3Namespace + "VersionIdMarker")?.Value);
@@ -376,8 +422,10 @@ public sealed class S3RequestDispatcherTests : IDisposable
         Assert.Empty(second.Elements(S3Namespace + "CommonPrefixes"));
         Assert.Equal(
             ["z"],
-            second.Elements(S3Namespace + "Version")
-                .Select(v => v.Element(S3Namespace + "Key")?.Value));
+            second
+                .Elements(S3Namespace + "Version")
+                .Select(v => v.Element(S3Namespace + "Key")?.Value)
+        );
     }
 
     [Fact]
@@ -401,8 +449,10 @@ public sealed class S3RequestDispatcherTests : IDisposable
         Assert.NotNull(listing);
         Assert.Equal(
             ["folder/"],
-            listing.Elements(S3Namespace + "Contents")
-                .Select(c => c.Element(S3Namespace + "Key")?.Value));
+            listing
+                .Elements(S3Namespace + "Contents")
+                .Select(c => c.Element(S3Namespace + "Key")?.Value)
+        );
     }
 
     [Fact]
@@ -411,15 +461,18 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
         await Dispatch("PUT", "/my-bucket/a.txt", body: "a");
 
-        var root = ReadBody(await Dispatch(
-            "GET", "/my-bucket", query: "?list-type=2&continuation-token=")).Root;
+        var root = ReadBody(
+            await Dispatch("GET", "/my-bucket", query: "?list-type=2&continuation-token=")
+        ).Root;
 
         Assert.NotNull(root);
         Assert.Equal("", root.Element(S3Namespace + "ContinuationToken")?.Value);
         Assert.Equal("false", root.Element(S3Namespace + "IsTruncated")?.Value);
         Assert.Equal(
             ["a.txt"],
-            root.Elements(S3Namespace + "Contents").Select(c => c.Element(S3Namespace + "Key")?.Value));
+            root.Elements(S3Namespace + "Contents")
+                .Select(c => c.Element(S3Namespace + "Key")?.Value)
+        );
     }
 
     [Fact]
@@ -429,8 +482,9 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/a.txt", body: "a");
 
         var plain = ReadBody(await Dispatch("GET", "/my-bucket", query: "?list-type=2")).Root;
-        var withOwner = ReadBody(await Dispatch(
-            "GET", "/my-bucket", query: "?list-type=2&fetch-owner=true")).Root;
+        var withOwner = ReadBody(
+            await Dispatch("GET", "/my-bucket", query: "?list-type=2&fetch-owner=true")
+        ).Root;
 
         Assert.Null(plain?.Element(S3Namespace + "Contents")?.Element(S3Namespace + "Owner"));
         var owner = withOwner?.Element(S3Namespace + "Contents")?.Element(S3Namespace + "Owner");
@@ -464,7 +518,10 @@ public sealed class S3RequestDispatcherTests : IDisposable
     [InlineData("GET", "/my-bucket/key", "?retention")]
     [InlineData("GET", "/my-bucket", "?publicAccessBlock")]
     public async Task SubresourceOperations_ReportNotImplemented(
-        string method, string path, string query)
+        string method,
+        string path,
+        string query
+    )
     {
         await Dispatch("PUT", "/my-bucket");
         await Dispatch("PUT", "/my-bucket/key", body: "content");
@@ -482,9 +539,13 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/key", body: "Hello, S3Harp!");
 
         var context = await Dispatch(
-            "GET", "/my-bucket/key", query: "?attributes",
-            configure: request => request.Headers["x-amz-object-attributes"] =
-                "ETag, Checksum, ObjectParts, StorageClass, ObjectSize");
+            "GET",
+            "/my-bucket/key",
+            query: "?attributes",
+            configure: request =>
+                request.Headers["x-amz-object-attributes"] =
+                    "ETag, Checksum, ObjectParts, StorageClass, ObjectSize"
+        );
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         Assert.Equal("Wed, 16 Sep 2026 12:00:00 GMT", context.Response.Headers.LastModified);
@@ -504,30 +565,49 @@ public sealed class S3RequestDispatcherTests : IDisposable
     {
         await Dispatch("PUT", "/my-bucket");
         var uploadId = await Initiate(
-            "/my-bucket/key", request => request.Headers["x-amz-checksum-algorithm"] = "SHA256");
+            "/my-bucket/key",
+            request => request.Headers["x-amz-checksum-algorithm"] = "SHA256"
+        );
         var first = await UploadPart("/my-bucket/key", uploadId, 1, "Hello, ");
         var second = await UploadPart("/my-bucket/key", uploadId, 2, "S3Harp!");
-        await Dispatch("POST", "/my-bucket/key", query: $"?uploadId={uploadId}", body: $"""
+        await Dispatch(
+            "POST",
+            "/my-bucket/key",
+            query: $"?uploadId={uploadId}",
+            body: $"""
             <CompleteMultipartUpload>
               <Part><PartNumber>1</PartNumber><ETag>{first}</ETag></Part>
               <Part><PartNumber>2</PartNumber><ETag>{second}</ETag></Part>
             </CompleteMultipartUpload>
-            """);
+            """
+        );
 
-        var firstPage = ReadBody(await Dispatch(
-            "GET", "/my-bucket/key", query: "?attributes",
-            configure: request =>
-            {
-                request.Headers["x-amz-object-attributes"] = "ObjectParts";
-                request.Headers["x-amz-max-parts"] = "1";
-            })).Root!.Element(S3Namespace + "ObjectParts")!;
-        var secondPage = ReadBody(await Dispatch(
-            "GET", "/my-bucket/key", query: "?attributes",
-            configure: request =>
-            {
-                request.Headers["x-amz-object-attributes"] = "ObjectParts";
-                request.Headers["x-amz-part-number-marker"] = "1";
-            })).Root!.Element(S3Namespace + "ObjectParts")!;
+        var firstPage = ReadBody(
+            await Dispatch(
+                "GET",
+                "/my-bucket/key",
+                query: "?attributes",
+                configure: request =>
+                {
+                    request.Headers["x-amz-object-attributes"] = "ObjectParts";
+                    request.Headers["x-amz-max-parts"] = "1";
+                }
+            )
+        )
+            .Root!.Element(S3Namespace + "ObjectParts")!;
+        var secondPage = ReadBody(
+            await Dispatch(
+                "GET",
+                "/my-bucket/key",
+                query: "?attributes",
+                configure: request =>
+                {
+                    request.Headers["x-amz-object-attributes"] = "ObjectParts";
+                    request.Headers["x-amz-part-number-marker"] = "1";
+                }
+            )
+        )
+            .Root!.Element(S3Namespace + "ObjectParts")!;
 
         Assert.Equal("2", firstPage.Element(S3Namespace + "PartsCount")?.Value);
         Assert.Equal("1", firstPage.Element(S3Namespace + "MaxParts")?.Value);
@@ -538,13 +618,18 @@ public sealed class S3RequestDispatcherTests : IDisposable
         Assert.Equal("1", part.Element(S3Namespace + "PartNumber")?.Value);
         Assert.Equal("7", part.Element(S3Namespace + "Size")?.Value);
         Assert.Equal(
-            "I0Kb2bqY3VFAMJu5sAlLOq1kJDD/9vs8ph8AjOZE80o=", part.Element(S3Namespace + "ChecksumSHA256")?.Value);
+            "I0Kb2bqY3VFAMJu5sAlLOq1kJDD/9vs8ph8AjOZE80o=",
+            part.Element(S3Namespace + "ChecksumSHA256")?.Value
+        );
         Assert.Equal("1", secondPage.Element(S3Namespace + "PartNumberMarker")?.Value);
         Assert.Equal("false", secondPage.Element(S3Namespace + "IsTruncated")?.Value);
         Assert.Null(secondPage.Element(S3Namespace + "NextPartNumberMarker"));
         Assert.Equal(
             ["2"],
-            secondPage.Elements(S3Namespace + "Part").Select(p => p.Element(S3Namespace + "PartNumber")?.Value));
+            secondPage
+                .Elements(S3Namespace + "Part")
+                .Select(p => p.Element(S3Namespace + "PartNumber")?.Value)
+        );
     }
 
     [Fact]
@@ -553,9 +638,14 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
         await Dispatch("PUT", "/my-bucket/key", body: "Hello, S3Harp!");
 
-        var root = ReadBody(await Dispatch(
-            "GET", "/my-bucket/key", query: "?attributes",
-            configure: request => request.Headers["x-amz-object-attributes"] = "ObjectSize")).Root!;
+        var root = ReadBody(
+            await Dispatch(
+                "GET",
+                "/my-bucket/key",
+                query: "?attributes",
+                configure: request => request.Headers["x-amz-object-attributes"] = "ObjectSize"
+            )
+        ).Root!;
 
         Assert.Equal(["ObjectSize"], root.Elements().Select(e => e.Name.LocalName));
     }
@@ -564,20 +654,25 @@ public sealed class S3RequestDispatcherTests : IDisposable
     [InlineData(null)]
     [InlineData("")]
     [InlineData("ETag, Colour")]
-    public async Task GetObjectAttributes_WithoutUsableAttributes_ReportsInvalidArgument(string? header)
+    public async Task GetObjectAttributes_WithoutUsableAttributes_ReportsInvalidArgument(
+        string? header
+    )
     {
         await Dispatch("PUT", "/my-bucket");
         await Dispatch("PUT", "/my-bucket/key", body: "Hello, S3Harp!");
 
         var context = await Dispatch(
-            "GET", "/my-bucket/key", query: "?attributes",
+            "GET",
+            "/my-bucket/key",
+            query: "?attributes",
             configure: request =>
             {
                 if (header is not null)
                 {
                     request.Headers["x-amz-object-attributes"] = header;
                 }
-            });
+            }
+        );
 
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         Assert.Equal("InvalidArgument", ReadErrorCode(context));
@@ -589,8 +684,11 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
 
         var context = await Dispatch(
-            "GET", "/my-bucket/missing", query: "?attributes",
-            configure: request => request.Headers["x-amz-object-attributes"] = "ETag");
+            "GET",
+            "/my-bucket/missing",
+            query: "?attributes",
+            configure: request => request.Headers["x-amz-object-attributes"] = "ETag"
+        );
 
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
         Assert.Equal("NoSuchKey", ReadErrorCode(context));
@@ -604,26 +702,34 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/two.txt", body: "2");
         await Dispatch("PUT", "/my-bucket/keep.txt", body: "3");
 
-        var context = await Dispatch("POST", "/my-bucket", query: "?delete", body: """
+        var context = await Dispatch(
+            "POST",
+            "/my-bucket",
+            query: "?delete",
+            body: """
             <Delete>
               <Object><Key>one.txt</Key></Object>
               <Object><Key>two.txt</Key></Object>
               <Object><Key>never-existed.txt</Key></Object>
             </Delete>
-            """);
+            """
+        );
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         var result = ReadBody(context).Root;
         Assert.Equal(S3Namespace + "DeleteResult", result?.Name);
         Assert.Equal(
             ["never-existed.txt", "one.txt", "two.txt"],
-            result!.Elements(S3Namespace + "Deleted")
+            result!
+                .Elements(S3Namespace + "Deleted")
                 .Select(d => d.Element(S3Namespace + "Key")?.Value)
-                .Order(StringComparer.Ordinal));
+                .Order(StringComparer.Ordinal)
+        );
         Assert.Equal("NoSuchKey", ReadErrorCode(await Dispatch("GET", "/my-bucket/one.txt")));
         Assert.Equal(
             StatusCodes.Status200OK,
-            (await Dispatch("GET", "/my-bucket/keep.txt")).Response.StatusCode);
+            (await Dispatch("GET", "/my-bucket/keep.txt")).Response.StatusCode
+        );
     }
 
     [Fact]
@@ -632,12 +738,17 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
         await Dispatch("PUT", "/my-bucket/one.txt", body: "1");
 
-        var context = await Dispatch("POST", "/my-bucket", query: "?delete", body: """
+        var context = await Dispatch(
+            "POST",
+            "/my-bucket",
+            query: "?delete",
+            body: """
             <Delete>
               <Quiet>true</Quiet>
               <Object><Key>one.txt</Key></Object>
             </Delete>
-            """);
+            """
+        );
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         Assert.Empty(ReadBody(context).Root!.Elements(S3Namespace + "Deleted"));
@@ -647,8 +758,12 @@ public sealed class S3RequestDispatcherTests : IDisposable
     [Fact]
     public async Task DeleteObjects_OnAnUnknownBucket_ReportsNoSuchBucket()
     {
-        var context = await Dispatch("POST", "/my-bucket", query: "?delete",
-            body: "<Delete><Object><Key>k</Key></Object></Delete>");
+        var context = await Dispatch(
+            "POST",
+            "/my-bucket",
+            query: "?delete",
+            body: "<Delete><Object><Key>k</Key></Object></Delete>"
+        );
 
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
         Assert.Equal("NoSuchBucket", ReadErrorCode(context));
@@ -670,10 +785,15 @@ public sealed class S3RequestDispatcherTests : IDisposable
     {
         await Dispatch("PUT", "/my-bucket");
         var objects = string.Concat(
-            Enumerable.Range(0, 1001).Select(i => $"<Object><Key>k{i}</Key></Object>"));
+            Enumerable.Range(0, 1001).Select(i => $"<Object><Key>k{i}</Key></Object>")
+        );
 
         var context = await Dispatch(
-            "POST", "/my-bucket", query: "?delete", body: $"<Delete>{objects}</Delete>");
+            "POST",
+            "/my-bucket",
+            query: "?delete",
+            body: $"<Delete>{objects}</Delete>"
+        );
 
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         Assert.Equal("MalformedXML", ReadErrorCode(context));
@@ -688,21 +808,24 @@ public sealed class S3RequestDispatcherTests : IDisposable
         var secondETag = await UploadPart("/my-bucket/assembled.txt", uploadId, 2, "S3Harp!");
 
         var complete = await Dispatch(
-            "POST", "/my-bucket/assembled.txt",
+            "POST",
+            "/my-bucket/assembled.txt",
             query: $"?uploadId={uploadId}",
             body: $"""
-                <CompleteMultipartUpload>
-                  <Part><PartNumber>1</PartNumber><ETag>{firstETag}</ETag></Part>
-                  <Part><PartNumber>2</PartNumber><ETag>{secondETag}</ETag></Part>
-                </CompleteMultipartUpload>
-                """);
+            <CompleteMultipartUpload>
+              <Part><PartNumber>1</PartNumber><ETag>{firstETag}</ETag></Part>
+              <Part><PartNumber>2</PartNumber><ETag>{secondETag}</ETag></Part>
+            </CompleteMultipartUpload>
+            """
+        );
 
         Assert.Equal(StatusCodes.Status200OK, complete.Response.StatusCode);
         var result = ReadBody(complete).Root;
         Assert.Equal(S3Namespace + "CompleteMultipartUploadResult", result?.Name);
         Assert.Equal(
             "\"3c4e718dd79097f10b153c92cfded190-2\"",
-            result?.Element(S3Namespace + "ETag")?.Value);
+            result?.Element(S3Namespace + "ETag")?.Value
+        );
         var download = await Dispatch("GET", "/my-bucket/assembled.txt");
         Assert.Equal("Hello, S3Harp!", ReadBodyText(download));
     }
@@ -713,8 +836,11 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
 
         var context = await Dispatch(
-            "POST", "/my-bucket/key", query: "?uploadId=missing",
-            body: "<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>x</ETag></Part></CompleteMultipartUpload>");
+            "POST",
+            "/my-bucket/key",
+            query: "?uploadId=missing",
+            body: "<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>x</ETag></Part></CompleteMultipartUpload>"
+        );
 
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
         Assert.Equal("NoSuchUpload", ReadErrorCode(context));
@@ -727,7 +853,11 @@ public sealed class S3RequestDispatcherTests : IDisposable
         var uploadId = await Initiate("/my-bucket/key");
 
         var context = await Dispatch(
-            "POST", "/my-bucket/key", query: $"?uploadId={uploadId}", body: "not xml at all");
+            "POST",
+            "/my-bucket/key",
+            query: $"?uploadId={uploadId}",
+            body: "not xml at all"
+        );
 
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         Assert.Equal("MalformedXML", ReadErrorCode(context));
@@ -740,8 +870,11 @@ public sealed class S3RequestDispatcherTests : IDisposable
         var uploadId = await Initiate("/my-bucket/key");
 
         var context = await Dispatch(
-            "PUT", "/my-bucket/key",
-            query: $"?partNumber=0&uploadId={uploadId}", body: "data");
+            "PUT",
+            "/my-bucket/key",
+            query: $"?partNumber=0&uploadId={uploadId}",
+            body: "data"
+        );
 
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         Assert.Equal("InvalidArgument", ReadErrorCode(context));
@@ -753,10 +886,13 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
         var uploadId = await Initiate("/my-bucket/key");
 
-        var abort = await Dispatch(
-            "DELETE", "/my-bucket/key", query: $"?uploadId={uploadId}");
+        var abort = await Dispatch("DELETE", "/my-bucket/key", query: $"?uploadId={uploadId}");
         var part = await Dispatch(
-            "PUT", "/my-bucket/key", query: $"?partNumber=1&uploadId={uploadId}", body: "data");
+            "PUT",
+            "/my-bucket/key",
+            query: $"?partNumber=1&uploadId={uploadId}",
+            body: "data"
+        );
 
         Assert.Equal(StatusCodes.Status204NoContent, abort.Response.StatusCode);
         Assert.Equal(StatusCodes.Status404NotFound, part.Response.StatusCode);
@@ -779,12 +915,12 @@ public sealed class S3RequestDispatcherTests : IDisposable
         Assert.Equal(S3Namespace + "ListPartsResult", root.Name);
         Assert.Equal(uploadId, root.Element(S3Namespace + "UploadId")?.Value);
         var parts = root.Elements(S3Namespace + "Part").ToArray();
-        Assert.Equal(
-            ["1", "2"], parts.Select(p => p.Element(S3Namespace + "PartNumber")?.Value));
+        Assert.Equal(["1", "2"], parts.Select(p => p.Element(S3Namespace + "PartNumber")?.Value));
         Assert.Equal("7", parts[0].Element(S3Namespace + "Size")?.Value);
         Assert.Equal(
             "\"c84cabbaebee9a9631c8be234ac64c26\"",
-            parts[0].Element(S3Namespace + "ETag")?.Value);
+            parts[0].Element(S3Namespace + "ETag")?.Value
+        );
     }
 
     [Fact]
@@ -810,11 +946,16 @@ public sealed class S3RequestDispatcherTests : IDisposable
             await UploadPart("/my-bucket/key", uploadId, number, "content");
         }
 
-        var first = ReadBody(await Dispatch(
-            "GET", "/my-bucket/key", query: $"?uploadId={uploadId}&max-parts=2")).Root!;
-        var second = ReadBody(await Dispatch(
-            "GET", "/my-bucket/key",
-            query: $"?uploadId={uploadId}&max-parts=2&part-number-marker=3")).Root!;
+        var first = ReadBody(
+            await Dispatch("GET", "/my-bucket/key", query: $"?uploadId={uploadId}&max-parts=2")
+        ).Root!;
+        var second = ReadBody(
+            await Dispatch(
+                "GET",
+                "/my-bucket/key",
+                query: $"?uploadId={uploadId}&max-parts=2&part-number-marker=3"
+            )
+        ).Root!;
 
         Assert.Equal("2", first.Element(S3Namespace + "MaxParts")?.Value);
         Assert.Equal("0", first.Element(S3Namespace + "PartNumberMarker")?.Value);
@@ -822,26 +963,37 @@ public sealed class S3RequestDispatcherTests : IDisposable
         Assert.Equal("3", first.Element(S3Namespace + "NextPartNumberMarker")?.Value);
         Assert.Equal(
             ["1", "3"],
-            first.Elements(S3Namespace + "Part").Select(p => p.Element(S3Namespace + "PartNumber")?.Value));
+            first
+                .Elements(S3Namespace + "Part")
+                .Select(p => p.Element(S3Namespace + "PartNumber")?.Value)
+        );
         Assert.Equal("3", second.Element(S3Namespace + "PartNumberMarker")?.Value);
         Assert.Equal("false", second.Element(S3Namespace + "IsTruncated")?.Value);
         Assert.Null(second.Element(S3Namespace + "NextPartNumberMarker"));
         Assert.Equal(
             ["5"],
-            second.Elements(S3Namespace + "Part").Select(p => p.Element(S3Namespace + "PartNumber")?.Value));
+            second
+                .Elements(S3Namespace + "Part")
+                .Select(p => p.Element(S3Namespace + "PartNumber")?.Value)
+        );
     }
 
     [Theory]
     [InlineData("max-parts=-1")]
     [InlineData("max-parts=two")]
     [InlineData("part-number-marker=first")]
-    public async Task ListParts_WithAnUnusablePagingParameter_ReportsInvalidArgument(string parameter)
+    public async Task ListParts_WithAnUnusablePagingParameter_ReportsInvalidArgument(
+        string parameter
+    )
     {
         await Dispatch("PUT", "/my-bucket");
         var uploadId = await Initiate("/my-bucket/key");
 
         var context = await Dispatch(
-            "GET", "/my-bucket/key", query: $"?uploadId={uploadId}&{parameter}");
+            "GET",
+            "/my-bucket/key",
+            query: $"?uploadId={uploadId}&{parameter}"
+        );
 
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         Assert.Equal("InvalidArgument", ReadErrorCode(context));
@@ -853,8 +1005,11 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
 
         var named = await Dispatch(
-            "POST", "/my-bucket/key", query: "?uploads",
-            configure: request => request.Headers["x-amz-checksum-algorithm"] = "SHA256");
+            "POST",
+            "/my-bucket/key",
+            query: "?uploads",
+            configure: request => request.Headers["x-amz-checksum-algorithm"] = "SHA256"
+        );
         var unnamed = await Dispatch("POST", "/my-bucket/other", query: "?uploads");
 
         Assert.Equal("SHA256", named.Response.Headers["x-amz-checksum-algorithm"]);
@@ -868,17 +1023,22 @@ public sealed class S3RequestDispatcherTests : IDisposable
     [InlineData("CRC64NVME", "COMPOSITE")]
     [InlineData("CRC32", "PARTIAL")]
     public async Task InitiateUpload_WithAnUnsupportedChecksumType_ReportsInvalidRequest(
-        string algorithm, string type)
+        string algorithm,
+        string type
+    )
     {
         await Dispatch("PUT", "/my-bucket");
 
         var context = await Dispatch(
-            "POST", "/my-bucket/key", query: "?uploads",
+            "POST",
+            "/my-bucket/key",
+            query: "?uploads",
             configure: request =>
             {
                 request.Headers["x-amz-checksum-algorithm"] = algorithm;
                 request.Headers["x-amz-checksum-type"] = type;
-            });
+            }
+        );
 
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         Assert.Equal("InvalidRequest", ReadErrorCode(context));
@@ -889,13 +1049,21 @@ public sealed class S3RequestDispatcherTests : IDisposable
     {
         await Dispatch("PUT", "/my-bucket");
         var uploadId = await Initiate(
-            "/my-bucket/key", request => request.Headers["x-amz-checksum-algorithm"] = "SHA256");
+            "/my-bucket/key",
+            request => request.Headers["x-amz-checksum-algorithm"] = "SHA256"
+        );
 
         var context = await Dispatch(
-            "PUT", "/my-bucket/key", query: $"?partNumber=1&uploadId={uploadId}", body: "Hello, ");
+            "PUT",
+            "/my-bucket/key",
+            query: $"?partNumber=1&uploadId={uploadId}",
+            body: "Hello, "
+        );
 
         Assert.Equal(
-            "I0Kb2bqY3VFAMJu5sAlLOq1kJDD/9vs8ph8AjOZE80o=", context.Response.Headers["x-amz-checksum-sha256"]);
+            "I0Kb2bqY3VFAMJu5sAlLOq1kJDD/9vs8ph8AjOZE80o=",
+            context.Response.Headers["x-amz-checksum-sha256"]
+        );
     }
 
     [Fact]
@@ -903,27 +1071,41 @@ public sealed class S3RequestDispatcherTests : IDisposable
     {
         await Dispatch("PUT", "/my-bucket");
         var uploadId = await Initiate(
-            "/my-bucket/key", request => request.Headers["x-amz-checksum-algorithm"] = "SHA256");
+            "/my-bucket/key",
+            request => request.Headers["x-amz-checksum-algorithm"] = "SHA256"
+        );
         var first = await UploadPart("/my-bucket/key", uploadId, 1, "Hello, ");
         var second = await UploadPart("/my-bucket/key", uploadId, 2, "S3Harp!");
-        string Body(string firstChecksum) => $"""
-            <CompleteMultipartUpload>
-              <Part><PartNumber>1</PartNumber><ETag>{first}</ETag><ChecksumSHA256>{firstChecksum}</ChecksumSHA256></Part>
-              <Part><PartNumber>2</PartNumber><ETag>{second}</ETag></Part>
-            </CompleteMultipartUpload>
-            """;
+        string Body(string firstChecksum) =>
+            $"""
+                <CompleteMultipartUpload>
+                  <Part><PartNumber>1</PartNumber><ETag>{first}</ETag><ChecksumSHA256>{firstChecksum}</ChecksumSHA256></Part>
+                  <Part><PartNumber>2</PartNumber><ETag>{second}</ETag></Part>
+                </CompleteMultipartUpload>
+                """;
 
         var wrongPart = await Dispatch(
-            "POST", "/my-bucket/key", query: $"?uploadId={uploadId}", body: Body("bad="));
+            "POST",
+            "/my-bucket/key",
+            query: $"?uploadId={uploadId}",
+            body: Body("bad=")
+        );
         var wrongWhole = await Dispatch(
-            "POST", "/my-bucket/key", query: $"?uploadId={uploadId}",
+            "POST",
+            "/my-bucket/key",
+            query: $"?uploadId={uploadId}",
             body: Body("I0Kb2bqY3VFAMJu5sAlLOq1kJDD/9vs8ph8AjOZE80o="),
-            configure: request => request.Headers["x-amz-checksum-sha256"] = "bad=");
+            configure: request => request.Headers["x-amz-checksum-sha256"] = "bad="
+        );
         var completed = await Dispatch(
-            "POST", "/my-bucket/key", query: $"?uploadId={uploadId}",
+            "POST",
+            "/my-bucket/key",
+            query: $"?uploadId={uploadId}",
             body: Body("I0Kb2bqY3VFAMJu5sAlLOq1kJDD/9vs8ph8AjOZE80o="),
             configure: request =>
-                request.Headers["x-amz-checksum-sha256"] = "sDGBh5Sl/cL+/VEtpYWyKkP3wHD+lmz/q9Wq8TQpY8c=-2");
+                request.Headers["x-amz-checksum-sha256"] =
+                    "sDGBh5Sl/cL+/VEtpYWyKkP3wHD+lmz/q9Wq8TQpY8c=-2"
+        );
 
         Assert.Equal("InvalidPart", ReadErrorCode(wrongPart));
         Assert.Equal("BadDigest", ReadErrorCode(wrongWhole));
@@ -931,7 +1113,8 @@ public sealed class S3RequestDispatcherTests : IDisposable
         var result = ReadBody(completed).Root!;
         Assert.Equal(
             "sDGBh5Sl/cL+/VEtpYWyKkP3wHD+lmz/q9Wq8TQpY8c=-2",
-            result.Element(S3Namespace + "ChecksumSHA256")?.Value);
+            result.Element(S3Namespace + "ChecksumSHA256")?.Value
+        );
         Assert.Equal("COMPOSITE", result.Element(S3Namespace + "ChecksumType")?.Value);
     }
 
@@ -940,10 +1123,14 @@ public sealed class S3RequestDispatcherTests : IDisposable
     {
         await Dispatch("PUT", "/my-bucket");
         var uploadId = await Initiate(
-            "/my-bucket/key", request => request.Headers["x-amz-checksum-algorithm"] = "CRC32");
+            "/my-bucket/key",
+            request => request.Headers["x-amz-checksum-algorithm"] = "CRC32"
+        );
         await UploadPart("/my-bucket/key", uploadId, 1, "Hello, ");
 
-        var root = ReadBody(await Dispatch("GET", "/my-bucket/key", query: $"?uploadId={uploadId}")).Root!;
+        var root = ReadBody(
+            await Dispatch("GET", "/my-bucket/key", query: $"?uploadId={uploadId}")
+        ).Root!;
 
         Assert.Equal("CRC32", root.Element(S3Namespace + "ChecksumAlgorithm")?.Value);
         Assert.Equal("COMPOSITE", root.Element(S3Namespace + "ChecksumType")?.Value);
@@ -956,22 +1143,34 @@ public sealed class S3RequestDispatcherTests : IDisposable
     {
         await Dispatch("PUT", "/my-bucket");
         var uploadId = await Initiate(
-            "/my-bucket/key", request => request.Headers["x-amz-checksum-algorithm"] = "CRC32");
+            "/my-bucket/key",
+            request => request.Headers["x-amz-checksum-algorithm"] = "CRC32"
+        );
         var first = await UploadPart("/my-bucket/key", uploadId, 1, "Hello, ");
         var second = await UploadPart("/my-bucket/key", uploadId, 2, "S3Harp!");
-        await Dispatch("POST", "/my-bucket/key", query: $"?uploadId={uploadId}", body: $"""
+        await Dispatch(
+            "POST",
+            "/my-bucket/key",
+            query: $"?uploadId={uploadId}",
+            body: $"""
             <CompleteMultipartUpload>
               <Part><PartNumber>1</PartNumber><ETag>{first}</ETag></Part>
               <Part><PartNumber>2</PartNumber><ETag>{second}</ETag></Part>
             </CompleteMultipartUpload>
-            """);
+            """
+        );
 
         var part = await Dispatch(
-            "GET", "/my-bucket/key", query: "?partNumber=2",
-            configure: request => request.Headers["x-amz-checksum-mode"] = "ENABLED");
+            "GET",
+            "/my-bucket/key",
+            query: "?partNumber=2",
+            configure: request => request.Headers["x-amz-checksum-mode"] = "ENABLED"
+        );
         var whole = await Dispatch(
-            "HEAD", "/my-bucket/key",
-            configure: request => request.Headers["x-amz-checksum-mode"] = "ENABLED");
+            "HEAD",
+            "/my-bucket/key",
+            configure: request => request.Headers["x-amz-checksum-mode"] = "ENABLED"
+        );
 
         Assert.Equal("0oUPLw==", part.Response.Headers["x-amz-checksum-crc32"]);
         Assert.Equal("COMPOSITE", part.Response.Headers["x-amz-checksum-type"]);
@@ -984,27 +1183,41 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
         await Dispatch("PUT", "/my-bucket/src", body: "Hello, S3Harp!");
         var uploadId = await Initiate(
-            "/my-bucket/key", request => request.Headers["x-amz-checksum-algorithm"] = "CRC32");
+            "/my-bucket/key",
+            request => request.Headers["x-amz-checksum-algorithm"] = "CRC32"
+        );
 
         var ranged = await Dispatch(
-            "PUT", "/my-bucket/key", query: $"?partNumber=1&uploadId={uploadId}",
+            "PUT",
+            "/my-bucket/key",
+            query: $"?partNumber=1&uploadId={uploadId}",
             configure: request =>
             {
                 request.Headers["x-amz-copy-source"] = "/my-bucket/src";
                 request.Headers["x-amz-copy-source-range"] = "bytes=7-13";
-            });
+            }
+        );
         var whole = await Dispatch(
-            "PUT", "/my-bucket/key", query: $"?partNumber=2&uploadId={uploadId}",
-            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/src");
+            "PUT",
+            "/my-bucket/key",
+            query: $"?partNumber=2&uploadId={uploadId}",
+            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/src"
+        );
 
         Assert.Equal(StatusCodes.Status200OK, ranged.Response.StatusCode);
         var result = ReadBody(ranged).Root!;
         Assert.Equal(S3Namespace + "CopyPartResult", result.Name);
         Assert.Equal("\"" + SecondPartMd5 + "\"", result.Element(S3Namespace + "ETag")?.Value);
-        Assert.Equal("2026-09-16T12:00:00.000Z", result.Element(S3Namespace + "LastModified")?.Value);
+        Assert.Equal(
+            "2026-09-16T12:00:00.000Z",
+            result.Element(S3Namespace + "LastModified")?.Value
+        );
         Assert.Equal("0oUPLw==", result.Element(S3Namespace + "ChecksumCRC32")?.Value);
-        var parts = ReadBody(await Dispatch("GET", "/my-bucket/key", query: $"?uploadId={uploadId}")).Root!
-            .Elements(S3Namespace + "Part").Select(p => p.Element(S3Namespace + "Size")?.Value);
+        var parts = ReadBody(
+            await Dispatch("GET", "/my-bucket/key", query: $"?uploadId={uploadId}")
+        )
+            .Root!.Elements(S3Namespace + "Part")
+            .Select(p => p.Element(S3Namespace + "Size")?.Value);
         Assert.Equal(["7", "14"], parts);
         Assert.Equal(StatusCodes.Status200OK, whole.Response.StatusCode);
     }
@@ -1019,12 +1232,15 @@ public sealed class S3RequestDispatcherTests : IDisposable
         var uploadId = await Initiate("/my-bucket/key");
 
         var context = await Dispatch(
-            "PUT", "/my-bucket/key", query: $"?partNumber=1&uploadId={uploadId}",
+            "PUT",
+            "/my-bucket/key",
+            query: $"?partNumber=1&uploadId={uploadId}",
             configure: request =>
             {
                 request.Headers["x-amz-copy-source"] = "/my-bucket/src";
                 request.Headers["x-amz-copy-source-range"] = range;
-            });
+            }
+        );
 
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         Assert.Equal("InvalidArgument", ReadErrorCode(context));
@@ -1038,12 +1254,15 @@ public sealed class S3RequestDispatcherTests : IDisposable
         var uploadId = await Initiate("/my-bucket/key");
 
         var context = await Dispatch(
-            "PUT", "/my-bucket/key", query: $"?partNumber=1&uploadId={uploadId}",
+            "PUT",
+            "/my-bucket/key",
+            query: $"?partNumber=1&uploadId={uploadId}",
             configure: request =>
             {
                 request.Headers["x-amz-copy-source"] = "/my-bucket/src";
                 request.Headers["x-amz-copy-source-range"] = "bytes=0-21";
-            });
+            }
+        );
 
         Assert.Equal("InvalidRange", ReadErrorCode(context));
     }
@@ -1055,8 +1274,11 @@ public sealed class S3RequestDispatcherTests : IDisposable
         var uploadId = await Initiate("/my-bucket/key");
 
         var context = await Dispatch(
-            "PUT", "/my-bucket/key", query: $"?partNumber=1&uploadId={uploadId}",
-            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/missing");
+            "PUT",
+            "/my-bucket/key",
+            query: $"?partNumber=1&uploadId={uploadId}",
+            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/missing"
+        );
 
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
         Assert.Equal("NoSuchKey", ReadErrorCode(context));
@@ -1070,12 +1292,15 @@ public sealed class S3RequestDispatcherTests : IDisposable
         var uploadId = await Initiate("/my-bucket/key");
 
         var context = await Dispatch(
-            "PUT", "/my-bucket/key", query: $"?partNumber=1&uploadId={uploadId}",
+            "PUT",
+            "/my-bucket/key",
+            query: $"?partNumber=1&uploadId={uploadId}",
             configure: request =>
             {
                 request.Headers["x-amz-copy-source"] = "/my-bucket/src";
                 request.Headers["x-amz-copy-source-if-match"] = "\"badetag\"";
-            });
+            }
+        );
 
         Assert.Equal(StatusCodes.Status412PreconditionFailed, context.Response.StatusCode);
     }
@@ -1087,8 +1312,11 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/src", body: "Hello");
 
         var context = await Dispatch(
-            "PUT", "/my-bucket/key", query: "?partNumber=1&uploadId=missing",
-            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/src");
+            "PUT",
+            "/my-bucket/key",
+            query: "?partNumber=1&uploadId=missing",
+            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/src"
+        );
 
         Assert.Equal("NoSuchUpload", ReadErrorCode(context));
     }
@@ -1120,10 +1348,12 @@ public sealed class S3RequestDispatcherTests : IDisposable
         var uploads = root.Elements(S3Namespace + "Upload").ToArray();
         Assert.Equal(
             ["alpha.txt", "zulu.txt"],
-            uploads.Select(u => u.Element(S3Namespace + "Key")?.Value));
+            uploads.Select(u => u.Element(S3Namespace + "Key")?.Value)
+        );
         Assert.Equal(
             [first, second],
-            uploads.Select(u => u.Element(S3Namespace + "UploadId")?.Value));
+            uploads.Select(u => u.Element(S3Namespace + "UploadId")?.Value)
+        );
     }
 
     [Fact]
@@ -1133,15 +1363,18 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/src.txt", body: "hello world");
 
         var copy = await Dispatch(
-            "PUT", "/my-bucket/dst.txt",
-            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/src.txt");
+            "PUT",
+            "/my-bucket/dst.txt",
+            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/src.txt"
+        );
 
         Assert.Equal(StatusCodes.Status200OK, copy.Response.StatusCode);
         var result = ReadBody(copy).Root;
         Assert.Equal(S3Namespace + "CopyObjectResult", result?.Name);
         Assert.Equal(
             "\"5eb63bbbe01eeed093cb22bb8f5acdc3\"",
-            result?.Element(S3Namespace + "ETag")?.Value);
+            result?.Element(S3Namespace + "ETag")?.Value
+        );
         Assert.Equal("hello world", ReadBodyText(await Dispatch("GET", "/my-bucket/dst.txt")));
     }
 
@@ -1150,17 +1383,22 @@ public sealed class S3RequestDispatcherTests : IDisposable
     {
         await Dispatch("PUT", "/my-bucket");
         await Dispatch(
-            "PUT", "/my-bucket/src.txt", body: "hello",
-            configure: request => request.ContentType = "audio/mpeg");
+            "PUT",
+            "/my-bucket/src.txt",
+            body: "hello",
+            configure: request => request.ContentType = "audio/mpeg"
+        );
 
         await Dispatch(
-            "PUT", "/my-bucket/dst.txt",
+            "PUT",
+            "/my-bucket/dst.txt",
             configure: request =>
             {
                 request.Headers["x-amz-copy-source"] = "/my-bucket/src.txt";
                 request.Headers["x-amz-metadata-directive"] = "REPLACE";
                 request.ContentType = "audio/ogg";
-            });
+            }
+        );
 
         var copied = await Dispatch("HEAD", "/my-bucket/dst.txt");
         Assert.Equal("audio/ogg", copied.Response.ContentType);
@@ -1173,8 +1411,11 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/key", body: "hello world");
 
         var context = await Dispatch(
-            "GET", "/my-bucket/key",
-            configure: request => request.Headers.IfNoneMatch = "\"5eb63bbbe01eeed093cb22bb8f5acdc3\"");
+            "GET",
+            "/my-bucket/key",
+            configure: request =>
+                request.Headers.IfNoneMatch = "\"5eb63bbbe01eeed093cb22bb8f5acdc3\""
+        );
 
         Assert.Equal(StatusCodes.Status304NotModified, context.Response.StatusCode);
         Assert.Equal("\"5eb63bbbe01eeed093cb22bb8f5acdc3\"", context.Response.Headers.ETag);
@@ -1188,8 +1429,10 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/key", body: "hello world");
 
         var context = await Dispatch(
-            "GET", "/my-bucket/key",
-            configure: request => request.Headers.IfMatch = "\"ABCORZ\"");
+            "GET",
+            "/my-bucket/key",
+            configure: request => request.Headers.IfMatch = "\"ABCORZ\""
+        );
 
         Assert.Equal(StatusCodes.Status412PreconditionFailed, context.Response.StatusCode);
         Assert.Equal("PreconditionFailed", ReadErrorCode(context));
@@ -1202,8 +1445,10 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/key", body: "hello world");
 
         var context = await Dispatch(
-            "HEAD", "/my-bucket/key",
-            configure: request => request.Headers.IfModifiedSince = "Wed, 16 Sep 2026 12:00:00 GMT");
+            "HEAD",
+            "/my-bucket/key",
+            configure: request => request.Headers.IfModifiedSince = "Wed, 16 Sep 2026 12:00:00 GMT"
+        );
 
         Assert.Equal(StatusCodes.Status304NotModified, context.Response.StatusCode);
     }
@@ -1214,18 +1459,22 @@ public sealed class S3RequestDispatcherTests : IDisposable
     [InlineData("x-amz-copy-source-if-modified-since", "Wed, 16 Sep 2026 12:00:00 GMT")]
     [InlineData("x-amz-copy-source-if-unmodified-since", "Sat, 29 Oct 1994 19:43:31 GMT")]
     public async Task CopyObject_WhenASourceConditionFails_FailsThePrecondition(
-        string header, string value)
+        string header,
+        string value
+    )
     {
         await Dispatch("PUT", "/my-bucket");
         await Dispatch("PUT", "/my-bucket/src.txt", body: "hello world");
 
         var context = await Dispatch(
-            "PUT", "/my-bucket/dst.txt",
+            "PUT",
+            "/my-bucket/dst.txt",
             configure: request =>
             {
                 request.Headers["x-amz-copy-source"] = "/my-bucket/src.txt";
                 request.Headers[header] = value;
-            });
+            }
+        );
 
         Assert.Equal(StatusCodes.Status412PreconditionFailed, context.Response.StatusCode);
         Assert.Equal("PreconditionFailed", ReadErrorCode(context));
@@ -1240,8 +1489,11 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/key", body: "first");
 
         var context = await Dispatch(
-            "PUT", "/my-bucket/key", body: "second",
-            configure: request => request.Headers.IfNoneMatch = "*");
+            "PUT",
+            "/my-bucket/key",
+            body: "second",
+            configure: request => request.Headers.IfNoneMatch = "*"
+        );
 
         Assert.Equal(StatusCodes.Status412PreconditionFailed, context.Response.StatusCode);
         Assert.Equal("PreconditionFailed", ReadErrorCode(context));
@@ -1254,8 +1506,11 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
 
         var context = await Dispatch(
-            "PUT", "/my-bucket/key", body: "content",
-            configure: request => request.Headers.IfMatch = "*");
+            "PUT",
+            "/my-bucket/key",
+            body: "content",
+            configure: request => request.Headers.IfMatch = "*"
+        );
 
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
         Assert.Equal("NoSuchKey", ReadErrorCode(context));
@@ -1268,8 +1523,11 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/key", body: "hello world");
 
         var context = await Dispatch(
-            "PUT", "/my-bucket/key", body: "second",
-            configure: request => request.Headers.IfMatch = "\"5eb63bbbe01eeed093cb22bb8f5acdc3\"");
+            "PUT",
+            "/my-bucket/key",
+            body: "second",
+            configure: request => request.Headers.IfMatch = "\"5eb63bbbe01eeed093cb22bb8f5acdc3\""
+        );
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         Assert.Equal("second", ReadBodyText(await Dispatch("GET", "/my-bucket/key")));
@@ -1284,9 +1542,12 @@ public sealed class S3RequestDispatcherTests : IDisposable
         var etag = await UploadPart("/my-bucket/key", uploadId, 1, "part");
 
         var context = await Dispatch(
-            "POST", "/my-bucket/key", query: $"?uploadId={uploadId}",
+            "POST",
+            "/my-bucket/key",
+            query: $"?uploadId={uploadId}",
             body: $"<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>{etag}</ETag></Part></CompleteMultipartUpload>",
-            configure: request => request.Headers.IfNoneMatch = "*");
+            configure: request => request.Headers.IfNoneMatch = "*"
+        );
 
         Assert.Equal(StatusCodes.Status412PreconditionFailed, context.Response.StatusCode);
         Assert.Equal("existing", ReadBodyText(await Dispatch("GET", "/my-bucket/key")));
@@ -1297,14 +1558,19 @@ public sealed class S3RequestDispatcherTests : IDisposable
     {
         await Dispatch("PUT", "/my-bucket");
         await Dispatch(
-            "PUT", "/my-bucket/key", body: "hello",
-            configure: request => request.ContentType = "text/plain");
+            "PUT",
+            "/my-bucket/key",
+            body: "hello",
+            configure: request => request.ContentType = "text/plain"
+        );
 
         var overridden = await Dispatch(
-            "GET", "/my-bucket/key",
+            "GET",
+            "/my-bucket/key",
             query: "?response-content-type=foo/bar&response-cache-control=no-cache"
                 + "&response-content-disposition=bla&response-content-encoding=aaa"
-                + "&response-content-language=esperanto&response-expires=123");
+                + "&response-content-language=esperanto&response-expires=123"
+        );
 
         Assert.Equal(StatusCodes.Status200OK, overridden.Response.StatusCode);
         Assert.Equal("foo/bar", overridden.Response.ContentType);
@@ -1325,12 +1591,17 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
 
         var put = await Dispatch(
-            "PUT", "/my-bucket/key", body: "Hello, S3Harp!",
-            configure: request => request.Headers["x-amz-checksum-algorithm"] = "SHA256");
+            "PUT",
+            "/my-bucket/key",
+            body: "Hello, S3Harp!",
+            configure: request => request.Headers["x-amz-checksum-algorithm"] = "SHA256"
+        );
 
         Assert.Equal(StatusCodes.Status200OK, put.Response.StatusCode);
         Assert.Equal(
-            "Aj0Lx1vWnbGF+irlCT3Pa4HNGctHtn3/Q49ApNekoy8=", put.Response.Headers["x-amz-checksum-sha256"]);
+            "Aj0Lx1vWnbGF+irlCT3Pa4HNGctHtn3/Q49ApNekoy8=",
+            put.Response.Headers["x-amz-checksum-sha256"]
+        );
         Assert.Equal("FULL_OBJECT", put.Response.Headers["x-amz-checksum-type"]);
     }
 
@@ -1342,8 +1613,10 @@ public sealed class S3RequestDispatcherTests : IDisposable
 
         var plain = await Dispatch("HEAD", "/my-bucket/key");
         var enabled = await Dispatch(
-            "HEAD", "/my-bucket/key",
-            configure: request => request.Headers["x-amz-checksum-mode"] = "enabled");
+            "HEAD",
+            "/my-bucket/key",
+            configure: request => request.Headers["x-amz-checksum-mode"] = "enabled"
+        );
 
         Assert.False(plain.Response.Headers.ContainsKey("x-amz-checksum-crc64nvme"));
         Assert.Equal("v+mfzPLqhcw=", enabled.Response.Headers["x-amz-checksum-crc64nvme"]);
@@ -1357,12 +1630,14 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/key", body: "Hello, S3Harp!");
 
         var context = await Dispatch(
-            "GET", "/my-bucket/key",
+            "GET",
+            "/my-bucket/key",
             configure: request =>
             {
                 request.Headers["x-amz-checksum-mode"] = "ENABLED";
                 request.Headers.Range = "bytes=0-4";
-            });
+            }
+        );
 
         Assert.Equal(StatusCodes.Status206PartialContent, context.Response.StatusCode);
         Assert.False(context.Response.Headers.ContainsKey("x-amz-checksum-crc64nvme"));
@@ -1373,26 +1648,42 @@ public sealed class S3RequestDispatcherTests : IDisposable
     {
         await Dispatch("PUT", "/my-bucket");
         await Dispatch(
-            "PUT", "/my-bucket/src", body: "Hello, S3Harp!",
-            configure: request => request.Headers["x-amz-checksum-algorithm"] = "SHA1");
+            "PUT",
+            "/my-bucket/src",
+            body: "Hello, S3Harp!",
+            configure: request => request.Headers["x-amz-checksum-algorithm"] = "SHA1"
+        );
 
-        var kept = ReadBody(await Dispatch(
-            "PUT", "/my-bucket/kept",
-            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/src")).Root!;
-        var fresh = ReadBody(await Dispatch(
-            "PUT", "/my-bucket/fresh",
-            configure: request =>
-            {
-                request.Headers["x-amz-copy-source"] = "/my-bucket/src";
-                request.Headers["x-amz-checksum-algorithm"] = "CRC32";
-            })).Root!;
+        var kept = ReadBody(
+            await Dispatch(
+                "PUT",
+                "/my-bucket/kept",
+                configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/src"
+            )
+        ).Root!;
+        var fresh = ReadBody(
+            await Dispatch(
+                "PUT",
+                "/my-bucket/fresh",
+                configure: request =>
+                {
+                    request.Headers["x-amz-copy-source"] = "/my-bucket/src";
+                    request.Headers["x-amz-checksum-algorithm"] = "CRC32";
+                }
+            )
+        ).Root!;
 
-        Assert.Equal("gLagvNJpcFuHJZa/U8arrgX+MoM=", kept.Element(S3Namespace + "ChecksumSHA1")?.Value);
+        Assert.Equal(
+            "gLagvNJpcFuHJZa/U8arrgX+MoM=",
+            kept.Element(S3Namespace + "ChecksumSHA1")?.Value
+        );
         Assert.Equal("FULL_OBJECT", kept.Element(S3Namespace + "ChecksumType")?.Value);
         Assert.Equal("NadAdg==", fresh.Element(S3Namespace + "ChecksumCRC32")?.Value);
         var head = await Dispatch(
-            "HEAD", "/my-bucket/fresh",
-            configure: request => request.Headers["x-amz-checksum-mode"] = "ENABLED");
+            "HEAD",
+            "/my-bucket/fresh",
+            configure: request => request.Headers["x-amz-checksum-mode"] = "ENABLED"
+        );
         Assert.Equal("NadAdg==", head.Response.Headers["x-amz-checksum-crc32"]);
     }
 
@@ -1401,7 +1692,9 @@ public sealed class S3RequestDispatcherTests : IDisposable
     {
         await Dispatch("PUT", "/my-bucket");
         await Dispatch(
-            "PUT", "/my-bucket/key", body: "hello",
+            "PUT",
+            "/my-bucket/key",
+            body: "hello",
             configure: request =>
             {
                 request.Headers.CacheControl = "public, max-age=14400";
@@ -1409,7 +1702,8 @@ public sealed class S3RequestDispatcherTests : IDisposable
                 request.Headers.ContentEncoding = "gzip, aws-chunked";
                 request.Headers.ContentLanguage = "en-GB";
                 request.Headers.Expires = "Thu, 01 Jan 2026 00:00:00 GMT";
-            });
+            }
+        );
 
         var head = await Dispatch("HEAD", "/my-bucket/key");
 
@@ -1425,8 +1719,11 @@ public sealed class S3RequestDispatcherTests : IDisposable
     {
         await Dispatch("PUT", "/my-bucket");
         await Dispatch(
-            "PUT", "/my-bucket/key", body: "hello",
-            configure: request => request.Headers.ContentEncoding = "aws-chunked");
+            "PUT",
+            "/my-bucket/key",
+            body: "hello",
+            configure: request => request.Headers.ContentEncoding = "aws-chunked"
+        );
 
         var head = await Dispatch("HEAD", "/my-bucket/key");
 
@@ -1442,9 +1739,12 @@ public sealed class S3RequestDispatcherTests : IDisposable
         var second = await UploadPart("/my-bucket/key", uploadId, 2, "S3Harp!");
 
         var context = await Dispatch(
-            "POST", "/my-bucket/key", query: $"?uploadId={uploadId}",
+            "POST",
+            "/my-bucket/key",
+            query: $"?uploadId={uploadId}",
             body: $"<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>{tiny}</ETag></Part>"
-                + $"<Part><PartNumber>2</PartNumber><ETag>{second}</ETag></Part></CompleteMultipartUpload>");
+                + $"<Part><PartNumber>2</PartNumber><ETag>{second}</ETag></Part></CompleteMultipartUpload>"
+        );
 
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         Assert.Equal("EntityTooSmall", ReadErrorCode(context));
@@ -1457,8 +1757,10 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/same.txt", body: "hello");
 
         var context = await Dispatch(
-            "PUT", "/my-bucket/same.txt",
-            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/same.txt");
+            "PUT",
+            "/my-bucket/same.txt",
+            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/same.txt"
+        );
 
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         Assert.Equal("InvalidRequest", ReadErrorCode(context));
@@ -1471,13 +1773,15 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/same.txt", body: "hello");
 
         var context = await Dispatch(
-            "PUT", "/my-bucket/same.txt",
+            "PUT",
+            "/my-bucket/same.txt",
             configure: request =>
             {
                 request.Headers["x-amz-copy-source"] = "/my-bucket/same.txt";
                 request.Headers["x-amz-metadata-directive"] = "REPLACE";
                 request.Headers["x-amz-meta-note"] = "replaced";
-            });
+            }
+        );
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         var head = await Dispatch("HEAD", "/my-bucket/same.txt");
@@ -1490,8 +1794,10 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
 
         var context = await Dispatch(
-            "PUT", "/my-bucket/dst.txt",
-            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/missing");
+            "PUT",
+            "/my-bucket/dst.txt",
+            configure: request => request.Headers["x-amz-copy-source"] = "/my-bucket/missing"
+        );
 
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
         Assert.Equal("NoSuchKey", ReadErrorCode(context));
@@ -1506,11 +1812,14 @@ public sealed class S3RequestDispatcherTests : IDisposable
         return uploadId;
     }
 
-    private async Task<string> UploadPart(
-        string path, string uploadId, int number, string content)
+    private async Task<string> UploadPart(string path, string uploadId, int number, string content)
     {
         var context = await Dispatch(
-            "PUT", path, query: $"?partNumber={number}&uploadId={uploadId}", body: content);
+            "PUT",
+            path,
+            query: $"?partNumber={number}&uploadId={uploadId}",
+            body: content
+        );
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         var etag = context.Response.Headers.ETag.ToString();
         Assert.False(string.IsNullOrEmpty(etag));
@@ -1584,7 +1893,10 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/whole.txt", body: "hello world");
 
         var context = await Dispatch(
-            "GET", "/my-bucket/whole.txt", query: $"?partNumber={partNumber}");
+            "GET",
+            "/my-bucket/whole.txt",
+            query: $"?partNumber={partNumber}"
+        );
 
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         Assert.Equal("InvalidArgument", ReadErrorCode(context));
@@ -1597,8 +1909,11 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/whole.txt", body: "hello world");
 
         var context = await Dispatch(
-            "GET", "/my-bucket/whole.txt", query: "?partNumber=1",
-            configure: request => request.Headers.Range = "bytes=0-1");
+            "GET",
+            "/my-bucket/whole.txt",
+            query: "?partNumber=1",
+            configure: request => request.Headers.Range = "bytes=0-1"
+        );
 
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         Assert.Equal("InvalidRequest", ReadErrorCode(context));
@@ -1618,21 +1933,33 @@ public sealed class S3RequestDispatcherTests : IDisposable
     [Fact]
     public async Task VirtualHostedRequests_NameTheBucketInTheHost()
     {
-        await Dispatch("PUT", "/", configure: request => request.Host = new HostString("my-bucket.localhost"));
+        await Dispatch(
+            "PUT",
+            "/",
+            configure: request => request.Host = new HostString("my-bucket.localhost")
+        );
 
         var put = await Dispatch(
-            "PUT", "/greeting.txt", body: "hello",
-            configure: request => request.Host = new HostString("my-bucket.localhost", 9000));
+            "PUT",
+            "/greeting.txt",
+            body: "hello",
+            configure: request => request.Host = new HostString("my-bucket.localhost", 9000)
+        );
         var get = await Dispatch(
-            "GET", "/greeting.txt",
-            configure: request => request.Host = new HostString("my-bucket.localhost", 9000));
+            "GET",
+            "/greeting.txt",
+            configure: request => request.Host = new HostString("my-bucket.localhost", 9000)
+        );
         var listed = ReadBody(await Dispatch("GET", "/my-bucket", query: "?list-type=2")).Root!;
 
         Assert.Equal(StatusCodes.Status200OK, put.Response.StatusCode);
         Assert.Equal("hello", ReadBodyText(get));
         Assert.Equal(
             ["greeting.txt"],
-            listed.Elements(S3Namespace + "Contents").Select(c => c.Element(S3Namespace + "Key")?.Value));
+            listed
+                .Elements(S3Namespace + "Contents")
+                .Select(c => c.Element(S3Namespace + "Key")?.Value)
+        );
     }
 
     [Fact]
@@ -1659,12 +1986,16 @@ public sealed class S3RequestDispatcherTests : IDisposable
     public async Task GetObject_RoundtripsContentHeadersAndMetadata()
     {
         await Dispatch("PUT", "/my-bucket");
-        await Dispatch("PUT", "/my-bucket/greeting.txt", body: "hello world",
+        await Dispatch(
+            "PUT",
+            "/my-bucket/greeting.txt",
+            body: "hello world",
             configure: request =>
             {
                 request.ContentType = "text/plain";
                 request.Headers["x-amz-meta-note"] = "from-test";
-            });
+            }
+        );
 
         var context = await Dispatch("GET", "/my-bucket/greeting.txt");
 
@@ -1683,8 +2014,11 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
         await Dispatch("PUT", "/my-bucket/greeting.txt", body: "hello world");
 
-        var context = await Dispatch("GET", "/my-bucket/greeting.txt",
-            configure: request => request.Headers.Range = "bytes=0-4");
+        var context = await Dispatch(
+            "GET",
+            "/my-bucket/greeting.txt",
+            configure: request => request.Headers.Range = "bytes=0-4"
+        );
 
         Assert.Equal(StatusCodes.Status206PartialContent, context.Response.StatusCode);
         Assert.Equal("hello", ReadBodyText(context));
@@ -1699,8 +2033,11 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
         await Dispatch("PUT", "/my-bucket/greeting.txt", body: "hello world");
 
-        var context = await Dispatch("GET", "/my-bucket/greeting.txt",
-            configure: request => request.Headers.Range = "bytes=-5");
+        var context = await Dispatch(
+            "GET",
+            "/my-bucket/greeting.txt",
+            configure: request => request.Headers.Range = "bytes=-5"
+        );
 
         Assert.Equal(StatusCodes.Status206PartialContent, context.Response.StatusCode);
         Assert.Equal("world", ReadBodyText(context));
@@ -1713,8 +2050,11 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
         await Dispatch("PUT", "/my-bucket/greeting.txt", body: "hello world");
 
-        var context = await Dispatch("GET", "/my-bucket/greeting.txt",
-            configure: request => request.Headers.Range = "bytes=999-");
+        var context = await Dispatch(
+            "GET",
+            "/my-bucket/greeting.txt",
+            configure: request => request.Headers.Range = "bytes=999-"
+        );
 
         Assert.Equal(StatusCodes.Status416RangeNotSatisfiable, context.Response.StatusCode);
         Assert.Equal("InvalidRange", ReadErrorCode(context));
@@ -1726,8 +2066,11 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
         await Dispatch("PUT", "/my-bucket/greeting.txt", body: "hello world");
 
-        var context = await Dispatch("GET", "/my-bucket/greeting.txt",
-            configure: request => request.Headers.Range = "bytes=nonsense");
+        var context = await Dispatch(
+            "GET",
+            "/my-bucket/greeting.txt",
+            configure: request => request.Headers.Range = "bytes=nonsense"
+        );
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         Assert.Equal("hello world", ReadBodyText(context));
@@ -1797,8 +2140,10 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/greeting.txt", body: "hello");
 
         var context = await Dispatch(
-            "DELETE", "/my-bucket/greeting.txt",
-            configure: request => request.Headers.IfMatch = "\"badetag\"");
+            "DELETE",
+            "/my-bucket/greeting.txt",
+            configure: request => request.Headers.IfMatch = "\"badetag\""
+        );
 
         Assert.Equal(StatusCodes.Status412PreconditionFailed, context.Response.StatusCode);
         Assert.Equal("PreconditionFailed", ReadErrorCode(context));
@@ -1813,12 +2158,15 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/greeting.txt", body: "hello");
 
         var context = await Dispatch(
-            "DELETE", "/my-bucket/greeting.txt",
+            "DELETE",
+            "/my-bucket/greeting.txt",
             configure: request =>
             {
                 request.Headers["x-amz-if-match-size"] = "5";
-                request.Headers["x-amz-if-match-last-modified-time"] = "Wed, 16 Sep 2026 12:00:00 GMT";
-            });
+                request.Headers["x-amz-if-match-last-modified-time"] =
+                    "Wed, 16 Sep 2026 12:00:00 GMT";
+            }
+        );
 
         Assert.Equal(StatusCodes.Status204NoContent, context.Response.StatusCode);
         Assert.Equal("NoSuchKey", ReadErrorCode(await Dispatch("GET", "/my-bucket/greeting.txt")));
@@ -1831,8 +2179,10 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/greeting.txt", body: "hello");
 
         var context = await Dispatch(
-            "DELETE", "/my-bucket/greeting.txt",
-            configure: request => request.Headers.IfMatch = "*");
+            "DELETE",
+            "/my-bucket/greeting.txt",
+            configure: request => request.Headers.IfMatch = "*"
+        );
 
         Assert.Equal(StatusCodes.Status204NoContent, context.Response.StatusCode);
         Assert.Equal("NoSuchKey", ReadErrorCode(await Dispatch("GET", "/my-bucket/greeting.txt")));
@@ -1844,8 +2194,10 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
 
         var context = await Dispatch(
-            "DELETE", "/my-bucket/missing.txt",
-            configure: request => request.Headers.IfMatch = "\"badetag\"");
+            "DELETE",
+            "/my-bucket/missing.txt",
+            configure: request => request.Headers.IfMatch = "\"badetag\""
+        );
 
         Assert.Equal(StatusCodes.Status204NoContent, context.Response.StatusCode);
     }
@@ -1854,14 +2206,18 @@ public sealed class S3RequestDispatcherTests : IDisposable
     [InlineData("x-amz-if-match-size", "many")]
     [InlineData("x-amz-if-match-last-modified-time", "yesterday")]
     public async Task DeleteObject_WithAnUnusableConditionValue_ReportsInvalidArgument(
-        string header, string value)
+        string header,
+        string value
+    )
     {
         await Dispatch("PUT", "/my-bucket");
         await Dispatch("PUT", "/my-bucket/greeting.txt", body: "hello");
 
         var context = await Dispatch(
-            "DELETE", "/my-bucket/greeting.txt",
-            configure: request => request.Headers[header] = value);
+            "DELETE",
+            "/my-bucket/greeting.txt",
+            configure: request => request.Headers[header] = value
+        );
 
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         Assert.Equal("InvalidArgument", ReadErrorCode(context));
@@ -1875,27 +2231,36 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket/two.txt", body: "22");
         await Dispatch("PUT", "/my-bucket/three.txt", body: "333");
 
-        var context = await Dispatch("POST", "/my-bucket", query: "?delete", body: """
+        var context = await Dispatch(
+            "POST",
+            "/my-bucket",
+            query: "?delete",
+            body: """
             <Delete>
               <Object><Key>one.txt</Key><ETag>"badetag"</ETag></Object>
               <Object><Key>two.txt</Key><Size>2</Size></Object>
               <Object><Key>three.txt</Key><LastModifiedTime>2026-09-16T12:00:00Z</LastModifiedTime></Object>
               <Object><Key>never-existed.txt</Key><Size>9</Size></Object>
             </Delete>
-            """);
+            """
+        );
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         var result = ReadBody(context).Root!;
         Assert.Equal(
             ["never-existed.txt", "three.txt", "two.txt"],
-            result.Elements(S3Namespace + "Deleted")
+            result
+                .Elements(S3Namespace + "Deleted")
                 .Select(d => d.Element(S3Namespace + "Key")?.Value)
-                .Order(StringComparer.Ordinal));
+                .Order(StringComparer.Ordinal)
+        );
         var error = Assert.Single(result.Elements(S3Namespace + "Error"));
         Assert.Equal("one.txt", error.Element(S3Namespace + "Key")?.Value);
         Assert.Equal("PreconditionFailed", error.Element(S3Namespace + "Code")?.Value);
         Assert.Equal(
-            StatusCodes.Status200OK, (await Dispatch("GET", "/my-bucket/one.txt")).Response.StatusCode);
+            StatusCodes.Status200OK,
+            (await Dispatch("GET", "/my-bucket/one.txt")).Response.StatusCode
+        );
         Assert.Equal("NoSuchKey", ReadErrorCode(await Dispatch("GET", "/my-bucket/two.txt")));
     }
 
@@ -1905,12 +2270,17 @@ public sealed class S3RequestDispatcherTests : IDisposable
         await Dispatch("PUT", "/my-bucket");
         await Dispatch("PUT", "/my-bucket/one.txt", body: "1");
 
-        var context = await Dispatch("POST", "/my-bucket", query: "?delete", body: """
+        var context = await Dispatch(
+            "POST",
+            "/my-bucket",
+            query: "?delete",
+            body: """
             <Delete>
               <Quiet>true</Quiet>
               <Object><Key>one.txt</Key><Size>9</Size></Object>
             </Delete>
-            """);
+            """
+        );
 
         var error = Assert.Single(ReadBody(context).Root!.Elements());
         Assert.Equal(S3Namespace + "Error", error.Name);
@@ -1922,9 +2292,14 @@ public sealed class S3RequestDispatcherTests : IDisposable
     {
         await Dispatch("PUT", "/my-bucket");
 
-        var context = await Dispatch("POST", "/my-bucket", query: "?delete", body: """
+        var context = await Dispatch(
+            "POST",
+            "/my-bucket",
+            query: "?delete",
+            body: """
             <Delete><Object><Key>one.txt</Key><Size>many</Size></Object></Delete>
-            """);
+            """
+        );
 
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         Assert.Equal("MalformedXML", ReadErrorCode(context));
@@ -1949,13 +2324,16 @@ public sealed class S3RequestDispatcherTests : IDisposable
         var first = await UploadPart(path, uploadId, 1, "Hello, ");
         var second = await UploadPart(path, uploadId, 2, "S3Harp!");
         var completed = await Dispatch(
-            "POST", path, query: $"?uploadId={uploadId}",
+            "POST",
+            path,
+            query: $"?uploadId={uploadId}",
             body: $"""
-                <CompleteMultipartUpload>
-                  <Part><PartNumber>1</PartNumber><ETag>{first}</ETag></Part>
-                  <Part><PartNumber>2</PartNumber><ETag>{second}</ETag></Part>
-                </CompleteMultipartUpload>
-                """);
+            <CompleteMultipartUpload>
+              <Part><PartNumber>1</PartNumber><ETag>{first}</ETag></Part>
+              <Part><PartNumber>2</PartNumber><ETag>{second}</ETag></Part>
+            </CompleteMultipartUpload>
+            """
+        );
         Assert.Equal(StatusCodes.Status200OK, completed.Response.StatusCode);
         var etag = ReadBody(completed).Root?.Element(S3Namespace + "ETag")?.Value;
         Assert.False(string.IsNullOrEmpty(etag));
@@ -1967,7 +2345,8 @@ public sealed class S3RequestDispatcherTests : IDisposable
         string path,
         string? query = null,
         string? body = null,
-        Action<HttpRequest>? configure = null)
+        Action<HttpRequest>? configure = null
+    )
     {
         var context = new DefaultHttpContext();
         context.Request.Method = method;

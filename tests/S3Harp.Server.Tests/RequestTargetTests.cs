@@ -23,7 +23,12 @@ public sealed class RequestTargetTests
     [InlineData("my-bucket.localhost", "/folder/", "my-bucket", "folder/")]
     [InlineData("my.dotted.bucket.localhost", "/key", "my.dotted.bucket", "key")]
     [InlineData("My-Bucket.LOCALHOST", "/key", "My-Bucket", "key")]
-    public void AHostUnderTheDomainNamesTheBucket(string host, string path, string bucket, string? key)
+    public void AHostUnderTheDomainNamesTheBucket(
+        string host,
+        string path,
+        string bucket,
+        string? key
+    )
     {
         Assert.Equal((bucket, key), RequestTarget.Resolve(host, path, Domain));
     }

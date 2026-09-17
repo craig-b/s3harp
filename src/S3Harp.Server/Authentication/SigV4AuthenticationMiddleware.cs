@@ -5,7 +5,10 @@ namespace S3Harp.Server.Authentication;
 
 /// <summary>Verifies the SigV4 signature on every request before it reaches an operation.</summary>
 public sealed class SigV4AuthenticationMiddleware(
-    RequestDelegate next, ICredentialStore credentials, TimeProvider timeProvider)
+    RequestDelegate next,
+    ICredentialStore credentials,
+    TimeProvider timeProvider
+)
 {
     private const string ContentSha256Header = "x-amz-content-sha256";
     private const string DateHeader = "x-amz-date";
@@ -58,10 +61,13 @@ public sealed class SigV4AuthenticationMiddleware(
             return;
         }
 
-        if (!string.Equals(
+        if (
+            !string.Equals(
                 header.Scope.Date,
                 requestTime.ToString("yyyyMMdd", CultureInfo.InvariantCulture),
-                StringComparison.Ordinal))
+                StringComparison.Ordinal
+            )
+        )
         {
             await Reject(context, S3Errors.SignatureDoesNotMatch).ConfigureAwait(false);
             return;
@@ -77,7 +83,11 @@ public sealed class SigV4AuthenticationMiddleware(
         var canonicalRequest = CanonicalRequest.Build(request, header.SignedHeaders, payloadHash);
         var signingKey = SigV4Signer.DeriveSigningKey(secretAccessKey, header.Scope);
         var expected = SigV4Signer.SignCanonicalRequest(
-            signingKey, header.Scope, timestamp, canonicalRequest);
+            signingKey,
+            header.Scope,
+            timestamp,
+            canonicalRequest
+        );
         if (!SigV4Signer.SignaturesEqual(expected, header.Signature))
         {
             await Reject(context, S3Errors.SignatureDoesNotMatch).ConfigureAwait(false);
@@ -88,20 +98,36 @@ public sealed class SigV4AuthenticationMiddleware(
         {
             "UNSIGNED-PAYLOAD" => request.Body,
             "STREAMING-AWS4-HMAC-SHA256-PAYLOAD" => new SigV4ChunkedStream(
-                request.Body, signingKey, header.Scope, timestamp, header.Signature),
+                request.Body,
+                signingKey,
+                header.Scope,
+                timestamp,
+                header.Signature
+            ),
             "STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER" => new SigV4ChunkedStream(
-                request.Body, signingKey, header.Scope, timestamp, header.Signature,
-                signedTrailer: true, AnnouncedTrailerChecksum(request.Headers)),
+                request.Body,
+                signingKey,
+                header.Scope,
+                timestamp,
+                header.Signature,
+                signedTrailer: true,
+                AnnouncedTrailerChecksum(request.Headers)
+            ),
             _ => new Sha256VerifyingStream(request.Body, payloadHash),
         };
 
         // On CompleteMultipartUpload the checksum header names the object being
         // assembled, not the XML body, so the body is not held to it.
-        if (!IsCompleteMultipartUpload(request)
-            && ChecksumHeaders.TryFindDeclared(request.Headers, out var algorithm, out var declared))
+        if (
+            !IsCompleteMultipartUpload(request)
+            && ChecksumHeaders.TryFindDeclared(request.Headers, out var algorithm, out var declared)
+        )
         {
             request.Body = new ChecksumVerifyingStream(
-                request.Body, ChecksumAlgorithms.Create(algorithm), declared);
+                request.Body,
+                ChecksumAlgorithms.Create(algorithm),
+                declared
+            );
         }
 
         await next(context).ConfigureAwait(false);
@@ -114,7 +140,8 @@ public sealed class SigV4AuthenticationMiddleware(
     private static ChecksumAlgorithm? AnnouncedTrailerChecksum(IHeaderDictionary headers)
     {
         string? trailer = headers["x-amz-trailer"];
-        return trailer is not null
+        return
+            trailer is not null
             && ChecksumHeaders.TryParseHeaderName(trailer.Trim(), out var algorithm)
             ? algorithm
             : null;
@@ -126,20 +153,33 @@ public sealed class SigV4AuthenticationMiddleware(
     /// string to sign carries in either case.
     /// </summary>
     private static bool TryReadRequestTime(
-        IHeaderDictionary headers, out DateTimeOffset requestTime, out string timestamp)
+        IHeaderDictionary headers,
+        out DateTimeOffset requestTime,
+        out string timestamp
+    )
     {
         string? amzDate = headers[DateHeader];
         if (amzDate is not null)
         {
             timestamp = amzDate;
             return DateTimeOffset.TryParseExact(
-                amzDate, TimestampFormat, CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out requestTime);
+                amzDate,
+                TimestampFormat,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out requestTime
+            );
         }
 
-        if (DateTimeOffset.TryParseExact(
-                headers.Date, HttpDateFormats, CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out requestTime))
+        if (
+            DateTimeOffset.TryParseExact(
+                headers.Date,
+                HttpDateFormats,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out requestTime
+            )
+        )
         {
             timestamp = requestTime.ToString(TimestampFormat, CultureInfo.InvariantCulture);
             return true;
@@ -156,23 +196,33 @@ public sealed class SigV4AuthenticationMiddleware(
         var query = request.Query;
 
         var credentialParts = query["X-Amz-Credential"].ToString().Split('/');
-        var signedHeaderList = query["X-Amz-SignedHeaders"].ToString()
+        var signedHeaderList = query["X-Amz-SignedHeaders"]
+            .ToString()
             .Split(';', StringSplitOptions.RemoveEmptyEntries);
-        if (query["X-Amz-Algorithm"] != "AWS4-HMAC-SHA256"
-            || credentialParts is not [var accessKeyId, var date, var region, var service, "aws4_request"]
+        if (
+            query["X-Amz-Algorithm"] != "AWS4-HMAC-SHA256"
+            || credentialParts
+                is not [var accessKeyId, var date, var region, var service, "aws4_request"]
             || accessKeyId.Length == 0
             || signedHeaderList.Length == 0
             || !long.TryParse(query["X-Amz-Expires"], out var expiresSeconds)
-            || expiresSeconds is < 1 or > maxExpirySeconds)
+            || expiresSeconds is < 1 or > maxExpirySeconds
+        )
         {
             await Reject(context, S3Errors.AuthorizationQueryParametersError).ConfigureAwait(false);
             return;
         }
 
         var timestamp = query["X-Amz-Date"].ToString();
-        if (!DateTimeOffset.TryParseExact(
-                timestamp, TimestampFormat, CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var signedAt))
+        if (
+            !DateTimeOffset.TryParseExact(
+                timestamp,
+                TimestampFormat,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var signedAt
+            )
+        )
         {
             await Reject(context, S3Errors.AuthorizationQueryParametersError).ConfigureAwait(false);
             return;
@@ -193,10 +243,17 @@ public sealed class SigV4AuthenticationMiddleware(
 
         var scope = new CredentialScope(date, region, service);
         var canonicalRequest = CanonicalRequest.Build(
-            request, signedHeaderList, "UNSIGNED-PAYLOAD", omitSignatureParameter: true);
+            request,
+            signedHeaderList,
+            "UNSIGNED-PAYLOAD",
+            omitSignatureParameter: true
+        );
         var expected = SigV4Signer.SignCanonicalRequest(
-            SigV4Signer.DeriveSigningKey(secretAccessKey, scope), scope, timestamp,
-            canonicalRequest);
+            SigV4Signer.DeriveSigningKey(secretAccessKey, scope),
+            scope,
+            timestamp,
+            canonicalRequest
+        );
         if (!SigV4Signer.SignaturesEqual(expected, query["X-Amz-Signature"].ToString()))
         {
             await Reject(context, S3Errors.SignatureDoesNotMatch).ConfigureAwait(false);

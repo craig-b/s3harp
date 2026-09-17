@@ -7,8 +7,10 @@ public sealed class ObjectListingTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
 
-    private readonly string root =
-        Path.Combine(Path.GetTempPath(), $"s3harp-list-{Guid.NewGuid():N}");
+    private readonly string root = Path.Combine(
+        Path.GetTempPath(),
+        $"s3harp-list-{Guid.NewGuid():N}"
+    );
 
     private readonly InMemoryMetadataIndex index = new();
     private readonly StorageEngine engine;
@@ -16,7 +18,11 @@ public sealed class ObjectListingTests : IDisposable
     public ObjectListingTests()
     {
         engine = new StorageEngine(
-            index, new BlobStore(root), new FixedTimeProvider(Now), StorageLimits.S3);
+            index,
+            new BlobStore(root),
+            new FixedTimeProvider(Now),
+            StorageLimits.S3
+        );
     }
 
     [Fact]
@@ -28,7 +34,8 @@ public sealed class ObjectListingTests : IDisposable
 
         Assert.Equal(
             ["a.txt", "docs/one.txt", "docs/two.txt", "photos/2026/pic.jpg", "z.txt"],
-            listing.Objects.Select(o => o.Key));
+            listing.Objects.Select(o => o.Key)
+        );
         Assert.Empty(listing.CommonPrefixes);
         Assert.False(listing.IsTruncated);
     }
@@ -112,22 +119,36 @@ public sealed class ObjectListingTests : IDisposable
     private async Task Seed()
     {
         Assert.True(await index.TryCreateBucketAsync("alpha", Now, Token));
-        foreach (var key in new[]
-        {
-            "docs/one.txt", "photos/2026/pic.jpg", "a.txt", "z.txt", "docs/two.txt",
-        })
+        foreach (
+            var key in new[]
+            {
+                "docs/one.txt",
+                "photos/2026/pic.jpg",
+                "a.txt",
+                "z.txt",
+                "docs/two.txt",
+            }
+        )
         {
             using var content = new MemoryStream(Encoding.UTF8.GetBytes(key));
             await engine.PutObjectAsync(
-                "alpha", key, content,
+                "alpha",
+                key,
+                content,
                 new ObjectAttributes(null, ContentHeaders.None, new Dictionary<string, string>()),
-                ChecksumAlgorithm.Crc64Nvme, null, Token);
+                ChecksumAlgorithm.Crc64Nvme,
+                null,
+                Token
+            );
         }
     }
 
     private Task<ObjectListing> List(
-        string prefix = "", string? delimiter = null, string fromKey = "", int maxKeys = 1000) =>
-        engine.ListObjectsAsync("alpha", prefix, delimiter, fromKey, maxKeys, Token);
+        string prefix = "",
+        string? delimiter = null,
+        string fromKey = "",
+        int maxKeys = 1000
+    ) => engine.ListObjectsAsync("alpha", prefix, delimiter, fromKey, maxKeys, Token);
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {

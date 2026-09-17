@@ -14,8 +14,7 @@ public sealed class BucketTests : IDisposable
     {
         using var s3 = factory.CreateS3Client();
 
-        await s3.PutBucketAsync(
-            new PutBucketRequest { BucketName = "alpha" }, Token);
+        await s3.PutBucketAsync(new PutBucketRequest { BucketName = "alpha" }, Token);
         var response = await s3.ListBucketsAsync(Token);
 
         var bucket = Assert.Single(response.Buckets ?? []);
@@ -29,8 +28,9 @@ public sealed class BucketTests : IDisposable
         using var s3 = factory.CreateS3Client();
         await s3.PutBucketAsync(new PutBucketRequest { BucketName = "alpha" }, Token);
 
-        var exception = await Assert.ThrowsAsync<BucketAlreadyOwnedByYouException>(
-            () => s3.PutBucketAsync(new PutBucketRequest { BucketName = "alpha" }, Token));
+        var exception = await Assert.ThrowsAsync<BucketAlreadyOwnedByYouException>(() =>
+            s3.PutBucketAsync(new PutBucketRequest { BucketName = "alpha" }, Token)
+        );
 
         Assert.Equal(HttpStatusCode.Conflict, exception.StatusCode);
     }
@@ -53,14 +53,17 @@ public sealed class BucketTests : IDisposable
         using var s3 = factory.CreateS3Client();
         await s3.PutBucketAsync(new PutBucketRequest { BucketName = "alpha" }, Token);
         var upload = await s3.InitiateMultipartUploadAsync("alpha", "big.bin", Token);
-        await s3.UploadPartAsync(new UploadPartRequest
-        {
-            BucketName = "alpha",
-            Key = "big.bin",
-            UploadId = upload.UploadId,
-            PartNumber = 1,
-            InputStream = new MemoryStream("part one"u8.ToArray()),
-        }, Token);
+        await s3.UploadPartAsync(
+            new UploadPartRequest
+            {
+                BucketName = "alpha",
+                Key = "big.bin",
+                UploadId = upload.UploadId,
+                PartNumber = 1,
+                InputStream = new MemoryStream("part one"u8.ToArray()),
+            },
+            Token
+        );
 
         await s3.DeleteBucketAsync("alpha", Token);
         var response = await s3.ListBucketsAsync(Token);
@@ -73,8 +76,9 @@ public sealed class BucketTests : IDisposable
     {
         using var s3 = factory.CreateS3Client();
 
-        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(
-            () => s3.DeleteBucketAsync("missing", Token));
+        var exception = await Assert.ThrowsAsync<AmazonS3Exception>(() =>
+            s3.DeleteBucketAsync("missing", Token)
+        );
 
         Assert.Equal("NoSuchBucket", exception.ErrorCode);
         Assert.Equal(HttpStatusCode.NotFound, exception.StatusCode);

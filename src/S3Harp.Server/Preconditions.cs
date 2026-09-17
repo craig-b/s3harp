@@ -17,7 +17,8 @@ public sealed record ConditionalHeaders(
     string? IfMatch = null,
     string? IfNoneMatch = null,
     string? IfModifiedSince = null,
-    string? IfUnmodifiedSince = null)
+    string? IfUnmodifiedSince = null
+)
 {
     /// <summary>The standard conditional headers of a request.</summary>
     public static ConditionalHeaders FromRequest(IHeaderDictionary headers)
@@ -27,7 +28,8 @@ public sealed record ConditionalHeaders(
             Value(headers.IfMatch),
             Value(headers.IfNoneMatch),
             Value(headers.IfModifiedSince),
-            Value(headers.IfUnmodifiedSince));
+            Value(headers.IfUnmodifiedSince)
+        );
     }
 
     /// <summary>The <c>x-amz-copy-source-if-*</c> headers of a CopyObject request.</summary>
@@ -38,7 +40,8 @@ public sealed record ConditionalHeaders(
             Value(headers["x-amz-copy-source-if-match"]),
             Value(headers["x-amz-copy-source-if-none-match"]),
             Value(headers["x-amz-copy-source-if-modified-since"]),
-            Value(headers["x-amz-copy-source-if-unmodified-since"]));
+            Value(headers["x-amz-copy-source-if-unmodified-since"])
+        );
     }
 
     private static string? Value(StringValues header) =>
@@ -55,7 +58,10 @@ public sealed record ConditionalHeaders(
 public static class Preconditions
 {
     public static PreconditionOutcome Evaluate(
-        ConditionalHeaders headers, string etag, DateTimeOffset lastModified)
+        ConditionalHeaders headers,
+        string etag,
+        DateTimeOffset lastModified
+    )
     {
         ArgumentNullException.ThrowIfNull(headers);
         ArgumentNullException.ThrowIfNull(etag);
@@ -68,8 +74,10 @@ public static class Preconditions
                 return PreconditionOutcome.PreconditionFailed;
             }
         }
-        else if (TryParseHttpDate(headers.IfUnmodifiedSince, out var unmodifiedSince)
-            && modified > unmodifiedSince)
+        else if (
+            TryParseHttpDate(headers.IfUnmodifiedSince, out var unmodifiedSince)
+            && modified > unmodifiedSince
+        )
         {
             return PreconditionOutcome.PreconditionFailed;
         }
@@ -81,8 +89,10 @@ public static class Preconditions
                 return PreconditionOutcome.NotModified;
             }
         }
-        else if (TryParseHttpDate(headers.IfModifiedSince, out var modifiedSince)
-            && modified <= modifiedSince)
+        else if (
+            TryParseHttpDate(headers.IfModifiedSince, out var modifiedSince)
+            && modified <= modifiedSince
+        )
         {
             return PreconditionOutcome.NotModified;
         }
@@ -99,17 +109,31 @@ public static class Preconditions
             return true;
         }
 
-        return trimmed.Split(',')
+        return trimmed
+            .Split(',')
             .Select(tag => tag.Trim().Trim('"'))
             .Any(tag => string.Equals(tag, etag, StringComparison.Ordinal));
     }
 
     private static bool TryParseHttpDate(string? header, out DateTimeOffset date) =>
         DateTimeOffset.TryParseExact(
-            header, "R", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out date);
+            header,
+            "R",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal,
+            out date
+        );
 
     private static DateTimeOffset TruncateToSeconds(DateTimeOffset value) =>
-        new(value.Year, value.Month, value.Day, value.Hour, value.Minute, value.Second, value.Offset);
+        new(
+            value.Year,
+            value.Month,
+            value.Day,
+            value.Hour,
+            value.Minute,
+            value.Second,
+            value.Offset
+        );
 }
 
 /// <summary>
@@ -157,26 +181,41 @@ public static class DeleteConditions
             headers.IfMatch.ToString(),
             headers["x-amz-if-match-size"].ToString(),
             headers["x-amz-if-match-last-modified-time"].ToString(),
-            out condition);
+            out condition
+        );
     }
 
     public static bool TryParse(XElement entry, out DeleteCondition? condition)
     {
         ArgumentNullException.ThrowIfNull(entry);
         return TryBuild(
-            Child(entry, "ETag"), Child(entry, "Size"), Child(entry, "LastModifiedTime"),
-            out condition);
+            Child(entry, "ETag"),
+            Child(entry, "Size"),
+            Child(entry, "LastModifiedTime"),
+            out condition
+        );
     }
 
     private static bool TryBuild(
-        string etag, string size, string lastModified, out DeleteCondition? condition)
+        string etag,
+        string size,
+        string lastModified,
+        out DeleteCondition? condition
+    )
     {
         condition = null;
         long? sizeTerm = null;
         DateTimeOffset? lastModifiedTerm = null;
         if (size.Length > 0)
         {
-            if (!long.TryParse(size, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed))
+            if (
+                !long.TryParse(
+                    size,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var parsed
+                )
+            )
             {
                 return false;
             }
@@ -186,9 +225,14 @@ public static class DeleteConditions
 
         if (lastModified.Length > 0)
         {
-            if (!DateTimeOffset.TryParse(
-                    lastModified, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal,
-                    out var parsed))
+            if (
+                !DateTimeOffset.TryParse(
+                    lastModified,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal,
+                    out var parsed
+                )
+            )
             {
                 return false;
             }
@@ -200,7 +244,10 @@ public static class DeleteConditions
         if (etagTerm.Length > 0 || sizeTerm is not null || lastModifiedTerm is not null)
         {
             condition = new DeleteCondition(
-                etagTerm is "" or "*" ? null : etagTerm.Trim('"'), sizeTerm, lastModifiedTerm);
+                etagTerm is "" or "*" ? null : etagTerm.Trim('"'),
+                sizeTerm,
+                lastModifiedTerm
+            );
         }
 
         return true;

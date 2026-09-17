@@ -31,6 +31,10 @@ public static class ObjectPart
             from += sizes[i].Size;
         }
 
-        return new RangeEvaluation(RangeOutcome.Partial, from, from + sizes[partNumber - 1].Size - 1);
+        return new RangeEvaluation(
+            RangeOutcome.Partial,
+            from,
+            from + sizes[partNumber - 1].Size - 1
+        );
     }
 }

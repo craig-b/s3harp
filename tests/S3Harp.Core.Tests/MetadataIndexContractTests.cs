@@ -8,8 +8,7 @@ namespace S3Harp.Core.Tests;
 /// </summary>
 public abstract class MetadataIndexContractTests
 {
-    private static readonly DateTimeOffset CreationTime =
-        new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset CreationTime = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
 
     protected abstract IMetadataIndex Index { get; }
 
@@ -75,7 +74,9 @@ public abstract class MetadataIndexContractTests
     public async Task DeletingAnUnknownBucket_ReportsItMissing()
     {
         Assert.Equal(
-            DeleteBucketResult.NotFound, (await Index.DeleteBucketAsync("missing", Token)).Status);
+            DeleteBucketResult.NotFound,
+            (await Index.DeleteBucketAsync("missing", Token)).Status
+        );
     }
 
     [Fact]
@@ -85,7 +86,9 @@ public abstract class MetadataIndexContractTests
         await Index.PutObjectAsync("alpha", Record("key", "blob-1"), null, Token);
 
         Assert.Equal(
-            DeleteBucketResult.NotEmpty, (await Index.DeleteBucketAsync("alpha", Token)).Status);
+            DeleteBucketResult.NotEmpty,
+            (await Index.DeleteBucketAsync("alpha", Token)).Status
+        );
         Assert.True(await Index.BucketExistsAsync("alpha", Token));
     }
 
@@ -94,11 +97,22 @@ public abstract class MetadataIndexContractTests
     {
         await Create("alpha");
         var headers = new ContentHeaders(
-            CacheControl: "max-age=60", ContentDisposition: "attachment",
-            ContentEncoding: "gzip", ContentLanguage: "en", Expires: "Thu, 01 Jan 2026 00:00:00 GMT");
+            CacheControl: "max-age=60",
+            ContentDisposition: "attachment",
+            ContentEncoding: "gzip",
+            ContentLanguage: "en",
+            Expires: "Thu, 01 Jan 2026 00:00:00 GMT"
+        );
 
         await Index.PutObjectAsync(
-            "alpha", Record("key", "blob-1") with { ContentHeaders = headers }, null, Token);
+            "alpha",
+            Record("key", "blob-1") with
+            {
+                ContentHeaders = headers,
+            },
+            null,
+            Token
+        );
 
         Assert.Equal(headers, (await Index.FindObjectAsync("alpha", "key", Token))?.ContentHeaders);
     }
@@ -110,11 +124,20 @@ public abstract class MetadataIndexContractTests
         CompletedPart[] parts = [new(5, "abc="), new(3, null), new(1, "xyz=")];
 
         await Index.PutObjectAsync(
-            "alpha", Record("key", "blob-1") with { Parts = parts }, null, Token);
+            "alpha",
+            Record("key", "blob-1") with
+            {
+                Parts = parts,
+            },
+            null,
+            Token
+        );
 
         Assert.Equal(parts, (await Index.FindObjectAsync("alpha", "key", Token))?.Parts);
         Assert.Equal(
-            parts, Assert.Single(await Index.ScanObjectsAsync("alpha", "", "", 10, Token)).Parts);
+            parts,
+            Assert.Single(await Index.ScanObjectsAsync("alpha", "", "", 10, Token)).Parts
+        );
     }
 
     [Fact]
@@ -124,7 +147,14 @@ public abstract class MetadataIndexContractTests
         var checksum = new Checksum(ChecksumAlgorithm.Sha256, "abc=-2", ChecksumType.Composite);
 
         await Index.PutObjectAsync(
-            "alpha", Record("key", "blob-1") with { Checksum = checksum }, null, Token);
+            "alpha",
+            Record("key", "blob-1") with
+            {
+                Checksum = checksum,
+            },
+            null,
+            Token
+        );
         await Index.PutObjectAsync("alpha", Record("plain", "blob-2"), null, Token);
 
         Assert.Equal(checksum, (await Index.FindObjectAsync("alpha", "key", Token))?.Checksum);
@@ -148,7 +178,8 @@ public abstract class MetadataIndexContractTests
         Assert.Equal(ChecksumType.FullObject, found?.ChecksumType);
         Assert.Equal(
             ChecksumType.FullObject,
-            Assert.Single(await Index.ListUploadsAsync("alpha", Token)).ChecksumType);
+            Assert.Single(await Index.ListUploadsAsync("alpha", Token)).ChecksumType
+        );
     }
 
     [Fact]
@@ -156,8 +187,26 @@ public abstract class MetadataIndexContractTests
     {
         await StartUpload("alpha", "u1");
 
-        await Index.PutPartAsync("alpha", "key", "u1", Part(1, "blob-1") with { Checksum = "abc=" }, Token);
-        await Index.PutPartAsync("alpha", "key", "u1", Part(2, "blob-2") with { Checksum = null }, Token);
+        await Index.PutPartAsync(
+            "alpha",
+            "key",
+            "u1",
+            Part(1, "blob-1") with
+            {
+                Checksum = "abc=",
+            },
+            Token
+        );
+        await Index.PutPartAsync(
+            "alpha",
+            "key",
+            "u1",
+            Part(2, "blob-2") with
+            {
+                Checksum = null,
+            },
+            Token
+        );
 
         var parts = await Index.ListPartsAsync("alpha", "key", "u1", Token);
         Assert.Equal(["abc=", null], parts.Select(part => part.Checksum));
@@ -170,10 +219,22 @@ public abstract class MetadataIndexContractTests
         var headers = new ContentHeaders(ContentEncoding: "gzip");
 
         await Index.TryCreateUploadAsync(
-            "alpha", Upload("u1") with { ContentHeaders = headers }, Token);
+            "alpha",
+            Upload("u1") with
+            {
+                ContentHeaders = headers,
+            },
+            Token
+        );
 
-        Assert.Equal(headers, (await Index.FindUploadAsync("alpha", "key", "u1", Token))?.ContentHeaders);
-        Assert.Equal(headers, Assert.Single(await Index.ListUploadsAsync("alpha", Token)).ContentHeaders);
+        Assert.Equal(
+            headers,
+            (await Index.FindUploadAsync("alpha", "key", "u1", Token))?.ContentHeaders
+        );
+        Assert.Equal(
+            headers,
+            Assert.Single(await Index.ListUploadsAsync("alpha", Token)).ContentHeaders
+        );
     }
 
     [Fact]
@@ -252,7 +313,11 @@ public abstract class MetadataIndexContractTests
         await Index.PutObjectAsync("alpha", Record("key", "blob-1"), null, Token);
 
         var result = await Index.DeleteObjectAsync(
-            "alpha", "key", new DeleteCondition(ETag: "etag-hex", Size: 3), Token);
+            "alpha",
+            "key",
+            new DeleteCondition(ETag: "etag-hex", Size: 3),
+            Token
+        );
 
         Assert.Equal(new DeleteObjectResult(DeleteObjectStatus.Deleted, "blob-1"), result);
         Assert.Null(await Index.FindObjectAsync("alpha", "key", Token));
@@ -265,7 +330,11 @@ public abstract class MetadataIndexContractTests
         await Index.PutObjectAsync("alpha", Record("key", "blob-1"), null, Token);
 
         var result = await Index.DeleteObjectAsync(
-            "alpha", "key", new DeleteCondition(ETag: "other"), Token);
+            "alpha",
+            "key",
+            new DeleteCondition(ETag: "other"),
+            Token
+        );
 
         Assert.Equal(DeleteObjectResult.PreconditionFailed, result);
         Assert.NotNull(await Index.FindObjectAsync("alpha", "key", Token));
@@ -277,7 +346,11 @@ public abstract class MetadataIndexContractTests
         await Create("alpha");
 
         var result = await Index.DeleteObjectAsync(
-            "alpha", "missing", new DeleteCondition(ETag: "other"), Token);
+            "alpha",
+            "missing",
+            new DeleteCondition(ETag: "other"),
+            Token
+        );
 
         Assert.Equal(DeleteObjectResult.NotFound, result);
     }
@@ -384,9 +457,20 @@ public abstract class MetadataIndexContractTests
         var uploadedAt = new DateTimeOffset(2026, 9, 16, 15, 30, 45, TimeSpan.Zero);
 
         await Index.PutPartAsync(
-            "alpha", "key", "u1", Part(1, "blob-1") with { LastModified = uploadedAt }, Token);
+            "alpha",
+            "key",
+            "u1",
+            Part(1, "blob-1") with
+            {
+                LastModified = uploadedAt,
+            },
+            Token
+        );
 
-        Assert.Equal(uploadedAt, Assert.Single(await Index.ListPartsAsync("alpha", "key", "u1", Token)).LastModified);
+        Assert.Equal(
+            uploadedAt,
+            Assert.Single(await Index.ListPartsAsync("alpha", "key", "u1", Token)).LastModified
+        );
     }
 
     [Fact]
@@ -441,7 +525,12 @@ public abstract class MetadataIndexContractTests
         await Index.PutObjectAsync("alpha", Record("key", "blob-old"), null, Token);
 
         var result = await Index.CompleteUploadAsync(
-            "alpha", "u1", Record("key", "blob-final"), null, Token);
+            "alpha",
+            "u1",
+            Record("key", "blob-final"),
+            null,
+            Token
+        );
 
         Assert.Equal(CompleteUploadStatus.Completed, result.Status);
         Assert.Equal("blob-old", result.ReplacedBlobId);
@@ -457,8 +546,11 @@ public abstract class MetadataIndexContractTests
         await Index.PutObjectAsync("alpha", Record("key", "blob-old"), null, Token);
 
         var result = await Index.PutObjectAsync(
-            "alpha", Record("key", "blob-new"),
-            new WriteCondition(MustNotMatch: ETagCondition.AnyObject), Token);
+            "alpha",
+            Record("key", "blob-new"),
+            new WriteCondition(MustNotMatch: ETagCondition.AnyObject),
+            Token
+        );
 
         Assert.Equal(PutObjectStatus.PreconditionFailed, result.Status);
         Assert.Null(result.ReplacedBlobId);
@@ -471,8 +563,11 @@ public abstract class MetadataIndexContractTests
         await Create("alpha");
 
         var result = await Index.PutObjectAsync(
-            "alpha", Record("key", "blob-new"),
-            new WriteCondition(MustMatch: ETagCondition.AnyObject), Token);
+            "alpha",
+            Record("key", "blob-new"),
+            new WriteCondition(MustMatch: ETagCondition.AnyObject),
+            Token
+        );
 
         Assert.Equal(PutObjectStatus.ObjectMissing, result.Status);
         Assert.Null(await Index.FindObjectAsync("alpha", "key", Token));
@@ -486,8 +581,12 @@ public abstract class MetadataIndexContractTests
         await Index.PutObjectAsync("alpha", Record("key", "blob-old"), null, Token);
 
         var result = await Index.CompleteUploadAsync(
-            "alpha", "u1", Record("key", "blob-final"),
-            new WriteCondition(MustNotMatch: ETagCondition.AnyObject), Token);
+            "alpha",
+            "u1",
+            Record("key", "blob-final"),
+            new WriteCondition(MustNotMatch: ETagCondition.AnyObject),
+            Token
+        );
 
         Assert.Equal(CompleteUploadStatus.PreconditionFailed, result.Status);
         Assert.Equal("blob-old", (await Index.FindObjectAsync("alpha", "key", Token))?.BlobId);
@@ -501,7 +600,12 @@ public abstract class MetadataIndexContractTests
         await Create("alpha");
 
         var result = await Index.CompleteUploadAsync(
-            "alpha", "missing", Record("key", "blob"), null, Token);
+            "alpha",
+            "missing",
+            Record("key", "blob"),
+            null,
+            Token
+        );
 
         Assert.Equal(CompleteUploadStatus.NoSuchUpload, result.Status);
     }
@@ -512,15 +616,15 @@ public abstract class MetadataIndexContractTests
         await Create("alpha");
         foreach (var (key, uploadId) in new[] { ("b", "u2"), ("a", "u9"), ("a", "u1") })
         {
-            Assert.True(await Index.TryCreateUploadAsync(
-                "alpha", UploadFor(key, uploadId), Token));
+            Assert.True(await Index.TryCreateUploadAsync("alpha", UploadFor(key, uploadId), Token));
         }
 
         var uploads = await Index.ListUploadsAsync("alpha", Token);
 
         Assert.Equal(
             [("a", "u1"), ("a", "u9"), ("b", "u2")],
-            uploads.Select(u => (u.Key, u.UploadId)));
+            uploads.Select(u => (u.Key, u.UploadId))
+        );
         Assert.Equal(CreationTime, uploads[0].InitiatedAt);
     }
 
@@ -555,19 +659,41 @@ public abstract class MetadataIndexContractTests
 
     private static MultipartUpload Upload(string uploadId) => UploadFor("key", uploadId);
 
-    private static MultipartUpload UploadFor(string key, string uploadId) => new(
-        uploadId, key, "text/plain", ContentHeaders.None,
-        new Dictionary<string, string> { ["meta-1"] = "value-1" },
-        ChecksumAlgorithm.Sha256, ChecksumType.Composite, CreationTime);
+    private static MultipartUpload UploadFor(string key, string uploadId) =>
+        new(
+            uploadId,
+            key,
+            "text/plain",
+            ContentHeaders.None,
+            new Dictionary<string, string> { ["meta-1"] = "value-1" },
+            ChecksumAlgorithm.Sha256,
+            ChecksumType.Composite,
+            CreationTime
+        );
 
     private static PartRecord Part(int number, string blobId) =>
-        new(number, blobId, Size: 3, ETag: "part-etag", Checksum: "part-sum=", LastModified: CreationTime);
+        new(
+            number,
+            blobId,
+            Size: 3,
+            ETag: "part-etag",
+            Checksum: "part-sum=",
+            LastModified: CreationTime
+        );
 
-    private static ObjectRecord Record(string key, string blobId) => new(
-        key, blobId, Size: 3, ETag: "etag-hex", Parts: [], Checksum: null, ContentType: "text/plain",
-        ContentHeaders: ContentHeaders.None,
-        Metadata: new Dictionary<string, string> { ["meta-1"] = "value-1" },
-        LastModified: CreationTime);
+    private static ObjectRecord Record(string key, string blobId) =>
+        new(
+            key,
+            blobId,
+            Size: 3,
+            ETag: "etag-hex",
+            Parts: [],
+            Checksum: null,
+            ContentType: "text/plain",
+            ContentHeaders: ContentHeaders.None,
+            Metadata: new Dictionary<string, string> { ["meta-1"] = "value-1" },
+            LastModified: CreationTime
+        );
 
     private async Task Create(string name)
     {
@@ -582,8 +708,10 @@ public sealed class InMemoryMetadataIndexTests : MetadataIndexContractTests
 
 public sealed class SqliteMetadataIndexTests : MetadataIndexContractTests, IDisposable
 {
-    private readonly string databasePath =
-        Path.Combine(Path.GetTempPath(), $"s3harp-test-{Guid.NewGuid():N}.db");
+    private readonly string databasePath = Path.Combine(
+        Path.GetTempPath(),
+        $"s3harp-test-{Guid.NewGuid():N}.db"
+    );
 
     private readonly SqliteMetadataIndex index;
 
@@ -599,7 +727,11 @@ public sealed class SqliteMetadataIndexTests : MetadataIndexContractTests, IDisp
     {
         index.Dispose();
         File.Delete(databasePath);
-        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={databasePath}"))
+        await using (
+            var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                $"Data Source={databasePath}"
+            )
+        )
         {
             await connection.OpenAsync(TestContext.Current.CancellationToken);
             var command = connection.CreateCommand();
@@ -627,20 +759,38 @@ public sealed class SqliteMetadataIndexTests : MetadataIndexContractTests, IDisp
 
         using var upgraded = new SqliteMetadataIndex(databasePath);
 
-        var old = await upgraded.FindObjectAsync("alpha", "old", TestContext.Current.CancellationToken);
+        var old = await upgraded.FindObjectAsync(
+            "alpha",
+            "old",
+            TestContext.Current.CancellationToken
+        );
         Assert.Equal(ContentHeaders.None, old?.ContentHeaders);
         Assert.Empty(old!.Parts);
         Assert.Null(old.Checksum);
         var stored = await upgraded.PutObjectAsync(
             "alpha",
             new ObjectRecord(
-                "new", "blob-2", Size: 3, ETag: "etag-hex", Parts: [], Checksum: null,
+                "new",
+                "blob-2",
+                Size: 3,
+                ETag: "etag-hex",
+                Parts: [],
+                Checksum: null,
                 ContentType: null,
                 ContentHeaders: new ContentHeaders(ContentEncoding: "gzip"),
-                Metadata: new Dictionary<string, string>(), LastModified: DateTimeOffset.UnixEpoch),
-            null, TestContext.Current.CancellationToken);
+                Metadata: new Dictionary<string, string>(),
+                LastModified: DateTimeOffset.UnixEpoch
+            ),
+            null,
+            TestContext.Current.CancellationToken
+        );
         Assert.Equal(PutObjectStatus.Stored, stored.Status);
-        Assert.Equal("gzip", (await upgraded.FindObjectAsync("alpha", "new", TestContext.Current.CancellationToken))?.ContentHeaders.ContentEncoding);
+        Assert.Equal(
+            "gzip",
+            (await upgraded.FindObjectAsync("alpha", "new", TestContext.Current.CancellationToken))
+                ?.ContentHeaders
+                .ContentEncoding
+        );
     }
 
     [Fact]
@@ -648,7 +798,11 @@ public sealed class SqliteMetadataIndexTests : MetadataIndexContractTests, IDisp
     {
         index.Dispose();
         File.Delete(databasePath);
-        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={databasePath}"))
+        await using (
+            var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                $"Data Source={databasePath}"
+            )
+        )
         {
             await connection.OpenAsync(TestContext.Current.CancellationToken);
             var command = connection.CreateCommand();
@@ -673,9 +827,17 @@ public sealed class SqliteMetadataIndexTests : MetadataIndexContractTests, IDisp
 
         using var upgraded = new SqliteMetadataIndex(databasePath);
 
-        var multi = await upgraded.FindObjectAsync("alpha", "multi", TestContext.Current.CancellationToken);
+        var multi = await upgraded.FindObjectAsync(
+            "alpha",
+            "multi",
+            TestContext.Current.CancellationToken
+        );
         Assert.Equal([new CompletedPart(5, null), new CompletedPart(3, null)], multi?.Parts);
-        var single = await upgraded.FindObjectAsync("alpha", "single", TestContext.Current.CancellationToken);
+        var single = await upgraded.FindObjectAsync(
+            "alpha",
+            "single",
+            TestContext.Current.CancellationToken
+        );
         Assert.Empty(single!.Parts);
     }
 

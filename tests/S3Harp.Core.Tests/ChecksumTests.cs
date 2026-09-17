@@ -16,7 +16,8 @@ public sealed class ChecksumTests
     [InlineData(ChecksumAlgorithm.Sha1, "f7c3bc1d808e04732adf679965ccc34ca7ae3441")]
     [InlineData(
         ChecksumAlgorithm.Sha256,
-        "15e2b0d3c33891ebb0f1ef609ec419420c20e320ce94c65fbc8c3312448eb225")]
+        "15e2b0d3c33891ebb0f1ef609ec419420c20e320ce94c65fbc8c3312448eb225"
+    )]
     public void ProducesTheStandardCheckValue(ChecksumAlgorithm algorithm, string expectedHex)
     {
         using var checksum = ChecksumAlgorithms.Create(algorithm);
@@ -71,14 +72,19 @@ public sealed class ChecksumTests
     [InlineData(
         ChecksumAlgorithm.Sha256,
         "275VF5loJr1YYawit0XSHREhkFXYkkPKGuoK0x9VKxI=,mrHwOfjTL5Zwfj74F05HOQGLdUb7E5szdCbxgUSq6NM=,Vw7oB/nKQ5xWb3hNgbyfkvDiivl+U+/Dft48nfJfDow=",
-        "uWBwpe1dxI4Vw8Gf0X9ynOdw/SS6VBzfWm9giiv1sf4=-3")]
+        "uWBwpe1dxI4Vw8Gf0X9ynOdw/SS6VBzfWm9giiv1sf4=-3"
+    )]
     [InlineData(
         ChecksumAlgorithm.Sha1,
         "iIaTCGbm+vdVjNqIMF2S0T7ibMk=,LS/TJ32bAVKEwRu+sE3X7awh/lk=,6DDwovUaHwrKNXDMzOGbuvj9kxI=",
-        "sizjvY4eud3MrcHdZM3cQ/ol39o=-3")]
+        "sizjvY4eud3MrcHdZM3cQ/ol39o=-3"
+    )]
     [InlineData(ChecksumAlgorithm.Crc32, "3ldvBQ==,0oUPLw==", "5m/Xbg==-2")]
     public void ComposesPartChecksumsAsS3Does(
-        ChecksumAlgorithm algorithm, string partChecksums, string expected)
+        ChecksumAlgorithm algorithm,
+        string partChecksums,
+        string expected
+    )
     {
         Assert.Equal(expected, ChecksumAlgorithms.Composite(algorithm, partChecksums.Split(',')));
     }
@@ -89,7 +95,10 @@ public sealed class ChecksumTests
     [InlineData(ChecksumAlgorithm.Sha1, ChecksumType.Composite)]
     [InlineData(ChecksumAlgorithm.Sha256, ChecksumType.Composite)]
     [InlineData(ChecksumAlgorithm.Crc64Nvme, ChecksumType.FullObject)]
-    public void DefaultsMultipartUploadsToTheTypeS3Does(ChecksumAlgorithm algorithm, ChecksumType type)
+    public void DefaultsMultipartUploadsToTheTypeS3Does(
+        ChecksumAlgorithm algorithm,
+        ChecksumType type
+    )
     {
         Assert.Equal(type, ChecksumAlgorithms.DefaultType(algorithm));
     }
@@ -100,7 +109,11 @@ public sealed class ChecksumTests
     [InlineData(ChecksumAlgorithm.Sha256, ChecksumType.FullObject, false)]
     [InlineData(ChecksumAlgorithm.Sha1, ChecksumType.FullObject, false)]
     [InlineData(ChecksumAlgorithm.Crc64Nvme, ChecksumType.Composite, false)]
-    public void OnlyCrcsSpanBothTypes(ChecksumAlgorithm algorithm, ChecksumType type, bool supported)
+    public void OnlyCrcsSpanBothTypes(
+        ChecksumAlgorithm algorithm,
+        ChecksumType type,
+        bool supported
+    )
     {
         Assert.Equal(supported, ChecksumAlgorithms.Supports(algorithm, type));
     }

@@ -1,5 +1,4 @@
 <Project>
-
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
@@ -11,5 +10,4 @@
     <PackageVersion Include="Microsoft.Testing.Extensions.GitHubActionsReport" Version="2.4.0" />
     <PackageVersion Include="xunit.v3" Version="4.0.1" />
   </ItemGroup>
-
 </Project>

@@ -39,8 +39,10 @@ public static class RequestTarget
     private static bool TryBucketFromHost(string host, string domain, out string bucket)
     {
         var suffix = "." + domain;
-        if (host.Length > suffix.Length
-            && host.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+        if (
+            host.Length > suffix.Length
+            && host.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+        )
         {
             bucket = host[..^suffix.Length];
             return true;

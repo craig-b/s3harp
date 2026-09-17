@@ -18,16 +18,22 @@ public static class SigV4Signer
     }
 
     public static string SignCanonicalRequest(
-        byte[] signingKey, CredentialScope scope, string timestamp, string canonicalRequest)
+        byte[] signingKey,
+        CredentialScope scope,
+        string timestamp,
+        string canonicalRequest
+    )
     {
         ArgumentNullException.ThrowIfNull(scope);
         ArgumentNullException.ThrowIfNull(canonicalRequest);
 
-        var stringToSign = string.Join('\n',
+        var stringToSign = string.Join(
+            '\n',
             "AWS4-HMAC-SHA256",
             timestamp,
             scope.ToString(),
-            Sha256Hex(Encoding.UTF8.GetBytes(canonicalRequest)));
+            Sha256Hex(Encoding.UTF8.GetBytes(canonicalRequest))
+        );
         return Sign(signingKey, stringToSign);
     }
 
@@ -43,7 +49,8 @@ public static class SigV4Signer
         ArgumentNullException.ThrowIfNull(presented);
         return CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(expected),
-            Encoding.UTF8.GetBytes(presented.ToLowerInvariant()));
+            Encoding.UTF8.GetBytes(presented.ToLowerInvariant())
+        );
     }
 
     private static byte[] HmacSha256(byte[] key, string data) =>

@@ -25,9 +25,11 @@ public static class RangeHeader
 
     public static RangeEvaluation Evaluate(string? header, long objectSize)
     {
-        if (string.IsNullOrEmpty(header)
+        if (
+            string.IsNullOrEmpty(header)
             || !header.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)
-            || header.Contains(',', StringComparison.Ordinal))
+            || header.Contains(',', StringComparison.Ordinal)
+        )
         {
             return new RangeEvaluation(RangeOutcome.WholeObject, 0, 0);
         }
@@ -52,7 +54,10 @@ public static class RangeHeader
             return suffixLength == 0 || objectSize == 0
                 ? new RangeEvaluation(RangeOutcome.Unsatisfiable, 0, 0)
                 : new RangeEvaluation(
-                    RangeOutcome.Partial, Math.Max(0, objectSize - suffixLength), objectSize - 1);
+                    RangeOutcome.Partial,
+                    Math.Max(0, objectSize - suffixLength),
+                    objectSize - 1
+                );
         }
 
         if (!TryParse(firstPart, out var from))
@@ -109,10 +114,22 @@ public static class CopySourceRange
 
         var bounds = header.AsSpan(Prefix.Length);
         var separator = bounds.IndexOf('-');
-        if (separator < 0
-            || !long.TryParse(bounds[..separator], NumberStyles.None, CultureInfo.InvariantCulture, out var from)
-            || !long.TryParse(bounds[(separator + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out var to)
-            || to < from)
+        if (
+            separator < 0
+            || !long.TryParse(
+                bounds[..separator],
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var from
+            )
+            || !long.TryParse(
+                bounds[(separator + 1)..],
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var to
+            )
+            || to < from
+        )
         {
             return false;
         }

@@ -5,9 +5,17 @@ namespace S3Harp.Core.Tests;
 public sealed class WriteConditionTests
 {
     private static readonly ObjectRecord Existing = new(
-        "key", "blob", Size: 3, ETag: "etag-hex", Parts: [], Checksum: null, ContentType: null,
+        "key",
+        "blob",
+        Size: 3,
+        ETag: "etag-hex",
+        Parts: [],
+        Checksum: null,
+        ContentType: null,
         ContentHeaders: ContentHeaders.None,
-        Metadata: new Dictionary<string, string>(), LastModified: DateTimeOffset.UnixEpoch);
+        Metadata: new Dictionary<string, string>(),
+        LastModified: DateTimeOffset.UnixEpoch
+    );
 
     [Fact]
     public void MustMatchAnyObject_IsSatisfiedByAnyExistingObject()
@@ -23,13 +31,16 @@ public sealed class WriteConditionTests
     {
         Assert.Equal(
             WriteConditionResult.Satisfied,
-            new WriteCondition(MustMatch: new ETagCondition("etag-hex")).Check(Existing));
+            new WriteCondition(MustMatch: new ETagCondition("etag-hex")).Check(Existing)
+        );
         Assert.Equal(
             WriteConditionResult.PreconditionFailed,
-            new WriteCondition(MustMatch: new ETagCondition("other")).Check(Existing));
+            new WriteCondition(MustMatch: new ETagCondition("other")).Check(Existing)
+        );
         Assert.Equal(
             WriteConditionResult.ObjectMissing,
-            new WriteCondition(MustMatch: new ETagCondition("etag-hex")).Check(null));
+            new WriteCondition(MustMatch: new ETagCondition("etag-hex")).Check(null)
+        );
     }
 
     [Fact]
@@ -46,12 +57,15 @@ public sealed class WriteConditionTests
     {
         Assert.Equal(
             WriteConditionResult.PreconditionFailed,
-            new WriteCondition(MustNotMatch: new ETagCondition("etag-hex")).Check(Existing));
+            new WriteCondition(MustNotMatch: new ETagCondition("etag-hex")).Check(Existing)
+        );
         Assert.Equal(
             WriteConditionResult.Satisfied,
-            new WriteCondition(MustNotMatch: new ETagCondition("other")).Check(Existing));
+            new WriteCondition(MustNotMatch: new ETagCondition("other")).Check(Existing)
+        );
         Assert.Equal(
             WriteConditionResult.Satisfied,
-            new WriteCondition(MustNotMatch: new ETagCondition("etag-hex")).Check(null));
+            new WriteCondition(MustNotMatch: new ETagCondition("etag-hex")).Check(null)
+        );
     }
 }

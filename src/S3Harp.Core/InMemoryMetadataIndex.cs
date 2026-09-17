@@ -7,12 +7,16 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
     private readonly Dictionary<string, BucketState> buckets = new(StringComparer.Ordinal);
 
     public Task<bool> TryCreateBucketAsync(
-        string name, DateTimeOffset createdAt, CancellationToken cancellationToken)
+        string name,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken
+    )
     {
         lock (gate)
         {
             return Task.FromResult(
-                buckets.TryAdd(name, new BucketState(new BucketInfo(name, createdAt))));
+                buckets.TryAdd(name, new BucketState(new BucketInfo(name, createdAt)))
+            );
         }
     }
 
@@ -28,13 +32,16 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
     {
         lock (gate)
         {
-            return Task.FromResult<IReadOnlyList<BucketInfo>>(
-                [.. buckets.Values.Select(b => b.Info).OrderBy(b => b.Name, StringComparer.Ordinal)]);
+            return Task.FromResult<IReadOnlyList<BucketInfo>>([
+                .. buckets.Values.Select(b => b.Info).OrderBy(b => b.Name, StringComparer.Ordinal),
+            ]);
         }
     }
 
     public Task<DeleteBucketOutcome> DeleteBucketAsync(
-        string name, CancellationToken cancellationToken)
+        string name,
+        CancellationToken cancellationToken
+    )
     {
         lock (gate)
         {
@@ -49,8 +56,8 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
             }
 
             buckets.Remove(name);
-            var partBlobs = bucket.Uploads.Values
-                .SelectMany(upload => upload.Parts.Values)
+            var partBlobs = bucket
+                .Uploads.Values.SelectMany(upload => upload.Parts.Values)
                 .Select(part => part.BlobId)
                 .ToList();
             return Task.FromResult(new DeleteBucketOutcome(DeleteBucketResult.Deleted, partBlobs));
@@ -58,8 +65,11 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
     }
 
     public Task<PutObjectResult> PutObjectAsync(
-        string bucket, ObjectRecord record, WriteCondition? condition,
-        CancellationToken cancellationToken)
+        string bucket,
+        ObjectRecord record,
+        WriteCondition? condition,
+        CancellationToken cancellationToken
+    )
     {
         lock (gate)
         {
@@ -69,8 +79,10 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
             }
 
             state.Objects.TryGetValue(record.Key, out var replaced);
-            if (condition?.Check(replaced) is { } refusal
-                && refusal != WriteConditionResult.Satisfied)
+            if (
+                condition?.Check(replaced) is { } refusal
+                && refusal != WriteConditionResult.Satisfied
+            )
             {
                 return Task.FromResult(PutObjectResult.Refused(refusal));
             }
@@ -81,7 +93,10 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
     }
 
     public Task<ObjectRecord?> FindObjectAsync(
-        string bucket, string key, CancellationToken cancellationToken)
+        string bucket,
+        string key,
+        CancellationToken cancellationToken
+    )
     {
         lock (gate)
         {
@@ -89,13 +104,18 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
                 buckets.TryGetValue(bucket, out var state)
                 && state.Objects.TryGetValue(key, out var record)
                     ? record
-                    : null);
+                    : null
+            );
         }
     }
 
     public Task<IReadOnlyList<ObjectRecord>> ScanObjectsAsync(
-        string bucket, string prefix, string fromKey, int limit,
-        CancellationToken cancellationToken)
+        string bucket,
+        string prefix,
+        string fromKey,
+        int limit,
+        CancellationToken cancellationToken
+    )
     {
         lock (gate)
         {
@@ -104,21 +124,31 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
                 return Task.FromResult<IReadOnlyList<ObjectRecord>>([]);
             }
 
-            return Task.FromResult<IReadOnlyList<ObjectRecord>>([.. state.Objects.Values
-                .Where(o => o.Key.StartsWith(prefix, StringComparison.Ordinal)
-                    && string.CompareOrdinal(o.Key, fromKey) >= 0)
-                .OrderBy(o => o.Key, StringComparer.Ordinal)
-                .Take(limit)]);
+            return Task.FromResult<IReadOnlyList<ObjectRecord>>([
+                .. state
+                    .Objects.Values.Where(o =>
+                        o.Key.StartsWith(prefix, StringComparison.Ordinal)
+                        && string.CompareOrdinal(o.Key, fromKey) >= 0
+                    )
+                    .OrderBy(o => o.Key, StringComparer.Ordinal)
+                    .Take(limit),
+            ]);
         }
     }
 
     public Task<DeleteObjectResult> DeleteObjectAsync(
-        string bucket, string key, DeleteCondition? condition, CancellationToken cancellationToken)
+        string bucket,
+        string key,
+        DeleteCondition? condition,
+        CancellationToken cancellationToken
+    )
     {
         lock (gate)
         {
-            if (!buckets.TryGetValue(bucket, out var state)
-                || !state.Objects.TryGetValue(key, out var record))
+            if (
+                !buckets.TryGetValue(bucket, out var state)
+                || !state.Objects.TryGetValue(key, out var record)
+            )
             {
                 return Task.FromResult(DeleteObjectResult.NotFound);
             }
@@ -129,23 +159,33 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
             }
 
             state.Objects.Remove(key);
-            return Task.FromResult(new DeleteObjectResult(DeleteObjectStatus.Deleted, record.BlobId));
+            return Task.FromResult(
+                new DeleteObjectResult(DeleteObjectStatus.Deleted, record.BlobId)
+            );
         }
     }
 
     public Task<bool> TryCreateUploadAsync(
-        string bucket, MultipartUpload upload, CancellationToken cancellationToken)
+        string bucket,
+        MultipartUpload upload,
+        CancellationToken cancellationToken
+    )
     {
         lock (gate)
         {
             return Task.FromResult(
                 buckets.TryGetValue(bucket, out var state)
-                && state.Uploads.TryAdd(upload.UploadId, new UploadState(upload)));
+                    && state.Uploads.TryAdd(upload.UploadId, new UploadState(upload))
+            );
         }
     }
 
     public Task<MultipartUpload?> FindUploadAsync(
-        string bucket, string key, string uploadId, CancellationToken cancellationToken)
+        string bucket,
+        string key,
+        string uploadId,
+        CancellationToken cancellationToken
+    )
     {
         lock (gate)
         {
@@ -154,8 +194,12 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
     }
 
     public Task<PutPartResult> PutPartAsync(
-        string bucket, string key, string uploadId, PartRecord part,
-        CancellationToken cancellationToken)
+        string bucket,
+        string key,
+        string uploadId,
+        PartRecord part,
+        CancellationToken cancellationToken
+    )
     {
         lock (gate)
         {
@@ -171,73 +215,101 @@ public sealed class InMemoryMetadataIndex : IMetadataIndex
     }
 
     public Task<IReadOnlyList<PartRecord>> ListPartsAsync(
-        string bucket, string key, string uploadId, CancellationToken cancellationToken)
+        string bucket,
+        string key,
+        string uploadId,
+        CancellationToken cancellationToken
+    )
     {
         lock (gate)
         {
             return Task.FromResult<IReadOnlyList<PartRecord>>(
-                FindUploadState(bucket, key, uploadId) is { } upload
-                    ? [.. upload.Parts.Values]
-                    : []);
+                FindUploadState(bucket, key, uploadId) is { } upload ? [.. upload.Parts.Values] : []
+            );
         }
     }
 
     public Task<IReadOnlyList<MultipartUpload>> ListUploadsAsync(
-        string bucket, CancellationToken cancellationToken)
+        string bucket,
+        CancellationToken cancellationToken
+    )
     {
         lock (gate)
         {
             return Task.FromResult<IReadOnlyList<MultipartUpload>>(
                 buckets.TryGetValue(bucket, out var state)
-                    ? [.. state.Uploads.Values.Select(u => u.Info)
-                        .OrderBy(u => u.Key, StringComparer.Ordinal)
-                        .ThenBy(u => u.UploadId, StringComparer.Ordinal)]
-                    : []);
+                    ?
+                    [
+                        .. state
+                            .Uploads.Values.Select(u => u.Info)
+                            .OrderBy(u => u.Key, StringComparer.Ordinal)
+                            .ThenBy(u => u.UploadId, StringComparer.Ordinal),
+                    ]
+                    : []
+            );
         }
     }
 
     public Task<CompleteUploadResult> CompleteUploadAsync(
-        string bucket, string uploadId, ObjectRecord record, WriteCondition? condition,
-        CancellationToken cancellationToken)
+        string bucket,
+        string uploadId,
+        ObjectRecord record,
+        WriteCondition? condition,
+        CancellationToken cancellationToken
+    )
     {
         lock (gate)
         {
-            if (FindUploadState(bucket, record.Key, uploadId) is not { } upload
-                || !buckets.TryGetValue(bucket, out var state))
+            if (
+                FindUploadState(bucket, record.Key, uploadId) is not { } upload
+                || !buckets.TryGetValue(bucket, out var state)
+            )
             {
                 return Task.FromResult(CompleteUploadResult.NoSuchUpload);
             }
 
             state.Objects.TryGetValue(record.Key, out var replaced);
-            if (condition?.Check(replaced) is { } refusal
-                && refusal != WriteConditionResult.Satisfied)
+            if (
+                condition?.Check(replaced) is { } refusal
+                && refusal != WriteConditionResult.Satisfied
+            )
             {
                 return Task.FromResult(CompleteUploadResult.Refused(refusal));
             }
 
             state.Objects[record.Key] = record;
             state.Uploads.Remove(uploadId);
-            return Task.FromResult(new CompleteUploadResult(
-                CompleteUploadStatus.Completed,
-                replaced?.BlobId,
-                [.. upload.Parts.Values.Select(p => p.BlobId)]));
+            return Task.FromResult(
+                new CompleteUploadResult(
+                    CompleteUploadStatus.Completed,
+                    replaced?.BlobId,
+                    [.. upload.Parts.Values.Select(p => p.BlobId)]
+                )
+            );
         }
     }
 
     public Task<IReadOnlyList<string>?> DeleteUploadAsync(
-        string bucket, string key, string uploadId, CancellationToken cancellationToken)
+        string bucket,
+        string key,
+        string uploadId,
+        CancellationToken cancellationToken
+    )
     {
         lock (gate)
         {
-            if (FindUploadState(bucket, key, uploadId) is not { } upload
-                || !buckets.TryGetValue(bucket, out var state))
+            if (
+                FindUploadState(bucket, key, uploadId) is not { } upload
+                || !buckets.TryGetValue(bucket, out var state)
+            )
             {
                 return Task.FromResult<IReadOnlyList<string>?>(null);
             }
 
             state.Uploads.Remove(uploadId);
-            return Task.FromResult<IReadOnlyList<string>?>(
-                [.. upload.Parts.Values.Select(p => p.BlobId)]);
+            return Task.FromResult<IReadOnlyList<string>?>([
+                .. upload.Parts.Values.Select(p => p.BlobId),
+            ]);
         }
     }
 

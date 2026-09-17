@@ -28,7 +28,12 @@ internal static partial class DurableFile
 
     private const int ReadOnlyFlag = 0;
 
-    [LibraryImport("libc", EntryPoint = "open", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    [LibraryImport(
+        "libc",
+        EntryPoint = "open",
+        StringMarshalling = StringMarshalling.Utf8,
+        SetLastError = true
+    )]
     private static partial int Open(string path, int flags);
 
     [LibraryImport("libc", EntryPoint = "fsync")]

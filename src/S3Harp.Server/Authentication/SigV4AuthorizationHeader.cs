@@ -7,12 +7,15 @@ public sealed record SigV4AuthorizationHeader(
     string AccessKeyId,
     CredentialScope Scope,
     IReadOnlyList<string> SignedHeaders,
-    string Signature)
+    string Signature
+)
 {
     private const string Scheme = "AWS4-HMAC-SHA256 ";
 
     public static bool TryParse(
-        string? value, [NotNullWhen(true)] out SigV4AuthorizationHeader? header)
+        string? value,
+        [NotNullWhen(true)] out SigV4AuthorizationHeader? header
+    )
     {
         header = null;
         if (value is null || !value.StartsWith(Scheme, StringComparison.Ordinal))
@@ -56,8 +59,11 @@ public sealed record SigV4AuthorizationHeader(
         }
 
         var credentialParts = credential.Split('/');
-        if (credentialParts is not [var accessKeyId, var date, var region, var service, "aws4_request"]
-            || accessKeyId.Length == 0)
+        if (
+            credentialParts
+                is not [var accessKeyId, var date, var region, var service, "aws4_request"]
+            || accessKeyId.Length == 0
+        )
         {
             return false;
         }
@@ -69,7 +75,11 @@ public sealed record SigV4AuthorizationHeader(
         }
 
         header = new SigV4AuthorizationHeader(
-            accessKeyId, new CredentialScope(date, region, service), headers, signature);
+            accessKeyId,
+            new CredentialScope(date, region, service),
+            headers,
+            signature
+        );
         return true;
     }
 }

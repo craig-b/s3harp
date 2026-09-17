@@ -11,8 +11,12 @@ public static class ResponseHeaderOverrides
 {
     private static readonly string[] ParameterNames =
     [
-        "response-content-type", "response-cache-control", "response-content-disposition",
-        "response-content-encoding", "response-content-language", "response-expires",
+        "response-content-type",
+        "response-cache-control",
+        "response-content-disposition",
+        "response-content-encoding",
+        "response-content-language",
+        "response-expires",
     ];
 
     /// <summary>The record as the response should describe it.</summary>
@@ -34,7 +38,8 @@ public static class ResponseHeaderOverrides
                 Override(query, "response-content-disposition", stored.ContentDisposition),
                 Override(query, "response-content-encoding", stored.ContentEncoding),
                 Override(query, "response-content-language", stored.ContentLanguage),
-                Override(query, "response-expires", stored.Expires)),
+                Override(query, "response-expires", stored.Expires)
+            ),
         };
     }
 

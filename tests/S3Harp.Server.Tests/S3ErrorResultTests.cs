@@ -45,7 +45,8 @@ public sealed class S3ErrorResultTests
 
     private static DefaultHttpContext CreateContext(
         string path = "/",
-        string traceIdentifier = "test-request-id")
+        string traceIdentifier = "test-request-id"
+    )
     {
         var context = new DefaultHttpContext { TraceIdentifier = traceIdentifier };
         context.Request.Path = path;
