@@ -391,3 +391,7 @@ dotnet_diagnostic.IDE0072.severity = error
 # Core owns every disposable it creates: SQLite commands, readers and connections.
 [src/S3Harp.Core/**.cs]
 dotnet_diagnostic.CA2000.severity = error
+
+# The libraries never resume on a captured context.
+[src/**.cs]
+dotnet_diagnostic.CA2007.severity = error

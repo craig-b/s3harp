@@ -78,8 +78,8 @@ public static partial class S3HarpApplication
         var dispatcher = app.Services.GetRequiredService<S3RequestDispatcher>();
         app.Run(async context =>
         {
-            var result = await dispatcher.DispatchAsync(context);
-            await result.ExecuteAsync(context);
+            var result = await dispatcher.DispatchAsync(context).ConfigureAwait(false);
+            await result.ExecuteAsync(context).ConfigureAwait(false);
         });
 
         return app;
