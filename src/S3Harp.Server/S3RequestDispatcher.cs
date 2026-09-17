@@ -81,96 +81,95 @@ public sealed class S3RequestDispatcher(
         );
         var cancellationToken = context.RequestAborted;
         var query = context.Request.Query;
-        return (context.Request.Method, bucket, key) switch
+        var operation = (context.Request.Method, bucket, key) switch
         {
-            ("GET", "", null) => await ListBucketsAsync(cancellationToken).ConfigureAwait(false),
-            ("GET", not "", null) when query["list-type"] == "2" => await ListObjectsV2Async(
-                    context,
-                    bucket,
-                    cancellationToken
-                )
-                .ConfigureAwait(false),
-            ("GET", not "", null) when query.ContainsKey("uploads") =>
-                await ListMultipartUploadsAsync(bucket, cancellationToken).ConfigureAwait(false),
-            ("GET", not "", null) when query.ContainsKey("versions") =>
-                await ListObjectVersionsAsync(context, bucket, cancellationToken)
-                    .ConfigureAwait(false),
-            ("GET", not "", null) => await ListObjectsAsync(context, bucket, cancellationToken)
-                .ConfigureAwait(false),
-            ("GET", not "", not null) when query.ContainsKey("uploadId") => await ListPartsAsync(
-                    context,
-                    bucket,
-                    key,
-                    cancellationToken
-                )
-                .ConfigureAwait(false),
+            ("GET", "", null) => ListBucketsAsync(cancellationToken),
+            ("GET", not "", null) when query["list-type"] == "2" => ListObjectsV2Async(
+                context,
+                bucket,
+                cancellationToken
+            ),
+            ("GET", not "", null) when query.ContainsKey("uploads") => ListMultipartUploadsAsync(
+                bucket,
+                cancellationToken
+            ),
+            ("GET", not "", null) when query.ContainsKey("versions") => ListObjectVersionsAsync(
+                context,
+                bucket,
+                cancellationToken
+            ),
+            ("GET", not "", null) => ListObjectsAsync(context, bucket, cancellationToken),
+            ("GET", not "", not null) when query.ContainsKey("uploadId") => ListPartsAsync(
+                context,
+                bucket,
+                key,
+                cancellationToken
+            ),
             ("GET", not "", not null) when query.ContainsKey("attributes") =>
-                await GetObjectAttributesAsync(context, bucket, key, cancellationToken)
-                    .ConfigureAwait(false),
-            ("PUT", not "", null) => await CreateBucketAsync(context, bucket, cancellationToken)
-                .ConfigureAwait(false),
-            ("HEAD", not "", null) => await HeadBucketAsync(bucket, cancellationToken)
-                .ConfigureAwait(false),
-            ("DELETE", not "", null) => await DeleteBucketAsync(bucket, cancellationToken)
-                .ConfigureAwait(false),
-            ("POST", not "", null) when query.ContainsKey("delete") => await DeleteObjectsAsync(
-                    context,
-                    bucket,
-                    cancellationToken
-                )
-                .ConfigureAwait(false),
-            ("POST", not "", not null) when query.ContainsKey("uploads") =>
-                await InitiateUploadAsync(context, bucket, key, cancellationToken)
-                    .ConfigureAwait(false),
-            ("POST", not "", not null) when query.ContainsKey("uploadId") =>
-                await CompleteUploadAsync(context, bucket, key, cancellationToken)
-                    .ConfigureAwait(false),
-            ("PUT", not "", not null) when query.ContainsKey("uploadId") => await UploadPartAsync(
-                    context,
-                    bucket,
-                    key,
-                    cancellationToken
-                )
-                .ConfigureAwait(false),
-            ("DELETE", not "", not null) when query.ContainsKey("uploadId") =>
-                await AbortUploadAsync(bucket, key, query["uploadId"].ToString(), cancellationToken)
-                    .ConfigureAwait(false),
+                GetObjectAttributesAsync(context, bucket, key, cancellationToken),
+            ("PUT", not "", null) => CreateBucketAsync(context, bucket, cancellationToken),
+            ("HEAD", not "", null) => HeadBucketAsync(bucket, cancellationToken),
+            ("DELETE", not "", null) => DeleteBucketAsync(bucket, cancellationToken),
+            ("POST", not "", null) when query.ContainsKey("delete") => DeleteObjectsAsync(
+                context,
+                bucket,
+                cancellationToken
+            ),
+            ("POST", not "", not null) when query.ContainsKey("uploads") => InitiateUploadAsync(
+                context,
+                bucket,
+                key,
+                cancellationToken
+            ),
+            ("POST", not "", not null) when query.ContainsKey("uploadId") => CompleteUploadAsync(
+                context,
+                bucket,
+                key,
+                cancellationToken
+            ),
+            ("PUT", not "", not null) when query.ContainsKey("uploadId") => UploadPartAsync(
+                context,
+                bucket,
+                key,
+                cancellationToken
+            ),
+            ("DELETE", not "", not null) when query.ContainsKey("uploadId") => AbortUploadAsync(
+                bucket,
+                key,
+                query["uploadId"].ToString(),
+                cancellationToken
+            ),
             ("PUT", not "", not null)
-                when context.Request.Headers.ContainsKey("x-amz-copy-source") =>
-                await CopyObjectAsync(context, bucket, key, cancellationToken)
-                    .ConfigureAwait(false),
-            ("PUT", not "", not null) => await PutObjectAsync(
-                    context,
-                    bucket,
-                    key,
-                    cancellationToken
-                )
-                .ConfigureAwait(false),
-            ("GET", not "", not null) => await GetObjectAsync(
-                    context,
-                    bucket,
-                    key,
-                    includeContent: true,
-                    cancellationToken
-                )
-                .ConfigureAwait(false),
-            ("HEAD", not "", not null) => await GetObjectAsync(
-                    context,
-                    bucket,
-                    key,
-                    includeContent: false,
-                    cancellationToken
-                )
-                .ConfigureAwait(false),
-            ("DELETE", not "", not null) => await DeleteObjectAsync(
-                    context,
-                    bucket,
-                    key,
-                    cancellationToken
-                )
-                .ConfigureAwait(false),
-            _ => new S3ErrorResult(S3Errors.NotImplemented),
+                when context.Request.Headers.ContainsKey("x-amz-copy-source") => CopyObjectAsync(
+                context,
+                bucket,
+                key,
+                cancellationToken
+            ),
+            ("PUT", not "", not null) => PutObjectAsync(context, bucket, key, cancellationToken),
+            ("GET", not "", not null) => GetObjectAsync(
+                context,
+                bucket,
+                key,
+                includeContent: true,
+                cancellationToken
+            ),
+            ("HEAD", not "", not null) => GetObjectAsync(
+                context,
+                bucket,
+                key,
+                includeContent: false,
+                cancellationToken
+            ),
+            ("DELETE", not "", not null) => DeleteObjectAsync(
+                context,
+                bucket,
+                key,
+                cancellationToken
+            ),
+            _ => Task.FromResult<IResult>(new S3ErrorResult(S3Errors.NotImplemented)),
         };
+        return await operation.ConfigureAwait(false);
     }
 
     private async Task<IResult> ListBucketsAsync(CancellationToken cancellationToken)
