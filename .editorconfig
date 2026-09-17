@@ -241,13 +241,13 @@ dotnet_naming_rule.public_fields_should_be_pascalcase.severity = suggestion
 dotnet_naming_rule.public_fields_should_be_pascalcase.symbols = public_fields
 dotnet_naming_rule.public_fields_should_be_pascalcase.style = pascalcase
 
-dotnet_naming_rule.private_fields_should_be__camelcase.severity = suggestion
-dotnet_naming_rule.private_fields_should_be__camelcase.symbols = private_fields
-dotnet_naming_rule.private_fields_should_be__camelcase.style = _camelcase
+dotnet_naming_rule.private_fields_should_be_camelcase.severity = suggestion
+dotnet_naming_rule.private_fields_should_be_camelcase.symbols = private_fields
+dotnet_naming_rule.private_fields_should_be_camelcase.style = camelcase
 
-dotnet_naming_rule.private_static_fields_should_be_s_camelcase.severity = suggestion
-dotnet_naming_rule.private_static_fields_should_be_s_camelcase.symbols = private_static_fields
-dotnet_naming_rule.private_static_fields_should_be_s_camelcase.style = s_camelcase
+dotnet_naming_rule.private_static_fields_should_be_camelcase.severity = suggestion
+dotnet_naming_rule.private_static_fields_should_be_camelcase.symbols = private_static_fields
+dotnet_naming_rule.private_static_fields_should_be_camelcase.style = camelcase
 
 dotnet_naming_rule.public_constant_fields_should_be_pascalcase.severity = suggestion
 dotnet_naming_rule.public_constant_fields_should_be_pascalcase.symbols = public_constant_fields
@@ -372,26 +372,18 @@ dotnet_naming_style.tpascalcase.required_suffix =
 dotnet_naming_style.tpascalcase.word_separator = 
 dotnet_naming_style.tpascalcase.capitalization = pascal_case
 
-dotnet_naming_style._camelcase.required_prefix = _
-dotnet_naming_style._camelcase.required_suffix = 
-dotnet_naming_style._camelcase.word_separator = 
-dotnet_naming_style._camelcase.capitalization = camel_case
-
 dotnet_naming_style.camelcase.required_prefix = 
 dotnet_naming_style.camelcase.required_suffix = 
 dotnet_naming_style.camelcase.word_separator = 
 dotnet_naming_style.camelcase.capitalization = camel_case
-
-dotnet_naming_style.s_camelcase.required_prefix = s_
-dotnet_naming_style.s_camelcase.required_suffix = 
-dotnet_naming_style.s_camelcase.word_separator = 
-dotnet_naming_style.s_camelcase.capitalization = camel_case
 
 #### Rules the build enforces ####
 
 [*.cs]
 # Formatting is CSharpier's job; this proves the editorconfig layout rules agree with it.
 dotnet_diagnostic.IDE0055.severity = error
+# Names follow the rules above: private fields are camelCase with no prefix.
+dotnet_diagnostic.IDE1006.severity = error
 
 # Core owns every disposable it creates: SQLite commands, readers and connections.
 [src/S3Harp.Core/**.cs]
