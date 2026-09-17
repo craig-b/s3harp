@@ -1,6 +1,8 @@
+using System.Globalization;
 using System.Net;
 using Amazon.S3;
 using Amazon.S3.Model;
+using S3Harp.Server.Authentication;
 using Xunit;
 
 namespace S3Harp.IntegrationTests;
@@ -83,20 +85,39 @@ public sealed class PresignedUrlTests : IAsyncLifetime
             Token
         );
 
-        var url = await s3.GetPreSignedURLAsync(
-            new GetPreSignedUrlRequest
-            {
-                BucketName = Bucket,
-                Key = "gone.txt",
-                Verb = HttpVerb.GET,
-                Protocol = Protocol.HTTP,
-                Expires = DateTime.UtcNow.AddSeconds(1),
-            }
-        );
-        await Task.Delay(TimeSpan.FromSeconds(3), Token);
-        var response = await httpClient.GetAsync(new Uri(url), Token);
+        var response = await httpClient.GetAsync(UrlPresignedTwoMinutesAgo("gone.txt"), Token);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    /// <summary>
+    /// A GET URL presigned two minutes ago with a one-minute lifetime, built with the
+    /// server's own signer so the test needs no waiting.
+    /// </summary>
+    private Uri UrlPresignedTwoMinutesAgo(string key)
+    {
+        var timestamp = DateTimeOffset
+            .UtcNow.AddMinutes(-2)
+            .ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
+        var scope = new CredentialScope(timestamp[..8], "us-east-1", "s3");
+        var canonicalQuery =
+            "X-Amz-Algorithm=AWS4-HMAC-SHA256"
+            + $"&X-Amz-Credential={Uri.EscapeDataString($"{S3HarpFactory.AccessKeyId}/{scope}")}"
+            + $"&X-Amz-Date={timestamp}"
+            + "&X-Amz-Expires=60"
+            + "&X-Amz-SignedHeaders=host";
+        var canonicalRequest =
+            $"GET\n/{Bucket}/{key}\n{canonicalQuery}\nhost:{factory.BaseAddress.Authority}\n\nhost\nUNSIGNED-PAYLOAD";
+        var signature = SigV4Signer.SignCanonicalRequest(
+            SigV4Signer.DeriveSigningKey(S3HarpFactory.SecretAccessKey, scope),
+            scope,
+            timestamp,
+            canonicalRequest
+        );
+        return new Uri(
+            factory.BaseAddress,
+            $"/{Bucket}/{key}?{canonicalQuery}&X-Amz-Signature={signature}"
+        );
     }
 
     public ValueTask InitializeAsync() => factory.StartAsync();
