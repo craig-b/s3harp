@@ -1,5 +1,7 @@
+using System.Buffers.Binary;
 using System.Collections.Frozen;
 using System.Diagnostics;
+using System.IO.Hashing;
 using System.Security.Cryptography;
 
 namespace S3Harp.Core;
@@ -95,9 +97,9 @@ public static class ChecksumAlgorithms
     public static IncrementalChecksum Create(ChecksumAlgorithm algorithm) =>
         algorithm switch
         {
-            ChecksumAlgorithm.Crc32 => new CrcChecksum(CrcChecksum.Crc32Table, width: 32),
-            ChecksumAlgorithm.Crc32C => new CrcChecksum(CrcChecksum.Crc32CTable, width: 32),
-            ChecksumAlgorithm.Crc64Nvme => new CrcChecksum(CrcChecksum.Crc64NvmeTable, width: 64),
+            ChecksumAlgorithm.Crc32 => new Crc32Checksum(Crc32ParameterSet.Crc32),
+            ChecksumAlgorithm.Crc32C => new Crc32Checksum(Crc32ParameterSet.Crc32C),
+            ChecksumAlgorithm.Crc64Nvme => new Crc64Checksum(Crc64ParameterSet.Nvme),
             ChecksumAlgorithm.Sha1 => new HashChecksum(HashAlgorithmName.SHA1),
             ChecksumAlgorithm.Sha256 => new HashChecksum(HashAlgorithmName.SHA256),
             _ => throw new ArgumentOutOfRangeException(nameof(algorithm)),
@@ -154,54 +156,32 @@ internal sealed class HashChecksum(HashAlgorithmName algorithm) : IncrementalChe
     }
 }
 
-/// <summary>
-/// A reflected CRC with all-ones initial value and final XOR, which is the shape of
-/// CRC-32, CRC-32C and CRC-64/NVME alike; only the polynomial differs.
-/// </summary>
-internal sealed class CrcChecksum(ulong[] table, int width) : IncrementalChecksum
+/// <summary>A 32-bit CRC computed by System.IO.Hashing, presented in S3's big-endian byte order.</summary>
+internal sealed class Crc32Checksum(Crc32ParameterSet parameters) : IncrementalChecksum
 {
-    internal static readonly ulong[] Crc32Table = BuildTable(0xEDB88320);
-    internal static readonly ulong[] Crc32CTable = BuildTable(0x82F63B78);
-    internal static readonly ulong[] Crc64NvmeTable = BuildTable(0x9A6C9329AC4BC9B5);
+    private readonly Crc32 crc = new(parameters);
 
-    private readonly ulong mask = width == 64 ? ulong.MaxValue : (1UL << width) - 1;
-    private ulong crc = width == 64 ? ulong.MaxValue : (1UL << width) - 1;
-
-    public override void Append(ReadOnlySpan<byte> data)
-    {
-        foreach (var b in data)
-        {
-            crc = table[(byte)(crc ^ b)] ^ (crc >> 8);
-        }
-    }
+    public override void Append(ReadOnlySpan<byte> data) => crc.Append(data);
 
     protected override byte[] Compute()
     {
-        var value = (crc ^ mask) & mask;
-        var bytes = new byte[width / 8];
-        for (var i = bytes.Length - 1; i >= 0; i--)
-        {
-            bytes[i] = (byte)value;
-            value >>= 8;
-        }
-
+        var bytes = new byte[sizeof(uint)];
+        BinaryPrimitives.WriteUInt32BigEndian(bytes, crc.GetCurrentHashAsUInt32());
         return bytes;
     }
+}
 
-    private static ulong[] BuildTable(ulong reflectedPolynomial)
+/// <summary>A 64-bit CRC computed by System.IO.Hashing, presented in S3's big-endian byte order.</summary>
+internal sealed class Crc64Checksum(Crc64ParameterSet parameters) : IncrementalChecksum
+{
+    private readonly Crc64 crc = new(parameters);
+
+    public override void Append(ReadOnlySpan<byte> data) => crc.Append(data);
+
+    protected override byte[] Compute()
     {
-        var table = new ulong[256];
-        for (var i = 0; i < table.Length; i++)
-        {
-            var entry = (ulong)i;
-            for (var bit = 0; bit < 8; bit++)
-            {
-                entry = (entry & 1) != 0 ? (entry >> 1) ^ reflectedPolynomial : entry >> 1;
-            }
-
-            table[i] = entry;
-        }
-
-        return table;
+        var bytes = new byte[sizeof(ulong)];
+        BinaryPrimitives.WriteUInt64BigEndian(bytes, crc.GetCurrentHashAsUInt64());
+        return bytes;
     }
 }

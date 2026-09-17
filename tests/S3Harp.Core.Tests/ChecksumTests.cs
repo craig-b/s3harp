@@ -117,4 +117,28 @@ public sealed class ChecksumTests
     {
         Assert.Equal(supported, ChecksumAlgorithms.Supports(algorithm, type));
     }
+
+    /// <summary>
+    /// A payload long enough for the vectorised path with a tail that is not, split so
+    /// the running value carries across appends.
+    /// </summary>
+    [Theory]
+    [InlineData(ChecksumAlgorithm.Crc32, "48d1721d")]
+    [InlineData(ChecksumAlgorithm.Crc32C, "987a5180")]
+    [InlineData(ChecksumAlgorithm.Crc64Nvme, "47b7273689e8cea3")]
+    public void ProducesTheCheckValueOfALongPayload(ChecksumAlgorithm algorithm, string expectedHex)
+    {
+        var payload = new byte[4099];
+        for (var i = 0; i < payload.Length; i++)
+        {
+            payload[i] = (byte)(i % 251);
+        }
+
+        using var checksum = ChecksumAlgorithms.Create(algorithm);
+
+        checksum.Append(payload.AsSpan(0, 1000));
+        checksum.Append(payload.AsSpan(1000));
+
+        Assert.Equal(expectedHex, Convert.ToHexStringLower(checksum.Finish()));
+    }
 }
