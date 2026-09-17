@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -43,15 +44,26 @@ public static class SigV4Signer
     public static string Sha256Hex(ReadOnlySpan<byte> data) =>
         Convert.ToHexStringLower(SHA256.HashData(data));
 
+    /// <summary>Whether the presented hex signature matches the expected one, compared in constant time and any letter case.</summary>
     public static bool SignaturesEqual(string expected, string presented)
     {
         ArgumentNullException.ThrowIfNull(expected);
         ArgumentNullException.ThrowIfNull(presented);
+        if (expected.Length != presented.Length || expected.Length > MaxSignatureLength)
+        {
+            return false;
+        }
+
+        Span<char> lowered = stackalloc char[expected.Length];
+        presented.AsSpan().ToLowerInvariant(lowered);
         return CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(expected),
-            Encoding.UTF8.GetBytes(presented.ToLowerInvariant())
+            MemoryMarshal.AsBytes(expected.AsSpan()),
+            MemoryMarshal.AsBytes((ReadOnlySpan<char>)lowered)
         );
     }
+
+    /// <summary>A SHA-256 HMAC is 64 hex characters; nothing longer is a signature.</summary>
+    private const int MaxSignatureLength = 64;
 
     private static byte[] HmacSha256(byte[] key, string data) =>
         HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(data));
