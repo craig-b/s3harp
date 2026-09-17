@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace S3Harp.Core;
 
 /// <summary>A bucket known to the index.</summary>
@@ -111,7 +113,16 @@ public sealed record PutObjectResult(PutObjectStatus Status, string? ReplacedBlo
         condition switch
         {
             WriteConditionResult.ObjectMissing => new(PutObjectStatus.ObjectMissing, null),
-            _ => new(PutObjectStatus.PreconditionFailed, null),
+            WriteConditionResult.PreconditionFailed => new(
+                PutObjectStatus.PreconditionFailed,
+                null
+            ),
+            WriteConditionResult.Satisfied => throw new ArgumentOutOfRangeException(
+                nameof(condition),
+                condition,
+                "A satisfied condition is not a refusal."
+            ),
+            _ => throw new UnreachableException(),
         };
 }
 
@@ -232,7 +243,17 @@ public sealed record CompleteUploadResult(
         condition switch
         {
             WriteConditionResult.ObjectMissing => new(CompleteUploadStatus.ObjectMissing, null, []),
-            _ => new(CompleteUploadStatus.PreconditionFailed, null, []),
+            WriteConditionResult.PreconditionFailed => new(
+                CompleteUploadStatus.PreconditionFailed,
+                null,
+                []
+            ),
+            WriteConditionResult.Satisfied => throw new ArgumentOutOfRangeException(
+                nameof(condition),
+                condition,
+                "A satisfied condition is not a refusal."
+            ),
+            _ => throw new UnreachableException(),
         };
 }
 

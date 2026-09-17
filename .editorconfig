@@ -384,6 +384,9 @@ dotnet_naming_style.camelcase.capitalization = camel_case
 dotnet_diagnostic.IDE0055.severity = error
 # Names follow the rules above: private fields are camelCase with no prefix.
 dotnet_diagnostic.IDE1006.severity = error
+# A switch over an enum names every member, so a new member is a compile error until handled.
+dotnet_diagnostic.IDE0010.severity = error
+dotnet_diagnostic.IDE0072.severity = error
 
 # Core owns every disposable it creates: SQLite commands, readers and connections.
 [src/S3Harp.Core/**.cs]

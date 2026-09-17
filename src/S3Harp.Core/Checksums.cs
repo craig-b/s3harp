@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 
 namespace S3Harp.Core;
@@ -93,7 +94,8 @@ public static class ChecksumAlgorithms
         {
             ChecksumAlgorithm.Crc32 or ChecksumAlgorithm.Crc32C => true,
             ChecksumAlgorithm.Crc64Nvme => type == ChecksumType.FullObject,
-            _ => type == ChecksumType.Composite,
+            ChecksumAlgorithm.Sha1 or ChecksumAlgorithm.Sha256 => type == ChecksumType.Composite,
+            _ => throw new UnreachableException(),
         };
 
     public static IncrementalChecksum Create(ChecksumAlgorithm algorithm) =>

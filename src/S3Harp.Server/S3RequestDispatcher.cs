@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Xml;
 using System.Xml.Linq;
@@ -239,7 +240,8 @@ public sealed class S3RequestDispatcher(
         {
             DeleteBucketResult.Deleted => new S3StatusResult(StatusCodes.Status204NoContent),
             DeleteBucketResult.NotEmpty => new S3ErrorResult(S3Errors.BucketNotEmpty),
-            _ => new S3ErrorResult(S3Errors.NoSuchBucket),
+            DeleteBucketResult.NotFound => new S3ErrorResult(S3Errors.NoSuchBucket),
+            _ => throw new UnreachableException(),
         };
 
     private async Task<IResult> ListObjectsAsync(
@@ -624,10 +626,12 @@ public sealed class S3RequestDispatcher(
                 return new S3ErrorResult(S3Errors.NoSuchKey);
             case PutObjectStatus.PreconditionFailed:
                 return new S3ErrorResult(S3Errors.PreconditionFailed);
-            default:
+            case PutObjectStatus.Stored:
                 context.Response.Headers.ETag = $"\"{outcome.ETag}\"";
                 ChecksumHeaders.Write(context.Response.Headers, outcome.Checksum!);
                 return new S3StatusResult(StatusCodes.Status200OK);
+            default:
+                throw new UnreachableException();
         }
     }
 
@@ -1274,7 +1278,7 @@ public sealed class S3RequestDispatcher(
             UploadPartCopyStatus.NoSuchUpload => new S3ErrorResult(S3Errors.NoSuchUpload),
             UploadPartCopyStatus.SourceMissing => new S3ErrorResult(S3Errors.NoSuchKey),
             UploadPartCopyStatus.RangeBeyondSource => new S3ErrorResult(S3Errors.InvalidRange),
-            _ => new S3XmlResult(
+            UploadPartCopyStatus.Copied => new S3XmlResult(
                 StatusCodes.Status200OK,
                 new XDocument(
                     new XDeclaration("1.0", "UTF-8", standalone: null),
@@ -1294,6 +1298,7 @@ public sealed class S3RequestDispatcher(
                     )
                 )
             ),
+            _ => throw new UnreachableException(),
         };
     }
 
@@ -1381,7 +1386,7 @@ public sealed class S3RequestDispatcher(
             CompleteUploadStatus.PreconditionFailed => new S3ErrorResult(
                 S3Errors.PreconditionFailed
             ),
-            _ => new S3XmlResult(
+            CompleteUploadStatus.Completed => new S3XmlResult(
                 StatusCodes.Status200OK,
                 new XDocument(
                     new XDeclaration("1.0", "UTF-8", standalone: null),
@@ -1395,6 +1400,7 @@ public sealed class S3RequestDispatcher(
                     )
                 )
             ),
+            _ => throw new UnreachableException(),
         };
     }
 
