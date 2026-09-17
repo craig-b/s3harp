@@ -54,7 +54,7 @@ public sealed class S3HarpFactory : IDisposable
         if (app is not null)
         {
             app.StopAsync().GetAwaiter().GetResult();
-            ((IAsyncDisposable)app).DisposeAsync().AsTask().GetAwaiter().GetResult();
+            app.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
 
         if (Directory.Exists(dataDirectory))

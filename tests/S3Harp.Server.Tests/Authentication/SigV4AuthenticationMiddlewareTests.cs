@@ -3,7 +3,6 @@ using System.Text;
 using System.Xml.Linq;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
-using S3Harp.Core;
 using S3Harp.Server.Authentication;
 using Xunit;
 

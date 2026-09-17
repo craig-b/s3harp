@@ -387,6 +387,22 @@ dotnet_diagnostic.IDE1006.severity = error
 # A switch over an enum names every member, so a new member is a compile error until handled.
 dotnet_diagnostic.IDE0010.severity = error
 dotnet_diagnostic.IDE0072.severity = error
+# Idioms the code follows throughout; a lapse is a build error.
+dotnet_diagnostic.IDE0004.severity = error   # redundant cast
+dotnet_diagnostic.IDE0005.severity = error   # unnecessary using directive
+dotnet_diagnostic.IDE0300.severity = error   # collection expression for arrays
+dotnet_diagnostic.IDE0301.severity = error   # collection expression for empty collections
+dotnet_diagnostic.IDE0305.severity = error   # collection expression for fluent builders
+dotnet_diagnostic.CA1002.severity = error    # no List<T> in public signatures
+dotnet_diagnostic.CA1305.severity = error    # culture-sensitive parse and format
+dotnet_diagnostic.CA1827.severity = error    # Count() where Any() is meant
+dotnet_diagnostic.CA1845.severity = error    # span-based string concatenation
+dotnet_diagnostic.CA1846.severity = error    # AsSpan over Substring
+dotnet_diagnostic.CA1847.severity = error    # Contains(char) over Contains(string)
+dotnet_diagnostic.CA1859.severity = error    # concrete types where they are cheaper
+dotnet_diagnostic.CA1860.severity = error    # Count or Length over Any()
+dotnet_diagnostic.CA1861.severity = error    # constant arrays as static fields
+dotnet_diagnostic.CA1870.severity = error    # cached SearchValues
 
 # Core owns every disposable it creates: SQLite commands, readers and connections.
 [src/S3Harp.Core/**.cs]
