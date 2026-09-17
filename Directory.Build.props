@@ -10,6 +10,8 @@
     <!-- The documentation file lets IDE0005 (unnecessary using) report at build time; CS1591 stays off. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- Every JSON (de)serialization goes through a source-generated context; reflection is off at runtime. -->
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
   </PropertyGroup>
   <ItemGroup>
     <!-- Overloads that read the current culture or accept signs and whitespace are banned; see BannedSymbols.txt. -->

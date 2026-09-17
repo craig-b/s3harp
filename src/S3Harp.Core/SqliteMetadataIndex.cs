@@ -124,7 +124,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         probe.CommandText =
             $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = $column";
         probe.Parameters.AddWithValue("$column", column);
-        return (long)probe.ExecuteScalar()! > 0;
+        return probe.ExecuteScalar() is long count && count > 0;
     }
 
     public async Task<bool> TryCreateBucketAsync(
@@ -452,7 +452,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                 "$content_type",
                 (object?)upload.ContentType ?? DBNull.Value
             );
-            command.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(upload.Metadata));
+            command.Parameters.AddWithValue("$metadata", WriteMetadata(upload.Metadata));
             command.Parameters.AddWithValue(
                 "$content_headers",
                 WriteContentHeaders(upload.ContentHeaders)
@@ -496,9 +496,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                         key,
                         reader.IsDBNull(0) ? null : reader.GetString(0),
                         ReadContentHeaders(reader.GetString(3)),
-                        JsonSerializer.Deserialize<Dictionary<string, string>>(
-                            reader.GetString(1)
-                        )!,
+                        ReadMetadata(reader.GetString(1)),
                         ReadEnum(reader, 4, ChecksumAlgorithm.Crc64Nvme),
                         ReadEnum(reader, 5, ChecksumType.FullObject),
                         ParseTimestamp(reader.GetString(2))
@@ -645,9 +643,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
                             reader.GetString(1),
                             reader.IsDBNull(2) ? null : reader.GetString(2),
                             ReadContentHeaders(reader.GetString(5)),
-                            JsonSerializer.Deserialize<Dictionary<string, string>>(
-                                reader.GetString(3)
-                            )!,
+                            ReadMetadata(reader.GetString(3)),
                             ReadEnum(reader, 6, ChecksumAlgorithm.Crc64Nvme),
                             ReadEnum(reader, 7, ChecksumType.FullObject),
                             ParseTimestamp(reader.GetString(4))
@@ -851,7 +847,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             "$content_type",
             (object?)record.ContentType ?? DBNull.Value
         );
-        upsert.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(record.Metadata));
+        upsert.Parameters.AddWithValue("$metadata", WriteMetadata(record.Metadata));
         upsert.Parameters.AddWithValue("$last_modified", FormatTimestamp(record.LastModified));
         upsert.Parameters.AddWithValue(
             "$content_headers",
@@ -859,13 +855,16 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         );
         upsert.Parameters.AddWithValue(
             "$parts",
-            JsonSerializer.Serialize(record.Parts, ContentHeadersJson)
+            JsonSerializer.Serialize(
+                record.Parts,
+                IndexJsonContext.Default.IReadOnlyListCompletedPart
+            )
         );
         upsert.Parameters.AddWithValue(
             "$checksum",
             record.Checksum is null
                 ? DBNull.Value
-                : JsonSerializer.Serialize(record.Checksum, ChecksumJson)
+                : JsonSerializer.Serialize(record.Checksum, ChecksumJsonContext.Default.Checksum)
         );
         await upsert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -918,31 +917,42 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             reader.GetString(1),
             reader.GetInt64(2),
             reader.GetString(3),
-            JsonSerializer.Deserialize<CompletedPart[]>(reader.GetString(8), ContentHeadersJson)!,
-            reader.IsDBNull(9)
-                ? null
-                : JsonSerializer.Deserialize<Checksum>(reader.GetString(9), ChecksumJson),
+            ReadParts(reader.GetString(8)),
+            reader.IsDBNull(9) ? null : ReadChecksum(reader.GetString(9)),
             reader.IsDBNull(4) ? null : reader.GetString(4),
             ReadContentHeaders(reader.GetString(7)),
-            JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(5))!,
+            ReadMetadata(reader.GetString(5)),
             ParseTimestamp(reader.GetString(6))
         );
 
-    private static readonly JsonSerializerOptions ChecksumJson = new()
-    {
-        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
-    };
+    private static string WriteMetadata(IReadOnlyDictionary<string, string> metadata) =>
+        JsonSerializer.Serialize(
+            metadata,
+            IndexJsonContext.Default.IReadOnlyDictionaryStringString
+        );
 
-    private static readonly JsonSerializerOptions ContentHeadersJson = new()
-    {
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-    };
+    /// <summary>A stored column's JSON, which is always an object; anything else means the row is damaged.</summary>
+    private static IReadOnlyDictionary<string, string> ReadMetadata(string json) =>
+        JsonSerializer.Deserialize(json, IndexJsonContext.Default.IReadOnlyDictionaryStringString)
+        ?? throw Damaged("metadata");
+
+    private static IReadOnlyList<CompletedPart> ReadParts(string json) =>
+        JsonSerializer.Deserialize(json, IndexJsonContext.Default.IReadOnlyListCompletedPart)
+        ?? throw Damaged("parts");
+
+    private static Checksum ReadChecksum(string json) =>
+        JsonSerializer.Deserialize(json, ChecksumJsonContext.Default.Checksum)
+        ?? throw Damaged("checksum");
 
     private static string WriteContentHeaders(ContentHeaders headers) =>
-        JsonSerializer.Serialize(headers, ContentHeadersJson);
+        JsonSerializer.Serialize(headers, IndexJsonContext.Default.ContentHeaders);
 
     private static ContentHeaders ReadContentHeaders(string json) =>
-        JsonSerializer.Deserialize<ContentHeaders>(json, ContentHeadersJson) ?? ContentHeaders.None;
+        JsonSerializer.Deserialize(json, IndexJsonContext.Default.ContentHeaders)
+        ?? ContentHeaders.None;
+
+    private static InvalidDataException Damaged(string column) =>
+        new($"The index's {column} column holds JSON null where a value is required.");
 
     /// <summary>An enum stored by name; rows written before the column existed take the fallback.</summary>
     private static TEnum ReadEnum<TEnum>(SqliteDataReader reader, int ordinal, TEnum fallback)
