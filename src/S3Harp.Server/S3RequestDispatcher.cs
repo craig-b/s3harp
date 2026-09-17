@@ -1,5 +1,7 @@
+using System.Buffers;
 using System.Collections.Frozen;
 using System.Globalization;
+using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using Microsoft.Extensions.Primitives;
@@ -272,9 +274,33 @@ public sealed partial class S3RequestDispatcher(
         }
     }
 
+    /// <summary>The characters URL encoding leaves as they are, plus the slashes S3 leaves literal in keys.</summary>
+    private static readonly SearchValues<char> UnencodedKeyCharacters = SearchValues.Create(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~/"
+    );
+
     /// <summary>URL-encodes a key for <c>encoding-type=url</c>, keeping the slashes S3 leaves literal.</summary>
-    private static string UrlEncodeKey(string value) =>
-        string.Join('/', value.Split('/').Select(Uri.EscapeDataString));
+    private static string UrlEncodeKey(string value)
+    {
+        var key = value.AsSpan();
+        if (!key.ContainsAnyExcept(UnencodedKeyCharacters))
+        {
+            return value;
+        }
+
+        var builder = new StringBuilder(value.Length + 16);
+        foreach (var range in key.Split('/'))
+        {
+            if (range.Start.Value > 0)
+            {
+                builder.Append('/');
+            }
+
+            builder.Append(Uri.EscapeDataString(key[range]));
+        }
+
+        return builder.ToString();
+    }
 
     private static string FormatTimestamp(DateTimeOffset timestamp) =>
         timestamp.UtcDateTime.ToString(
