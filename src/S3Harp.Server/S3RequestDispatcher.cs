@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Globalization;
 using System.Xml;
 using System.Xml.Linq;
@@ -31,44 +32,49 @@ public sealed partial class S3RequestDispatcher(
     /// Each names a distinct operation, so a request carrying one is answered
     /// as NotImplemented rather than as the plain bucket or object operation.
     /// </summary>
-    private static readonly string[] SubresourceMarkers =
-    [
-        "accelerate",
-        "acl",
-        "analytics",
-        "cors",
-        "encryption",
-        "intelligent-tiering",
-        "inventory",
-        "legal-hold",
-        "lifecycle",
-        "location",
-        "logging",
-        "metrics",
-        "notification",
-        "object-lock",
-        "ownershipControls",
-        "policy",
-        "policyStatus",
-        "publicAccessBlock",
-        "replication",
-        "requestPayment",
-        "restore",
-        "retention",
-        "select",
-        "tagging",
-        "torrent",
-        "versioning",
-        "website",
-    ];
+    private static readonly FrozenSet<string> SubresourceMarkers = FrozenSet.ToFrozenSet(
+        [
+            "accelerate",
+            "acl",
+            "analytics",
+            "cors",
+            "encryption",
+            "intelligent-tiering",
+            "inventory",
+            "legal-hold",
+            "lifecycle",
+            "location",
+            "logging",
+            "metrics",
+            "notification",
+            "object-lock",
+            "ownershipControls",
+            "policy",
+            "policyStatus",
+            "publicAccessBlock",
+            "replication",
+            "requestPayment",
+            "restore",
+            "retention",
+            "select",
+            "tagging",
+            "torrent",
+            "versioning",
+            "website",
+        ],
+        StringComparer.OrdinalIgnoreCase
+    );
 
     public async Task<IResult> DispatchAsync(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        if (SubresourceMarkers.Any(context.Request.Query.ContainsKey))
+        foreach (var parameter in context.Request.Query.Keys)
         {
-            return new S3ErrorResult(S3Errors.NotImplemented);
+            if (SubresourceMarkers.Contains(parameter))
+            {
+                return new S3ErrorResult(S3Errors.NotImplemented);
+            }
         }
 
         var (bucket, key) = RequestTarget.Resolve(

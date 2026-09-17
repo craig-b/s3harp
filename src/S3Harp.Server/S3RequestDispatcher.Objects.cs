@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Diagnostics;
 using System.Xml.Linq;
 using S3Harp.Core;
@@ -217,14 +218,38 @@ public sealed partial class S3RequestDispatcher
     }
 
     /// <summary>The attributes GetObjectAttributes can report, in the order S3 lists them.</summary>
-    private static readonly string[] ObjectAttributeNames =
-    [
-        "ETag",
-        "Checksum",
-        "ObjectParts",
-        "StorageClass",
-        "ObjectSize",
-    ];
+    private static readonly FrozenSet<string> ObjectAttributeNames = FrozenSet.ToFrozenSet(
+        ["ETag", "Checksum", "ObjectParts", "StorageClass", "ObjectSize"],
+        StringComparer.Ordinal
+    );
+
+    private static readonly FrozenSet<string>.AlternateLookup<
+        ReadOnlySpan<char>
+    > ObjectAttributeLookup = ObjectAttributeNames.GetAlternateLookup<ReadOnlySpan<char>>();
+
+    /// <summary>The attribute names a request lists, or null when the list is empty or names an unknown one.</summary>
+    private static HashSet<string>? RequestedAttributes(string header)
+    {
+        var requested = new HashSet<string>(StringComparer.Ordinal);
+        var list = header.AsSpan();
+        foreach (var range in list.Split(','))
+        {
+            var name = list[range].Trim();
+            if (name.IsEmpty)
+            {
+                continue;
+            }
+
+            if (!ObjectAttributeLookup.TryGetValue(name, out var known))
+            {
+                return null;
+            }
+
+            requested.Add(known);
+        }
+
+        return requested.Count == 0 ? null : requested;
+    }
 
     private async Task<IResult> GetObjectAttributesAsync(
         HttpContext context,
@@ -240,13 +265,8 @@ public sealed partial class S3RequestDispatcher
         }
 
         var headers = context.Request.Headers;
-        var requested = headers["x-amz-object-attributes"]
-            .ToString()
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToHashSet(StringComparer.Ordinal);
         if (
-            requested.Count == 0
-            || !requested.IsSubsetOf(ObjectAttributeNames)
+            RequestedAttributes(headers["x-amz-object-attributes"].ToString()) is not { } requested
             || !TryReadCount(headers["x-amz-max-parts"], maxPartsPerPage, out var maxParts)
             || !TryReadCount(headers["x-amz-part-number-marker"], 0, out var marker)
         )
