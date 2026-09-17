@@ -1,4 +1,3 @@
-using System.Globalization;
 using S3Harp.Core;
 
 namespace S3Harp.Server;
@@ -46,7 +45,7 @@ public static class RangeHeader
         if (firstPart.IsEmpty)
         {
             // A suffix range: the last N bytes of the object.
-            if (!TryParse(secondPart, out var suffixLength))
+            if (!DecimalDigits.TryParseInt64(secondPart, out var suffixLength))
             {
                 return new RangeEvaluation(RangeOutcome.WholeObject, 0, 0);
             }
@@ -60,7 +59,7 @@ public static class RangeHeader
                 );
         }
 
-        if (!TryParse(firstPart, out var from))
+        if (!DecimalDigits.TryParseInt64(firstPart, out var from))
         {
             return new RangeEvaluation(RangeOutcome.WholeObject, 0, 0);
         }
@@ -68,7 +67,7 @@ public static class RangeHeader
         var to = objectSize - 1;
         if (!secondPart.IsEmpty)
         {
-            if (!TryParse(secondPart, out var requestedTo))
+            if (!DecimalDigits.TryParseInt64(secondPart, out var requestedTo))
             {
                 return new RangeEvaluation(RangeOutcome.WholeObject, 0, 0);
             }
@@ -85,9 +84,6 @@ public static class RangeHeader
             ? new RangeEvaluation(RangeOutcome.Unsatisfiable, 0, 0)
             : new RangeEvaluation(RangeOutcome.Partial, from, to);
     }
-
-    private static bool TryParse(ReadOnlySpan<char> value, out long parsed) =>
-        long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out parsed);
 }
 
 /// <summary>
@@ -116,18 +112,8 @@ public static class CopySourceRange
         var separator = bounds.IndexOf('-');
         if (
             separator < 0
-            || !long.TryParse(
-                bounds[..separator],
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out var from
-            )
-            || !long.TryParse(
-                bounds[(separator + 1)..],
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out var to
-            )
+            || !DecimalDigits.TryParseInt64(bounds[..separator], out var from)
+            || !DecimalDigits.TryParseInt64(bounds[(separator + 1)..], out var to)
             || to < from
         )
         {

@@ -208,14 +208,7 @@ public static class DeleteConditions
         DateTimeOffset? lastModifiedTerm = null;
         if (size.Length > 0)
         {
-            if (
-                !long.TryParse(
-                    size,
-                    NumberStyles.None,
-                    CultureInfo.InvariantCulture,
-                    out var parsed
-                )
-            )
+            if (!DecimalDigits.TryParseInt64(size, out var parsed))
             {
                 return false;
             }

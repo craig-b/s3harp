@@ -287,7 +287,7 @@ public sealed class SigV4AuthenticationMiddlewareTests
             AccessKeyId,
             SecretAccessKey,
             signedAt: Now.AddMinutes(-10),
-            expires: 60
+            expires: "60"
         );
 
         (context, var nextCalled) = await RunMiddleware(context);
@@ -319,10 +319,24 @@ public sealed class SigV4AuthenticationMiddlewareTests
         Assert.Equal("InvalidAccessKeyId", ReadErrorCode(context));
     }
 
+    [Theory]
+    [InlineData("+300")]
+    [InlineData(" 300")]
+    public async Task PresignedRequestWithALooselyFormattedExpires_IsRejected(string expires)
+    {
+        var context = CreatePresignedContext(AccessKeyId, SecretAccessKey, expires: expires);
+
+        (context, var nextCalled) = await RunMiddleware(context);
+
+        Assert.False(nextCalled());
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("AuthorizationQueryParametersError", ReadErrorCode(context));
+    }
+
     [Fact]
     public async Task PresignedRequestWithAnInvalidExpires_IsRejected()
     {
-        var context = CreatePresignedContext(AccessKeyId, SecretAccessKey, expires: 0);
+        var context = CreatePresignedContext(AccessKeyId, SecretAccessKey, expires: "0");
 
         (context, var nextCalled) = await RunMiddleware(context);
 
@@ -335,7 +349,7 @@ public sealed class SigV4AuthenticationMiddlewareTests
         string accessKeyId,
         string secretAccessKey,
         DateTimeOffset? signedAt = null,
-        long expires = 300
+        string expires = "300"
     )
     {
         var context = CreateContext();

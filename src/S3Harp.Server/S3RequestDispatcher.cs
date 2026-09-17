@@ -567,7 +567,7 @@ public sealed class S3RequestDispatcher(
             var maxKeys = MaxKeysCeiling;
             if (
                 query.ContainsKey("max-keys")
-                && (!int.TryParse(query["max-keys"], out maxKeys) || maxKeys < 0)
+                && (!DecimalDigits.TryParseInt32(query["max-keys"], out maxKeys) || maxKeys < 0)
             )
             {
                 return null;
@@ -712,12 +712,8 @@ public sealed class S3RequestDispatcher(
         }
 
         if (
-            !int.TryParse(
-                partNumberValue,
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out var partNumber
-            ) || partNumber is < 1 or > MaxPartNumber
+            !DecimalDigits.TryParseInt32(partNumberValue, out var partNumber)
+            || partNumber is < 1 or > MaxPartNumber
         )
         {
             return (default, null, null, S3Errors.InvalidArgument);
@@ -944,14 +940,14 @@ public sealed class S3RequestDispatcher(
     private static bool TryReadCount(StringValues raw, int fallback, out int value)
     {
         value = fallback;
-        return raw.Count == 0
-            || int.TryParse(
-                raw.ToString(),
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out value
-            );
+        return raw.Count == 0 || DecimalDigits.TryParseInt32(raw.ToString(), out value);
     }
+
+    /// <summary>The part number a completion request names, which must be plain digits.</summary>
+    private static int RequestedPartNumber(string value) =>
+        DecimalDigits.TryParseInt32(value, out var partNumber)
+            ? partNumber
+            : throw new FormatException("The part number must be a whole number.");
 
     /// <summary>The parts numbered beyond the marker, up to the page size, and whether more follow.</summary>
     private static (List<T> Page, bool Truncated) PageOfParts<T>(
@@ -1175,7 +1171,7 @@ public sealed class S3RequestDispatcher(
     )
     {
         if (
-            !int.TryParse(context.Request.Query["partNumber"], out var partNumber)
+            !DecimalDigits.TryParseInt32(context.Request.Query["partNumber"], out var partNumber)
             || partNumber is < 1 or > MaxPartNumber
         )
         {
@@ -1357,9 +1353,8 @@ public sealed class S3RequestDispatcher(
                     .Root!.Elements()
                     .Where(e => e.Name.LocalName == "Part")
                     .Select(part => new RequestedPart(
-                        int.Parse(
-                            part.Elements().First(e => e.Name.LocalName == "PartNumber").Value,
-                            CultureInfo.InvariantCulture
+                        RequestedPartNumber(
+                            part.Elements().First(e => e.Name.LocalName == "PartNumber").Value
                         ),
                         part.Elements().First(e => e.Name.LocalName == "ETag").Value,
                         DeclaredPartChecksum(part)

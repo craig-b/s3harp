@@ -205,7 +205,7 @@ public sealed class SigV4AuthenticationMiddleware(
                 is not [var accessKeyId, var date, var region, var service, "aws4_request"]
             || accessKeyId.Length == 0
             || signedHeaderList.Length == 0
-            || !long.TryParse(query["X-Amz-Expires"], out var expiresSeconds)
+            || !DecimalDigits.TryParseInt64(query["X-Amz-Expires"], out var expiresSeconds)
             || expiresSeconds is < 1 or > maxExpirySeconds
         )
         {

@@ -246,6 +246,25 @@ public sealed class S3RequestDispatcherTests : IDisposable
         Assert.Equal("docs/", commonPrefix.Element(S3Namespace + "Prefix")?.Value);
     }
 
+    [Theory]
+    [InlineData("+2")]
+    [InlineData(" 2")]
+    public async Task ListObjectsV2_WithALooselyFormattedMaxKeys_ReportsInvalidArgument(
+        string maxKeys
+    )
+    {
+        await Dispatch("PUT", "/my-bucket");
+
+        var context = await Dispatch(
+            "GET",
+            "/my-bucket",
+            query: $"?list-type=2&max-keys={Uri.EscapeDataString(maxKeys)}"
+        );
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("InvalidArgument", ReadErrorCode(context));
+    }
+
     [Fact]
     public async Task ListObjectsV2_WithAnUnknownEncodingType_ReportsInvalidArgument()
     {
@@ -878,6 +897,59 @@ public sealed class S3RequestDispatcherTests : IDisposable
 
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         Assert.Equal("InvalidArgument", ReadErrorCode(context));
+    }
+
+    [Theory]
+    [InlineData("+1")]
+    [InlineData(" 1")]
+    [InlineData("1 ")]
+    public async Task UploadPartWithALooselyFormattedPartNumber_ReportsInvalidArgument(
+        string partNumber
+    )
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate("/my-bucket/key");
+
+        var context = await Dispatch(
+            "PUT",
+            "/my-bucket/key",
+            query: $"?partNumber={Uri.EscapeDataString(partNumber)}&uploadId={uploadId}",
+            body: "data"
+        );
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("InvalidArgument", ReadErrorCode(context));
+    }
+
+    [Theory]
+    [InlineData("+1")]
+    [InlineData(" 1")]
+    public async Task CompleteMultipartUploadWithALooselyFormattedPartNumber_ReportsMalformedXml(
+        string partNumber
+    )
+    {
+        await Dispatch("PUT", "/my-bucket");
+        var uploadId = await Initiate("/my-bucket/key");
+        var part = await Dispatch(
+            "PUT",
+            "/my-bucket/key",
+            query: $"?partNumber=1&uploadId={uploadId}",
+            body: "data"
+        );
+
+        var context = await Dispatch(
+            "POST",
+            "/my-bucket/key",
+            query: $"?uploadId={uploadId}",
+            body: $"""
+            <CompleteMultipartUpload>
+              <Part><PartNumber>{partNumber}</PartNumber><ETag>{part.Response.Headers.ETag}</ETag></Part>
+            </CompleteMultipartUpload>
+            """
+        );
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal("MalformedXML", ReadErrorCode(context));
     }
 
     [Fact]
