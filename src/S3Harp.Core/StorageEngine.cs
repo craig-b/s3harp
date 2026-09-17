@@ -1,3 +1,6 @@
+using System.Buffers;
+using System.Security.Cryptography;
+
 namespace S3Harp.Core;
 
 /// <summary>An object ready to serve: its metadata and an open content stream.</summary>
@@ -582,17 +585,20 @@ public sealed class StorageEngine(
             return new Checksum(upload.ChecksumAlgorithm, value, ChecksumType.FullObject);
         }
 
-        if (parts.Any(part => part.Checksum is null))
+        var partChecksums = new List<string>(parts.Count);
+        foreach (var part in parts)
         {
-            return null;
+            if (part.Checksum is not { } partChecksum)
+            {
+                return null;
+            }
+
+            partChecksums.Add(partChecksum);
         }
 
         return new Checksum(
             upload.ChecksumAlgorithm,
-            ChecksumAlgorithms.Composite(
-                upload.ChecksumAlgorithm,
-                parts.Select(part => part.Checksum!)
-            ),
+            ChecksumAlgorithms.Composite(upload.ChecksumAlgorithm, partChecksums),
             ChecksumType.Composite
         );
     }
@@ -709,35 +715,37 @@ public sealed class StorageEngine(
             : new CompleteUploadOutcome(CompleteUploadStatus.NoSuchUpload, null, null);
     }
 
+    /// <summary>The multipart ETag of stored parts, whose ETags are always MD5s.</summary>
     private static string MultipartETag(List<PartRecord> parts) =>
-        MultipartETag(parts.Select(part => part.ETag))!;
+        MultipartETag(parts.Select(part => part.ETag))
+        ?? throw new InvalidDataException("A stored part's ETag is not an MD5.");
 
     /// <summary>S3's multipart ETag: the MD5 of the concatenated part MD5s, suffixed with the part count; null when a part ETag is not an MD5.</summary>
     private static string? MultipartETag(IEnumerable<string> partETags)
     {
-        var combined = new List<byte>();
+        // The multipart ETag is a protocol artifact carrying no security claim.
+#pragma warning disable CA5351
+        using var md5 = IncrementalHash.CreateHash(HashAlgorithmName.MD5);
+#pragma warning restore CA5351
+        Span<byte> digest = stackalloc byte[16];
         var count = 0;
         foreach (var partETag in partETags)
         {
-            if (partETag.Length != 32 || !partETag.All(char.IsAsciiHexDigit))
+            if (
+                partETag.Length != 32
+                || Convert.FromHexString(partETag, digest, out _, out var written)
+                    != OperationStatus.Done
+                || written != digest.Length
+            )
             {
                 return null;
             }
 
-            combined.AddRange(Convert.FromHexString(partETag));
+            md5.AppendData(digest);
             count++;
         }
 
-        if (count == 0)
-        {
-            return null;
-        }
-
-        // The multipart ETag is a protocol artifact carrying no security claim.
-#pragma warning disable CA5351
-        var hash = System.Security.Cryptography.MD5.HashData(combined.ToArray());
-#pragma warning restore CA5351
-        return $"{Convert.ToHexStringLower(hash)}-{count}";
+        return count == 0 ? null : $"{Convert.ToHexStringLower(md5.GetHashAndReset())}-{count}";
     }
 
     private static string? FindGroupPrefix(string key, string prefix, string? delimiter)
