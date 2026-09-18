@@ -21,10 +21,8 @@ public sealed class ChecksumHeadersTests
     }
 
     [Fact]
-    public void LeavesUnknownHeadersUnnamed()
-    {
+    public void LeavesUnknownHeadersUnnamed() =>
         Assert.False(ChecksumHeaders.TryParseHeaderName("x-amz-checksum-md5", out _));
-    }
 
     [Fact]
     public void FindsTheChecksumARequestDeclaresInItsHeaders()

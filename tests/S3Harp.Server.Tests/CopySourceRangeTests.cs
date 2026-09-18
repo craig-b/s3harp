@@ -29,8 +29,6 @@ public sealed class CopySourceRangeTests
     [InlineData("bytes=-5")]
     [InlineData("bytes=5-")]
     [InlineData("bytes=5-2")]
-    public void RejectsEveryOtherShape(string header)
-    {
+    public void RejectsEveryOtherShape(string header) =>
         Assert.False(CopySourceRange.TryParse(header, out _));
-    }
 }

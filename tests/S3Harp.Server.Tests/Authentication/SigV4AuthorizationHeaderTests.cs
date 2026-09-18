@@ -43,8 +43,6 @@ public sealed class SigV4AuthorizationHeaderTests
     [InlineData(
         "AWS4-HMAC-SHA256 Credential=akid/20130524/us-east-1/s3/aws4_request, Unknown=x, SignedHeaders=host, Signature=abc"
     )]
-    public void TryParse_RejectsHeadersMissingRequiredShape(string? value)
-    {
+    public void TryParse_RejectsHeadersMissingRequiredShape(string? value) =>
         Assert.False(SigV4AuthorizationHeader.TryParse(value, out _));
-    }
 }

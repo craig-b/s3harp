@@ -10,10 +10,7 @@ public sealed class BlobStoreTests : IDisposable
 
     private readonly BlobStore store;
 
-    public BlobStoreTests()
-    {
-        store = new BlobStore(root.Path);
-    }
+    public BlobStoreTests() => store = new BlobStore(root.Path);
 
     [Fact]
     public async Task WrittenBlob_ReadsBackIdentical()

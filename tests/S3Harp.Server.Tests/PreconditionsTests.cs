@@ -8,10 +8,8 @@ public sealed class PreconditionsTests
     private static readonly DateTimeOffset LastModified = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public void NoHeaders_Proceed()
-    {
+    public void NoHeaders_Proceed() =>
         Assert.Equal(PreconditionOutcome.Proceed, Evaluate(new ConditionalHeaders()));
-    }
 
     [Theory]
     [InlineData("\"5eb63bbbe01eeed093cb22bb8f5acdc3\"")]
@@ -64,10 +62,7 @@ public sealed class PreconditionsTests
     public void IfModifiedSince_ComparesAtSecondPrecision(
         string header,
         PreconditionOutcome expected
-    )
-    {
-        Assert.Equal(expected, Evaluate(new ConditionalHeaders(IfModifiedSince: header)));
-    }
+    ) => Assert.Equal(expected, Evaluate(new ConditionalHeaders(IfModifiedSince: header)));
 
     [Theory]
     [InlineData("Wed, 16 Sep 2026 12:00:00 GMT", PreconditionOutcome.Proceed)]
@@ -77,10 +72,7 @@ public sealed class PreconditionsTests
     public void IfUnmodifiedSince_ComparesAtSecondPrecision(
         string header,
         PreconditionOutcome expected
-    )
-    {
-        Assert.Equal(expected, Evaluate(new ConditionalHeaders(IfUnmodifiedSince: header)));
-    }
+    ) => Assert.Equal(expected, Evaluate(new ConditionalHeaders(IfUnmodifiedSince: header)));
 
     [Fact]
     public void IfMatch_OutranksIfUnmodifiedSince()

@@ -63,8 +63,6 @@ public sealed class ResponseHeaderOverridesTests
     }
 
     [Fact]
-    public void LeavesTheRecordAloneWithoutOverrides()
-    {
+    public void LeavesTheRecordAloneWithoutOverrides() =>
         Assert.Same(Stored, ResponseHeaderOverrides.Apply(new QueryCollection(), Stored));
-    }
 }

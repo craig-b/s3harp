@@ -17,10 +17,8 @@ public sealed class ObjectPartTests
     }
 
     [Fact]
-    public void ReportsNoSuchPartBeyondTheLastPart()
-    {
+    public void ReportsNoSuchPartBeyondTheLastPart() =>
         Assert.Null(ObjectPart.Select(4, Record(partSizes: [5, 3, 1])));
-    }
 
     [Fact]
     public void PartOneOfAnObjectStoredInOnePiece_IsTheWholeObject()
@@ -31,10 +29,8 @@ public sealed class ObjectPartTests
     }
 
     [Fact]
-    public void AnObjectStoredInOnePiece_HasNoFurtherParts()
-    {
+    public void AnObjectStoredInOnePiece_HasNoFurtherParts() =>
         Assert.Null(ObjectPart.Select(2, Record(partSizes: [])));
-    }
 
     private static ObjectRecord Record(long[] partSizes) =>
         new(

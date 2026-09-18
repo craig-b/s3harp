@@ -43,14 +43,10 @@ public sealed class SigV4SignerTests
     }
 
     [Fact]
-    public void CredentialScope_FormatsAsTheSigV4ScopeString()
-    {
+    public void CredentialScope_FormatsAsTheSigV4ScopeString() =>
         Assert.Equal("20130524/us-east-1/s3/aws4_request", Scope.ToString());
-    }
 
     [Fact]
-    public void Sha256Hex_HashesTheEmptyInputToTheWellKnownValue()
-    {
+    public void Sha256Hex_HashesTheEmptyInputToTheWellKnownValue() =>
         Assert.Equal(EmptyPayloadHash, SigV4Signer.Sha256Hex([]));
-    }
 }

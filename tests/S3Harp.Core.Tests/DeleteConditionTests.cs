@@ -18,26 +18,20 @@ public sealed class DeleteConditionTests
     );
 
     [Fact]
-    public void AnEmptyCondition_MatchesAnyObject()
-    {
+    public void AnEmptyCondition_MatchesAnyObject() =>
         Assert.True(new DeleteCondition().Matches(Existing));
-    }
 
     [Theory]
     [InlineData("etag-hex", true)]
     [InlineData("other", false)]
-    public void MatchesTheETagExactly(string etag, bool expected)
-    {
+    public void MatchesTheETagExactly(string etag, bool expected) =>
         Assert.Equal(expected, new DeleteCondition(ETag: etag).Matches(Existing));
-    }
 
     [Theory]
     [InlineData(3, true)]
     [InlineData(4, false)]
-    public void MatchesTheSize(long size, bool expected)
-    {
+    public void MatchesTheSize(long size, bool expected) =>
         Assert.Equal(expected, new DeleteCondition(Size: size).Matches(Existing));
-    }
 
     [Fact]
     public void MatchesTheLastModifiedTimeToTheSecond()
@@ -50,8 +44,6 @@ public sealed class DeleteConditionTests
     }
 
     [Fact]
-    public void EveryGivenTermMustMatch()
-    {
+    public void EveryGivenTermMustMatch() =>
         Assert.False(new DeleteCondition(ETag: "etag-hex", Size: 4).Matches(Existing));
-    }
 }

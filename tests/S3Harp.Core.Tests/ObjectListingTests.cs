@@ -93,7 +93,7 @@ public sealed class ObjectListingTests : IDisposable
     {
         await Seed();
         var entries = new List<string>();
-        string fromKey = "";
+        var fromKey = "";
 
         while (true)
         {

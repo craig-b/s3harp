@@ -77,10 +77,8 @@ public sealed class S3HarpOptionsTests
     }
 
     [Fact]
-    public void PortZeroLetsTheSystemChoose()
-    {
+    public void PortZeroLetsTheSystemChoose() =>
         Assert.Equal(0, S3HarpOptions.Load(Configuration(Complete, ("PORT", "0"))).Port);
-    }
 
     [Fact]
     public void ReportsEveryProblemAtOnce()

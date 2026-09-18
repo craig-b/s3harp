@@ -12,10 +12,8 @@ public sealed class BucketNameTests
     [InlineData("exactly-sixty-three-characters-long-name-abcdefghijklmnopqrstuv")]
     [InlineData("192.168.5.123.local")]
     [InlineData("a.b.c.d")]
-    public void IsValid_AcceptsConformingNames(string name)
-    {
+    public void IsValid_AcceptsConformingNames(string name) =>
         Assert.True(BucketName.IsValid(name));
-    }
 
     [Theory]
     [InlineData("")]
@@ -31,8 +29,6 @@ public sealed class BucketNameTests
     [InlineData("has/slash")]
     [InlineData("foo..bar")]
     [InlineData("192.168.5.123")]
-    public void IsValid_RejectsNonConformingNames(string name)
-    {
+    public void IsValid_RejectsNonConformingNames(string name) =>
         Assert.False(BucketName.IsValid(name));
-    }
 }

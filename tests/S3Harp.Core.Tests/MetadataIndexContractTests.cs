@@ -40,10 +40,8 @@ public abstract class MetadataIndexContractTests
     }
 
     [Fact]
-    public async Task UnknownBucket_DoesNotExist()
-    {
+    public async Task UnknownBucket_DoesNotExist() =>
         Assert.False(await Index.BucketExistsAsync("missing", Token));
-    }
 
     [Fact]
     public async Task CreatedBucket_AppearsInTheListWithItsCreationTime()
@@ -419,16 +417,12 @@ public abstract class MetadataIndexContractTests
     }
 
     [Fact]
-    public async Task ScanObjects_OnAnUnknownBucket_ReturnsNothing()
-    {
+    public async Task ScanObjects_OnAnUnknownBucket_ReturnsNothing() =>
         Assert.Empty(await Index.ScanObjectsAsync("missing", "", "", 10, Token));
-    }
 
     [Fact]
-    public async Task CreateUpload_IntoAMissingBucket_IsRefused()
-    {
+    public async Task CreateUpload_IntoAMissingBucket_IsRefused() =>
         Assert.False(await Index.TryCreateUploadAsync("missing", Upload("u1"), Token));
-    }
 
     [Fact]
     public async Task CreatedUpload_IsFindableWithItsFields()
@@ -648,10 +642,8 @@ public abstract class MetadataIndexContractTests
     }
 
     [Fact]
-    public async Task ListingUploads_OfAnUnknownBucket_ReturnsNothing()
-    {
+    public async Task ListingUploads_OfAnUnknownBucket_ReturnsNothing() =>
         Assert.Empty(await Index.ListUploadsAsync("missing", Token));
-    }
 
     [Fact]
     public async Task DeletingABucketWithActiveUploads_AbortsThemAndReleasesTheirParts()
@@ -714,10 +706,8 @@ public abstract class MetadataIndexContractTests
             LastModified: CreationTime
         );
 
-    private async Task Create(string name)
-    {
+    private async Task Create(string name) =>
         Assert.True(await Index.TryCreateBucketAsync(name, CreationTime, Token));
-    }
 }
 
 public sealed class InMemoryMetadataIndexTests : MetadataIndexContractTests
@@ -734,10 +724,7 @@ public sealed class SqliteMetadataIndexTests : MetadataIndexContractTests, IDisp
 
     private readonly SqliteMetadataIndex index;
 
-    public SqliteMetadataIndexTests()
-    {
-        index = new SqliteMetadataIndex(databasePath);
-    }
+    public SqliteMetadataIndexTests() => index = new SqliteMetadataIndex(databasePath);
 
     protected override IMetadataIndex Index => index;
 

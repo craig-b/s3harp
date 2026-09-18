@@ -63,10 +63,8 @@ public sealed class ChecksumTests
     }
 
     [Fact]
-    public void LeavesUnknownNamesUnparsed()
-    {
+    public void LeavesUnknownNamesUnparsed() =>
         Assert.False(ChecksumAlgorithms.TryParseName("MD5", out _));
-    }
 
     [Theory]
     [InlineData(
@@ -84,10 +82,7 @@ public sealed class ChecksumTests
         ChecksumAlgorithm algorithm,
         string partChecksums,
         string expected
-    )
-    {
-        Assert.Equal(expected, ChecksumAlgorithms.Composite(algorithm, partChecksums.Split(',')));
-    }
+    ) => Assert.Equal(expected, ChecksumAlgorithms.Composite(algorithm, partChecksums.Split(',')));
 
     [Theory]
     [InlineData(ChecksumAlgorithm.Crc32, ChecksumType.Composite)]
@@ -98,10 +93,7 @@ public sealed class ChecksumTests
     public void DefaultsMultipartUploadsToTheTypeS3Does(
         ChecksumAlgorithm algorithm,
         ChecksumType type
-    )
-    {
-        Assert.Equal(type, ChecksumAlgorithms.DefaultType(algorithm));
-    }
+    ) => Assert.Equal(type, ChecksumAlgorithms.DefaultType(algorithm));
 
     [Theory]
     [InlineData(ChecksumAlgorithm.Crc32, ChecksumType.FullObject, true)]
@@ -113,10 +105,7 @@ public sealed class ChecksumTests
         ChecksumAlgorithm algorithm,
         ChecksumType type,
         bool supported
-    )
-    {
-        Assert.Equal(supported, ChecksumAlgorithms.Supports(algorithm, type));
-    }
+    ) => Assert.Equal(supported, ChecksumAlgorithms.Supports(algorithm, type));
 
     /// <summary>
     /// A payload long enough for the vectorised path with a tail that is not, split so

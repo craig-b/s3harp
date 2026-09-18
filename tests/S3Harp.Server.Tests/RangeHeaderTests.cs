@@ -34,10 +34,10 @@ public sealed class RangeHeaderTests
     [InlineData("bytes=5-2", 11)]
     [InlineData("items=0-4", 11)]
     [InlineData("bytes=", 11)]
-    public void Evaluate_ServesTheWholeObjectForAbsentOrIgnorableHeaders(string? header, long size)
-    {
-        Assert.Equal(RangeOutcome.WholeObject, RangeHeader.Evaluate(header, size).Outcome);
-    }
+    public void Evaluate_ServesTheWholeObjectForAbsentOrIgnorableHeaders(
+        string? header,
+        long size
+    ) => Assert.Equal(RangeOutcome.WholeObject, RangeHeader.Evaluate(header, size).Outcome);
 
     [Theory]
     [InlineData("bytes=11-", 11)]
@@ -45,8 +45,6 @@ public sealed class RangeHeaderTests
     [InlineData("bytes=-0", 11)]
     [InlineData("bytes=0-", 0)]
     [InlineData("bytes=-5", 0)]
-    public void Evaluate_ReportsUnsatisfiableRanges(string header, long size)
-    {
+    public void Evaluate_ReportsUnsatisfiableRanges(string header, long size) =>
         Assert.Equal(RangeOutcome.Unsatisfiable, RangeHeader.Evaluate(header, size).Outcome);
-    }
 }

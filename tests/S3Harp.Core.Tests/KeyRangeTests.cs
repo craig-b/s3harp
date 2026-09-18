@@ -11,17 +11,12 @@ public sealed class KeyRangeTests
     public void PrefixSuccessor_ReturnsTheSmallestStringAboveEveryPrefixedKey(
         string prefix,
         string expected
-    )
-    {
-        Assert.Equal(expected, KeyRange.PrefixSuccessor(prefix));
-    }
+    ) => Assert.Equal(expected, KeyRange.PrefixSuccessor(prefix));
 
     [Theory]
     [InlineData("")]
     [InlineData("￿")]
     [InlineData("￿￿")]
-    public void PrefixSuccessor_ReportsUnboundedPrefixes(string prefix)
-    {
+    public void PrefixSuccessor_ReportsUnboundedPrefixes(string prefix) =>
         Assert.Null(KeyRange.PrefixSuccessor(prefix));
-    }
 }
