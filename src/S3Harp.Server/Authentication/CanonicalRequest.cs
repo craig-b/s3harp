@@ -84,7 +84,7 @@ public static class CanonicalRequest
                 continue;
             }
 
-            var value = separator < 0 ? ReadOnlySpan<char>.Empty : parameter[(separator + 1)..];
+            var value = separator < 0 ? [] : parameter[(separator + 1)..];
             parameters.Add((name.ToString(), value.ToString()));
         }
 
