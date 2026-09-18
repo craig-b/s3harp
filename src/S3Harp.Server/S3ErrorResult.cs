@@ -3,7 +3,7 @@ using System.Xml.Linq;
 namespace S3Harp.Server;
 
 /// <summary>Writes an <see cref="S3Error"/> as an S3-style XML error response.</summary>
-public sealed class S3ErrorResult(S3Error error) : IResult
+internal sealed class S3ErrorResult(S3Error error) : IResult
 {
     public async Task ExecuteAsync(HttpContext httpContext)
     {

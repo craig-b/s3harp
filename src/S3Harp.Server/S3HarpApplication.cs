@@ -10,7 +10,7 @@ namespace S3Harp.Server;
 /// come from the <c>S3HARP_</c> environment, overridden by any the caller passes,
 /// which is how the command line reaches them.
 /// </summary>
-public static partial class S3HarpApplication
+internal static partial class S3HarpApplication
 {
     private const string MetadataHeaderPrefix = "x-amz-meta-";
 

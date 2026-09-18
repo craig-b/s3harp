@@ -4,7 +4,7 @@ using S3Harp.Core;
 namespace S3Harp.Server.Authentication;
 
 /// <summary>Verifies the SigV4 signature on every request before it reaches an operation.</summary>
-public sealed class SigV4AuthenticationMiddleware(
+internal sealed class SigV4AuthenticationMiddleware(
     RequestDelegate next,
     ICredentialStore credentials,
     TimeProvider timeProvider

@@ -55,24 +55,39 @@ public sealed class PreconditionsTests
     }
 
     [Theory]
-    [InlineData("Wed, 16 Sep 2026 12:00:00 GMT", PreconditionOutcome.NotModified)]
-    [InlineData("Wed, 16 Sep 2026 12:00:01 GMT", PreconditionOutcome.NotModified)]
-    [InlineData("Wed, 16 Sep 2026 11:59:59 GMT", PreconditionOutcome.Proceed)]
-    [InlineData("not a date", PreconditionOutcome.Proceed)]
-    public void IfModifiedSince_ComparesAtSecondPrecision(
-        string header,
-        PreconditionOutcome expected
-    ) => Assert.Equal(expected, Evaluate(new ConditionalHeaders(IfModifiedSince: header)));
+    [InlineData("Wed, 16 Sep 2026 12:00:00 GMT")]
+    [InlineData("Wed, 16 Sep 2026 12:00:01 GMT")]
+    public void IfModifiedSince_AtOrAfterTheModificationSecond_IsNotModified(string header) =>
+        Assert.Equal(
+            PreconditionOutcome.NotModified,
+            Evaluate(new ConditionalHeaders(IfModifiedSince: header))
+        );
 
     [Theory]
-    [InlineData("Wed, 16 Sep 2026 12:00:00 GMT", PreconditionOutcome.Proceed)]
-    [InlineData("Wed, 16 Sep 2026 12:00:01 GMT", PreconditionOutcome.Proceed)]
-    [InlineData("Sat, 29 Oct 1994 19:43:31 GMT", PreconditionOutcome.PreconditionFailed)]
-    [InlineData("not a date", PreconditionOutcome.Proceed)]
-    public void IfUnmodifiedSince_ComparesAtSecondPrecision(
-        string header,
-        PreconditionOutcome expected
-    ) => Assert.Equal(expected, Evaluate(new ConditionalHeaders(IfUnmodifiedSince: header)));
+    [InlineData("Wed, 16 Sep 2026 11:59:59 GMT")]
+    [InlineData("not a date")]
+    public void IfModifiedSince_BeforeTheModificationSecondOrInvalid_Proceeds(string header) =>
+        Assert.Equal(
+            PreconditionOutcome.Proceed,
+            Evaluate(new ConditionalHeaders(IfModifiedSince: header))
+        );
+
+    [Theory]
+    [InlineData("Wed, 16 Sep 2026 12:00:00 GMT")]
+    [InlineData("Wed, 16 Sep 2026 12:00:01 GMT")]
+    [InlineData("not a date")]
+    public void IfUnmodifiedSince_AtOrAfterTheModificationSecondOrInvalid_Proceeds(string header) =>
+        Assert.Equal(
+            PreconditionOutcome.Proceed,
+            Evaluate(new ConditionalHeaders(IfUnmodifiedSince: header))
+        );
+
+    [Fact]
+    public void IfUnmodifiedSince_BeforeTheModificationSecond_Fails() =>
+        Assert.Equal(
+            PreconditionOutcome.PreconditionFailed,
+            Evaluate(new ConditionalHeaders(IfUnmodifiedSince: "Sat, 29 Oct 1994 19:43:31 GMT"))
+        );
 
     [Fact]
     public void IfMatch_OutranksIfUnmodifiedSince()

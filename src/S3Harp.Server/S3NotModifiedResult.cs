@@ -6,7 +6,7 @@ namespace S3Harp.Server;
 /// A 304 for a conditional GET or HEAD whose object is unchanged: the entity
 /// headers a client needs to confirm its cached copy, and no body.
 /// </summary>
-public sealed class S3NotModifiedResult(ObjectRecord record) : IResult
+internal sealed class S3NotModifiedResult(ObjectRecord record) : IResult
 {
     public Task ExecuteAsync(HttpContext httpContext)
     {

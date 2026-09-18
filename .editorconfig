@@ -409,7 +409,6 @@ dotnet_diagnostic.CA1032.severity = none     # exceptions carry an S3 error or a
 dotnet_diagnostic.CA1034.severity = none     # outcome records nest as the cases of their result type
 dotnet_diagnostic.CA1056.severity = none     # the listen URL is validated text that Kestrel parses
 dotnet_diagnostic.CA1308.severity = none     # S3 defines its header and algorithm names in lower case
-dotnet_diagnostic.CA1515.severity = none     # the server's types are public for its test projects
 dotnet_diagnostic.CA5392.severity = none     # the libc P/Invokes are Linux-only; DLL search paths do not apply
 
 # Core owns every disposable it creates: SQLite commands, readers and connections.

@@ -5,7 +5,7 @@ using System.Text;
 namespace S3Harp.Server.Authentication;
 
 /// <summary>The AWS Signature Version 4 signing algorithm.</summary>
-public static class SigV4Signer
+internal static class SigV4Signer
 {
     public static byte[] DeriveSigningKey(string secretAccessKey, CredentialScope scope)
     {

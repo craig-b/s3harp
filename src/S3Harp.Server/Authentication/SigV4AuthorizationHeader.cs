@@ -3,7 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 namespace S3Harp.Server.Authentication;
 
 /// <summary>The parsed contents of a SigV4 <c>Authorization</c> header.</summary>
-public sealed record SigV4AuthorizationHeader(
+internal sealed record SigV4AuthorizationHeader(
     string AccessKeyId,
     CredentialScope Scope,
     IReadOnlyList<string> SignedHeaders,

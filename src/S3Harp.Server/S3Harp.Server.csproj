@@ -8,6 +8,12 @@
     <PackageReference Include="System.CommandLine" />
   </ItemGroup>
 
+  <!-- The server's types are internal; only its own test projects see them. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="S3Harp.Server.Tests" />
+    <InternalsVisibleTo Include="S3Harp.IntegrationTests" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\S3Harp.Core\S3Harp.Core.csproj" />
   </ItemGroup>

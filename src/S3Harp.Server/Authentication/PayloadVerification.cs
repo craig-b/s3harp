@@ -4,7 +4,7 @@ using S3Harp.Core;
 namespace S3Harp.Server.Authentication;
 
 /// <summary>Raised while reading a request body whose content fails verification.</summary>
-public sealed class PayloadVerificationException(S3Error error) : IOException(error.Message)
+internal sealed class PayloadVerificationException(S3Error error) : IOException(error.Message)
 {
     public S3Error Error { get; } = error;
 }
@@ -13,7 +13,7 @@ public sealed class PayloadVerificationException(S3Error error) : IOException(er
 /// Passes a request body through while observing its bytes, and verifies the
 /// content on the final read, once every byte has been seen.
 /// </summary>
-public abstract class PayloadVerifyingStream(Stream inner) : Stream
+internal abstract class PayloadVerifyingStream(Stream inner) : Stream
 {
     private bool verified;
 
@@ -74,7 +74,7 @@ public abstract class PayloadVerifyingStream(Stream inner) : Stream
 /// Fails a request body whose SHA-256 differs from the value the client signed in
 /// <c>x-amz-content-sha256</c>.
 /// </summary>
-public sealed class Sha256VerifyingStream(Stream inner, string declaredSha256Hex)
+internal sealed class Sha256VerifyingStream(Stream inner, string declaredSha256Hex)
     : PayloadVerifyingStream(inner)
 {
     private readonly IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
@@ -105,7 +105,7 @@ public sealed class Sha256VerifyingStream(Stream inner, string declaredSha256Hex
 /// Fails a request body whose checksum differs from the value the client declared
 /// in its <c>x-amz-checksum-*</c> header.
 /// </summary>
-public sealed class ChecksumVerifyingStream(
+internal sealed class ChecksumVerifyingStream(
     Stream inner,
     IncrementalChecksum checksum,
     string declaredBase64

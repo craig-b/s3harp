@@ -8,7 +8,7 @@ namespace S3Harp.Server;
 /// the environment variable of the same name, plus the help and version the
 /// parser provides. Flags the user gives override the environment.
 /// </summary>
-public static class S3HarpCommand
+internal static class S3HarpCommand
 {
     private static readonly Option<string> AccessKeyId = Setting(
         "--access-key-id",

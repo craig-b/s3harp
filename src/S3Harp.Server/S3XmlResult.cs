@@ -5,7 +5,7 @@ using System.Xml.Linq;
 namespace S3Harp.Server;
 
 /// <summary>Writes an XML document as an S3 response body.</summary>
-public sealed class S3XmlResult(int statusCode, XDocument document) : IResult
+internal sealed class S3XmlResult(int statusCode, XDocument document) : IResult
 {
     /// <summary>Wraps the root element in a UTF-8 document.</summary>
     public S3XmlResult(int statusCode, XElement root)

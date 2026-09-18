@@ -1,7 +1,7 @@
 namespace S3Harp.Server;
 
 /// <summary>The one line an operator reads first: where the server listens, stores, and whom it serves.</summary>
-public static class StartupSummary
+internal static class StartupSummary
 {
     public static string Describe(S3HarpOptions options, IEnumerable<string> urls)
     {

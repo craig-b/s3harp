@@ -7,7 +7,7 @@ using S3Harp.Server.Authentication;
 namespace S3Harp.Server;
 
 /// <summary>The object operations: put, get, head, delete, batch delete, copy and attributes.</summary>
-public sealed partial class S3RequestDispatcher
+internal sealed partial class S3RequestDispatcher
 {
     private async Task<IResult> PutObjectAsync(
         HttpContext context,

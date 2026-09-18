@@ -6,7 +6,7 @@ namespace S3Harp.Server;
 /// Reads the attributes a request assigns to an object: its content type, the
 /// standard content headers, and the <c>x-amz-meta-*</c> user metadata.
 /// </summary>
-public static class RequestAttributes
+internal static class RequestAttributes
 {
     private const string MetadataHeaderPrefix = "x-amz-meta-";
 

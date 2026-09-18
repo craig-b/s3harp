@@ -5,7 +5,7 @@ using Microsoft.Extensions.Primitives;
 namespace S3Harp.Server.Authentication;
 
 /// <summary>Builds the SigV4 canonical request string for an incoming HTTP request.</summary>
-public static class CanonicalRequest
+internal static class CanonicalRequest
 {
     public static string Build(
         HttpRequest request,

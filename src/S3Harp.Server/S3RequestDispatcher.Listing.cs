@@ -4,7 +4,7 @@ using S3Harp.Core;
 namespace S3Harp.Server;
 
 /// <summary>The listing operations: ListObjects (V1 and V2) and ListObjectVersions, with their shared paging.</summary>
-public sealed partial class S3RequestDispatcher
+internal sealed partial class S3RequestDispatcher
 {
     private async Task<IResult> ListObjectsAsync(
         HttpContext context,

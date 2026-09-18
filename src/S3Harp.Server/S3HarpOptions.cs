@@ -11,7 +11,7 @@ namespace S3Harp.Server;
 /// switches. A setting that fails validation stops the server before it listens
 /// with a <see cref="StartupException"/> naming it.
 /// </summary>
-public sealed class S3HarpOptions
+internal sealed class S3HarpOptions
 {
     private const string EnvironmentPrefix = "S3HARP_";
 

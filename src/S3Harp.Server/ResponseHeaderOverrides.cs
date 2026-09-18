@@ -7,7 +7,7 @@ namespace S3Harp.Server;
 /// headers to serve the object with for that response alone: the stored headers
 /// stay as they are.
 /// </summary>
-public static class ResponseHeaderOverrides
+internal static class ResponseHeaderOverrides
 {
     private static readonly string[] ParameterNames =
     [

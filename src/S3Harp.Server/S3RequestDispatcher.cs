@@ -15,7 +15,7 @@ namespace S3Harp.Server;
 /// verb + path shape + query markers, so the operation table lives here as
 /// explicit pattern matches.
 /// </summary>
-public sealed partial class S3RequestDispatcher(
+internal sealed partial class S3RequestDispatcher(
     IMetadataIndex index,
     StorageEngine engine,
     RootCredentials credentials,

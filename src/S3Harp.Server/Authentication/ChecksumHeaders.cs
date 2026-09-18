@@ -8,7 +8,7 @@ namespace S3Harp.Server.Authentication;
 /// The checksum headers of S3's wire protocol: the <c>x-amz-checksum-*</c> value
 /// headers, the algorithm and type headers, and the checksum mode of a read.
 /// </summary>
-public static class ChecksumHeaders
+internal static class ChecksumHeaders
 {
     private const string HeaderPrefix = "x-amz-checksum-";
     private const string TypeHeader = "x-amz-checksum-type";

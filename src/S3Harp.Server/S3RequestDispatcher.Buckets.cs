@@ -4,7 +4,7 @@ using S3Harp.Core;
 namespace S3Harp.Server;
 
 /// <summary>The bucket operations: list, create, head and delete.</summary>
-public sealed partial class S3RequestDispatcher
+internal sealed partial class S3RequestDispatcher
 {
     private async Task<IResult> ListBucketsAsync(CancellationToken cancellationToken)
     {

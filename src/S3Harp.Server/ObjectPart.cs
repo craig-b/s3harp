@@ -8,7 +8,7 @@ namespace S3Harp.Server;
 /// range it occupies, part 1 of an object stored in one piece is the whole
 /// object, and any other part number names a part the object does not have.
 /// </summary>
-public static class ObjectPart
+internal static class ObjectPart
 {
     /// <summary>The range the part occupies; null when the object has no such part.</summary>
     public static RangeEvaluation? Select(int partNumber, ObjectRecord record)

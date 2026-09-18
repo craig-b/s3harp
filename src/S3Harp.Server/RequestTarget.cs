@@ -4,7 +4,7 @@ namespace S3Harp.Server;
 /// The domain S3Harp is served under. A bucket may ride in the host as a label in
 /// front of it (<c>bucket.localhost</c>), the way SDKs address S3 by default.
 /// </summary>
-public sealed record ServiceDomain(string Name)
+internal sealed record ServiceDomain(string Name)
 {
     /// <summary>Every <c>*.localhost</c> name resolves to loopback without any setup.</summary>
     public static ServiceDomain Default { get; } = new("localhost");
@@ -17,7 +17,7 @@ public sealed record ServiceDomain(string Name)
 /// slash of the path is structural: every later character, including a trailing
 /// slash, belongs to the key.
 /// </summary>
-public static class RequestTarget
+internal static class RequestTarget
 {
     public static (string Bucket, string? Key) Resolve(string host, string path, string domain)
     {

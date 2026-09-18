@@ -13,7 +13,7 @@ namespace S3Harp.Server;
 /// requested, and a checksum in its <c>x-amz-checksum-*</c> headers when the read
 /// asked for one.
 /// </summary>
-public sealed class S3ObjectResult(
+internal sealed class S3ObjectResult(
     ObjectRecord record,
     Stream? content,
     RangeEvaluation? range = null,

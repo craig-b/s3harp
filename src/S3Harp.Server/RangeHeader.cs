@@ -2,7 +2,7 @@ using S3Harp.Core;
 
 namespace S3Harp.Server;
 
-public enum RangeOutcome
+internal enum RangeOutcome
 {
     WholeObject,
     Partial,
@@ -10,7 +10,7 @@ public enum RangeOutcome
 }
 
 /// <summary>A resolved byte range within an object.</summary>
-public readonly record struct RangeEvaluation(RangeOutcome Outcome, long From, long To);
+internal readonly record struct RangeEvaluation(RangeOutcome Outcome, long From, long To);
 
 /// <summary>
 /// Resolves an HTTP <c>Range</c> header against an object's size, following S3's
@@ -18,7 +18,7 @@ public readonly record struct RangeEvaluation(RangeOutcome Outcome, long From, l
 /// valid range beyond the object is unsatisfiable, and everything else — absent,
 /// malformed, or multi-range headers — serves the whole object.
 /// </summary>
-public static class RangeHeader
+internal static class RangeHeader
 {
     private const string Prefix = "bytes=";
 
@@ -91,7 +91,7 @@ public static class RangeHeader
 /// only as one closed <c>bytes=first-last</c> range; an absent header means the
 /// whole source.
 /// </summary>
-public static class CopySourceRange
+internal static class CopySourceRange
 {
     private const string Prefix = "bytes=";
 

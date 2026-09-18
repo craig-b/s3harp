@@ -11,7 +11,7 @@ namespace S3Harp.Server.Authentication;
 /// readable. With a signed trailer, the checksum the client announced in
 /// <c>x-amz-trailer</c> is verified against the decoded payload as well.
 /// </summary>
-public sealed class SigV4ChunkedStream(
+internal sealed class SigV4ChunkedStream(
     Stream inner,
     byte[] signingKey,
     CredentialScope scope,

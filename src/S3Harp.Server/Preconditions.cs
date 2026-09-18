@@ -5,7 +5,7 @@ using S3Harp.Core;
 
 namespace S3Harp.Server;
 
-public enum PreconditionOutcome
+internal enum PreconditionOutcome
 {
     Proceed,
     NotModified,
@@ -13,7 +13,7 @@ public enum PreconditionOutcome
 }
 
 /// <summary>The conditional request headers a client sent, as raw header values.</summary>
-public sealed record ConditionalHeaders(
+internal sealed record ConditionalHeaders(
     string? IfMatch = null,
     string? IfNoneMatch = null,
     string? IfModifiedSince = null,
@@ -55,7 +55,7 @@ public sealed record ConditionalHeaders(
 /// outranks a not-modified result. Dates compare at HTTP's second precision, and
 /// an unparseable date leaves its header ignored.
 /// </summary>
-public static class Preconditions
+internal static class Preconditions
 {
     public static PreconditionOutcome Evaluate(
         ConditionalHeaders headers,
@@ -146,7 +146,7 @@ public static class Preconditions
 /// condition on the object already at the key: <c>*</c> names any object,
 /// anything else names one by ETag.
 /// </summary>
-public static class WriteConditionHeaders
+internal static class WriteConditionHeaders
 {
     public static WriteCondition? Parse(IHeaderDictionary headers)
     {
@@ -177,7 +177,7 @@ public static class WriteConditionHeaders
 /// elements of a DeleteObjects entry. <c>*</c> names any object; a value that is
 /// not a size or a timestamp makes the request unusable.
 /// </summary>
-public static class DeleteConditions
+internal static class DeleteConditions
 {
     public static bool TryParse(IHeaderDictionary headers, out DeleteCondition? condition)
     {
