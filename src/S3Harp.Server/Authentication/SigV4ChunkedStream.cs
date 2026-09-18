@@ -226,15 +226,15 @@ public sealed class SigV4ChunkedStream(
             return;
         }
 
-        var declared = trailers.FirstOrDefault(trailer =>
+        var (declaredName, declaredValue) = trailers.FirstOrDefault(trailer =>
             string.Equals(trailer.Name, checksumTrailer, StringComparison.OrdinalIgnoreCase)
         );
-        if (declared.Name is null)
+        if (declaredName is null)
         {
             throw new PayloadVerificationException(S3Errors.IncompleteBody);
         }
 
-        if (!checksum.Matches(declared.Value))
+        if (!checksum.Matches(declaredValue))
         {
             throw new PayloadVerificationException(S3Errors.BadDigest);
         }

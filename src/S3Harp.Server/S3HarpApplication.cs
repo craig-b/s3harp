@@ -32,14 +32,13 @@ public static partial class S3HarpApplication
         builder.Configuration.AddEnvironmentVariables("S3HARP_");
         builder.Configuration.AddInMemoryCollection(settings);
         builder.WebHost.ConfigureKestrel(kestrel =>
-        {
             // User metadata is UTF-8 on the wire, so those response headers
             // carry the bytes back; every other header stays ASCII-only.
             kestrel.ResponseHeaderEncodingSelector = name =>
                 name.StartsWith(MetadataHeaderPrefix, StringComparison.OrdinalIgnoreCase)
                     ? Encoding.UTF8
-                    : null;
-        });
+                    : null
+        );
 
         var options = S3HarpOptions.Load(builder.Configuration);
         builder.WebHost.UseUrls(options.ListenUrl);

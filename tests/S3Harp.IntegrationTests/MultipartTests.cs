@@ -210,7 +210,7 @@ public sealed class MultipartTests : IAsyncLifetime
         Assert.Equal(completed.ETag.Trim('"'), attributes.ETag);
         Assert.Equal(completed.ChecksumSHA256, attributes.Checksum.ChecksumSHA256);
         Assert.Equal(2, attributes.ObjectParts.TotalPartsCount);
-        Assert.Equal(5 * 1024 * 1024 + 1024, attributes.ObjectSize);
+        Assert.Equal((5 * 1024 * 1024) + 1024, attributes.ObjectSize);
         Assert.Equal(
             uploaded.Select(part => part.ChecksumSHA256),
             (attributes.ObjectParts.Parts ?? []).Select(part => part.ChecksumSHA256)
@@ -240,7 +240,7 @@ public sealed class MultipartTests : IAsyncLifetime
         foreach (
             var (first, last, number) in new[]
             {
-                (0L, 5L * 1024 * 1024 - 1, 1),
+                (0L, (5L * 1024 * 1024) - 1, 1),
                 (5L * 1024 * 1024, source.LongLength - 1, 2),
             }
         )
