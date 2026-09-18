@@ -2,3 +2,13 @@
 [*.cs]
 # Test method names use the xUnit Method_Scenario idiom.
 dotnet_diagnostic.CA1707.severity = none
+# xUnit discovers public test classes.
+dotnet_diagnostic.CA1515.severity = none
+# Theory parameters come from the data attributes.
+dotnet_diagnostic.CA1062.severity = none
+# Tests run on xUnit's context; there is nothing to capture.
+dotnet_diagnostic.CA2007.severity = none
+# Tests lower-case names as S3 does.
+dotnet_diagnostic.CA1308.severity = none
+# Random fills fixture payloads.
+dotnet_diagnostic.CA5394.severity = none

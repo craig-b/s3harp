@@ -255,7 +255,10 @@ public sealed class SigV4AuthenticationMiddlewareTests
 
         Assert.True(nextCalled());
         using var decoded = new MemoryStream();
+        // Both branches await the copy before the stream is disposed.
+#pragma warning disable CA2025
         var copy = context.Request.Body.CopyToAsync(decoded, TestContext.Current.CancellationToken);
+#pragma warning restore CA2025
         if (matches)
         {
             await copy;

@@ -59,11 +59,8 @@ public sealed class PresignedUrlTests : IAsyncLifetime
                 Expires = DateTime.UtcNow.AddMinutes(5),
             }
         );
-        var response = await httpClient.PutAsync(
-            new Uri(url),
-            new StringContent("uploaded via presigned url"),
-            Token
-        );
+        using var content = new StringContent("uploaded via presigned url");
+        var response = await httpClient.PutAsync(new Uri(url), content, Token);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var stored = await s3.GetObjectAsync(Bucket, "uploaded.txt", Token);

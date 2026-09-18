@@ -43,14 +43,13 @@ public sealed class ObjectTests : IAsyncLifetime
         // S3 metadata values are UTF-8 on the wire: clients such as boto3 send
         // the UTF-8 bytes and expect the same bytes back.
         using var s3 = await CreateClientWithBucket();
-        using var rawClient = new HttpClient(
-            new SocketsHttpHandler
-            {
-                RequestHeaderEncodingSelector = (_, _) => Encoding.UTF8,
-                ResponseHeaderEncodingSelector = (_, _) => Encoding.UTF8,
-            }
-        );
-        var put = new HttpRequestMessage(HttpMethod.Put, await PresignedUrl(s3, HttpVerb.PUT))
+        using var handler = new SocketsHttpHandler
+        {
+            RequestHeaderEncodingSelector = (_, _) => Encoding.UTF8,
+            ResponseHeaderEncodingSelector = (_, _) => Encoding.UTF8,
+        };
+        using var rawClient = new HttpClient(handler);
+        using var put = new HttpRequestMessage(HttpMethod.Put, await PresignedUrl(s3, HttpVerb.PUT))
         {
             Content = new StringContent("Hello"),
         };

@@ -45,7 +45,10 @@ public sealed class SigV4ChunkedStreamTests
         int read;
         while ((read = await stream.ReadAsync(buffer, TestContext.Current.CancellationToken)) > 0)
         {
-            decoded.Write(buffer, 0, read);
+            await decoded.WriteAsync(
+                buffer.AsMemory(0, read),
+                TestContext.Current.CancellationToken
+            );
         }
 
         Assert.Equal("Hello, S3Harp!", Encoding.UTF8.GetString(decoded.ToArray()));

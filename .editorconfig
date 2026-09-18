@@ -403,10 +403,26 @@ dotnet_diagnostic.CA1859.severity = error    # concrete types where they are che
 dotnet_diagnostic.CA1860.severity = error    # Count or Length over Any()
 dotnet_diagnostic.CA1861.severity = error    # constant arrays as static fields
 dotnet_diagnostic.CA1870.severity = error    # cached SearchValues
+# The analysis level is "all", so every other code-quality rule is an error too.
+# These are the ones the code departs from, each for a reason the code shows.
+dotnet_diagnostic.CA1032.severity = none     # exceptions carry an S3 error or a startup message; the standard constructors would be dead code
+dotnet_diagnostic.CA1034.severity = none     # outcome records nest as the cases of their result type
+dotnet_diagnostic.CA1056.severity = none     # the listen URL is validated text that Kestrel parses
+dotnet_diagnostic.CA1308.severity = none     # S3 defines its header and algorithm names in lower case
+dotnet_diagnostic.CA1515.severity = none     # the server's types are public for its test projects
+dotnet_diagnostic.CA5392.severity = none     # the libc P/Invokes are Linux-only; DLL search paths do not apply
 
 # Core owns every disposable it creates: SQLite commands, readers and connections.
 [src/S3Harp.Core/**.cs]
 dotnet_diagnostic.CA2000.severity = error
+# fsync has no asynchronous form, and SQLite's asynchronous methods run synchronously.
+dotnet_diagnostic.CA1849.severity = none
+# Schema migration text names tables and columns from code constants.
+dotnet_diagnostic.CA2100.severity = none
+
+# Request streams and checksums are handed to the pipeline or to a wrapping stream that disposes them.
+[src/S3Harp.Server/**.cs]
+dotnet_diagnostic.CA2000.severity = none
 
 # The libraries never resume on a captured context.
 [src/**.cs]
