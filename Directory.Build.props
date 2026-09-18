@@ -17,6 +17,10 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <!-- Every JSON (de)serialization goes through a source-generated context; reflection is off at runtime. -->
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <!-- The code stays trimmable, single-file and native-AOT compatible; a call that needs runtime reflection or code generation is a build error. -->
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
   </PropertyGroup>
   <ItemGroup>
     <!-- Overloads that read the current culture or accept signs and whitespace are banned; see BannedSymbols.txt. -->
