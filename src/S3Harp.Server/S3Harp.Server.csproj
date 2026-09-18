@@ -2,6 +2,8 @@
   <PropertyGroup>
     <!-- The shipped binary is named per the project's naming conventions (see README). -->
     <AssemblyName>s3harp</AssemblyName>
+    <!-- Settings bind through generated code; no reflection over S3HarpOptions at runtime. -->
+    <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
   </PropertyGroup>
 
   <ItemGroup>

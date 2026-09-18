@@ -1,7 +1,4 @@
-using System.Collections.Frozen;
-using System.ComponentModel.DataAnnotations;
 using System.Globalization;
-using System.Reflection;
 
 namespace S3Harp.Server;
 
@@ -18,31 +15,25 @@ internal sealed class S3HarpOptions
     /// <summary>The port clients connect to; 0 lets the system choose a free one.</summary>
     public const int DefaultPort = 9000;
 
-    [ConfigurationKeyName("ACCESS_KEY_ID")]
-    [Required(ErrorMessage = "is required")]
-    public string AccessKeyId { get; init; } = "";
+    [ConfigurationKeyName(Keys.AccessKeyId)]
+    public string AccessKeyId { get; set; } = "";
 
-    [ConfigurationKeyName("SECRET_ACCESS_KEY")]
-    [Required(ErrorMessage = "is required")]
-    public string SecretAccessKey { get; init; } = "";
+    [ConfigurationKeyName(Keys.SecretAccessKey)]
+    public string SecretAccessKey { get; set; } = "";
 
-    [ConfigurationKeyName("DATA_DIR")]
-    [Required(ErrorMessage = "is required")]
-    public string DataDirectory { get; init; } = "";
+    [ConfigurationKeyName(Keys.DataDirectory)]
+    public string DataDirectory { get; set; } = "";
 
     /// <summary>The domain buckets are addressed under in virtual-hosted style.</summary>
-    [ConfigurationKeyName("DOMAIN")]
-    [Required(ErrorMessage = "is required")]
-    public string Domain { get; init; } = ServiceDomain.Default.Name;
+    [ConfigurationKeyName(Keys.Domain)]
+    public string Domain { get; set; } = ServiceDomain.Default.Name;
 
     /// <summary>The address to listen on: loopback unless told otherwise.</summary>
-    [ConfigurationKeyName("BIND")]
-    [Required(ErrorMessage = "is required")]
-    public string Bind { get; init; } = "127.0.0.1";
+    [ConfigurationKeyName(Keys.Bind)]
+    public string Bind { get; set; } = "127.0.0.1";
 
-    [ConfigurationKeyName("PORT")]
-    [Range(0, 65535, ErrorMessage = "must be between 0 and 65535")]
-    public int Port { get; init; } = DefaultPort;
+    [ConfigurationKeyName(Keys.Port)]
+    public int Port { get; set; } = DefaultPort;
 
     /// <summary>The URL Kestrel listens on, with an IPv6 bind address bracketed.</summary>
     public string ListenUrl =>
@@ -64,64 +55,73 @@ internal sealed class S3HarpOptions
         }
         catch (InvalidOperationException exception)
         {
-            // The binder names the property whose value it could not convert.
+            // The binder names the configuration key whose value it could not convert.
             throw new StartupException(
                 $"S3Harp cannot start: {DescribeConversionFailure(exception)}",
                 exception
             );
         }
 
-        var results = new List<ValidationResult>();
-        if (
-            Validator.TryValidateObject(
-                options,
-                new ValidationContext(options),
-                results,
-                validateAllProperties: true
-            )
-        )
+        var problems = new List<string>();
+        Require(problems, Keys.AccessKeyId, options.AccessKeyId);
+        Require(problems, Keys.SecretAccessKey, options.SecretAccessKey);
+        Require(problems, Keys.DataDirectory, options.DataDirectory);
+        Require(problems, Keys.Domain, options.Domain);
+        Require(problems, Keys.Bind, options.Bind);
+        if (options.Port is < 0 or > 65535)
         {
-            return options;
+            problems.Add($"{EnvironmentName(Keys.Port)} must be between 0 and 65535");
         }
 
-        var problems = results.Select(result =>
-            $"{EnvironmentName(result.MemberNames.First())} {result.ErrorMessage}"
-        );
-        throw new StartupException("S3Harp cannot start: " + string.Join("; ", problems) + ".");
+        return problems.Count == 0
+            ? options
+            : throw new StartupException(
+                "S3Harp cannot start: " + string.Join("; ", problems) + "."
+            );
     }
 
-    /// <summary>The configuration key behind each property, read once from the binding attributes.</summary>
-    private static readonly FrozenDictionary<string, string> KeyNames = ReadKeyNames();
-
-    private static FrozenDictionary<string, string> ReadKeyNames()
+    private static void Require(List<string> problems, string key, string value)
     {
-        var names = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var property in typeof(S3HarpOptions).GetProperties())
+        if (string.IsNullOrWhiteSpace(value))
         {
-            if (property.GetCustomAttribute<ConfigurationKeyNameAttribute>() is { } key)
-            {
-                names[property.Name] = key.Name;
-            }
+            problems.Add($"{EnvironmentName(key)} is required");
         }
-
-        return names.ToFrozenDictionary(StringComparer.Ordinal);
     }
 
-    /// <summary>The binder names the configuration key whose value it could not convert.</summary>
     private static string DescribeConversionFailure(InvalidOperationException exception)
     {
-        foreach (var key in KeyNames.Values)
+        foreach (var key in Keys.All)
         {
             if (exception.Message.Contains($"'{key}'", StringComparison.OrdinalIgnoreCase))
             {
-                return $"{EnvironmentPrefix}{key} must be a number.";
+                return $"{EnvironmentName(key)} must be a number.";
             }
         }
 
         return exception.Message;
     }
 
-    /// <summary>The environment variable behind a property, such as <c>S3HARP_PORT</c>.</summary>
-    private static string EnvironmentName(string propertyName) =>
-        EnvironmentPrefix + (KeyNames.TryGetValue(propertyName, out var key) ? key : propertyName);
+    /// <summary>The environment variable behind a configuration key, such as <c>S3HARP_PORT</c>.</summary>
+    private static string EnvironmentName(string key) => EnvironmentPrefix + key;
+
+    /// <summary>The configuration keys, which are the environment variable names without their prefix.</summary>
+    private static class Keys
+    {
+        public const string AccessKeyId = "ACCESS_KEY_ID";
+        public const string SecretAccessKey = "SECRET_ACCESS_KEY";
+        public const string DataDirectory = "DATA_DIR";
+        public const string Domain = "DOMAIN";
+        public const string Bind = "BIND";
+        public const string Port = "PORT";
+
+        public static readonly string[] All =
+        [
+            AccessKeyId,
+            SecretAccessKey,
+            DataDirectory,
+            Domain,
+            Bind,
+            Port,
+        ];
+    }
 }
