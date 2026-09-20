@@ -29,12 +29,12 @@ public sealed class S3HarpCommandTests
         Assert.Equal(
             new Dictionary<string, string?>
             {
-                ["ACCESS_KEY_ID"] = "S3HARPEXAMPLEKEY",
-                ["SECRET_ACCESS_KEY"] = "secret",
-                ["DATA_DIR"] = "/tmp/data",
-                ["BIND"] = "0.0.0.0",
-                ["PORT"] = "9010",
-                ["DOMAIN"] = "s3.test",
+                ["access_key_id"] = "S3HARPEXAMPLEKEY",
+                ["secret_access_key"] = "secret",
+                ["data_dir"] = "/tmp/data",
+                ["bind"] = "0.0.0.0",
+                ["port"] = "9010",
+                ["domain"] = "s3.test",
             },
             S3HarpCommand.Settings(parsed)
         );
@@ -46,7 +46,7 @@ public sealed class S3HarpCommandTests
         var parsed = S3HarpCommand.Create(_ => 0).Parse(["--port", "9010"]);
 
         Assert.Equal(
-            new Dictionary<string, string?> { ["PORT"] = "9010" },
+            new Dictionary<string, string?> { ["port"] = "9010" },
             S3HarpCommand.Settings(parsed)
         );
     }
@@ -103,6 +103,6 @@ public sealed class S3HarpCommandTests
             .Invoke();
 
         Assert.Equal(3, exitCode);
-        Assert.Equal("1", received?["PORT"]);
+        Assert.Equal("1", received?["port"]);
     }
 }

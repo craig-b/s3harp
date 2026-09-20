@@ -3,15 +3,13 @@ using System.Globalization;
 namespace S3Harp.Server;
 
 /// <summary>
-/// The settings S3Harp starts with, each named by its environment variable
-/// without the <c>S3HARP_</c> prefix. The same names work as command-line
-/// switches. A setting that fails validation stops the server before it listens
-/// with a <see cref="StartupException"/> naming it.
+/// The settings S3Harp starts with. Each has one name, such as <c>data_dir</c>,
+/// which is the suffix of its <c>S3HARP_</c> environment variable and the name
+/// of its command-line flag. A setting that fails validation stops the server
+/// before it listens with a <see cref="StartupException"/> naming it.
 /// </summary>
 internal sealed class S3HarpOptions
 {
-    private const string EnvironmentPrefix = "S3HARP_";
-
     /// <summary>The port clients connect to; 0 lets the system choose a free one.</summary>
     public const int DefaultPort = 9000;
 
@@ -43,7 +41,7 @@ internal sealed class S3HarpOptions
 
     /// <summary>
     /// Binds the settings from configuration and validates them, reporting every
-    /// problem at once by the environment variable it concerns.
+    /// problem at once by the setting it concerns.
     /// </summary>
     public static S3HarpOptions Load(IConfiguration configuration)
     {
@@ -70,7 +68,7 @@ internal sealed class S3HarpOptions
         Require(problems, Keys.Bind, options.Bind);
         if (options.Port is < 0 or > 65535)
         {
-            problems.Add($"{EnvironmentName(Keys.Port)} must be between 0 and 65535");
+            problems.Add($"{Keys.Port} must be between 0 and 65535");
         }
 
         return problems.Count == 0
@@ -84,7 +82,7 @@ internal sealed class S3HarpOptions
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            problems.Add($"{EnvironmentName(key)} is required");
+            problems.Add($"{key} is required");
         }
     }
 
@@ -94,25 +92,22 @@ internal sealed class S3HarpOptions
         {
             if (exception.Message.Contains($"'{key}'", StringComparison.OrdinalIgnoreCase))
             {
-                return $"{EnvironmentName(key)} must be a number.";
+                return $"{key} must be a number.";
             }
         }
 
         return exception.Message;
     }
 
-    /// <summary>The environment variable behind a configuration key, such as <c>S3HARP_PORT</c>.</summary>
-    private static string EnvironmentName(string key) => EnvironmentPrefix + key;
-
-    /// <summary>The configuration keys, which are the environment variable names without their prefix.</summary>
+    /// <summary>The setting names, which are also the configuration keys.</summary>
     private static class Keys
     {
-        public const string AccessKeyId = "ACCESS_KEY_ID";
-        public const string SecretAccessKey = "SECRET_ACCESS_KEY";
-        public const string DataDirectory = "DATA_DIR";
-        public const string Domain = "DOMAIN";
-        public const string Bind = "BIND";
-        public const string Port = "PORT";
+        public const string AccessKeyId = "access_key_id";
+        public const string SecretAccessKey = "secret_access_key";
+        public const string DataDirectory = "data_dir";
+        public const string Domain = "domain";
+        public const string Bind = "bind";
+        public const string Port = "port";
 
         public static readonly string[] All =
         [

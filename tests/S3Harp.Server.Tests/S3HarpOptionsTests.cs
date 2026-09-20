@@ -7,16 +7,16 @@ public sealed class S3HarpOptionsTests
 {
     private static readonly Dictionary<string, string?> Complete = new()
     {
-        ["ACCESS_KEY_ID"] = "S3HARPEXAMPLEKEY",
-        ["SECRET_ACCESS_KEY"] = "secret",
-        ["DATA_DIR"] = "/tmp/s3harp-data",
+        ["access_key_id"] = "S3HARPEXAMPLEKEY",
+        ["secret_access_key"] = "secret",
+        ["data_dir"] = "/tmp/s3harp-data",
     };
 
     [Fact]
-    public void ReadsTheSettingsByTheirEnvironmentNames()
+    public void ReadsTheSettingsByTheirNames()
     {
         var options = S3HarpOptions.Load(
-            Configuration(Complete, ("DOMAIN", "s3.test"), ("BIND", "0.0.0.0"), ("PORT", "9010"))
+            Configuration(Complete, ("domain", "s3.test"), ("bind", "0.0.0.0"), ("port", "9010"))
         );
 
         Assert.Equal("S3HARPEXAMPLEKEY", options.AccessKeyId);
@@ -42,16 +42,16 @@ public sealed class S3HarpOptionsTests
     public void BracketsAnIpv6BindAddressInTheListenUrl()
     {
         var options = S3HarpOptions.Load(
-            Configuration(Complete, ("BIND", "::1"), ("PORT", "9000"))
+            Configuration(Complete, ("bind", "::1"), ("port", "9000"))
         );
 
         Assert.Equal("http://[::1]:9000", options.ListenUrl);
     }
 
     [Theory]
-    [InlineData("ACCESS_KEY_ID")]
-    [InlineData("SECRET_ACCESS_KEY")]
-    [InlineData("DATA_DIR")]
+    [InlineData("access_key_id")]
+    [InlineData("secret_access_key")]
+    [InlineData("data_dir")]
     public void RefusesToStartWithoutARequiredSetting(string missing)
     {
         var settings = new Dictionary<string, string?>(Complete) { [missing] = " " };
@@ -60,36 +60,38 @@ public sealed class S3HarpOptionsTests
             S3HarpOptions.Load(Configuration(settings))
         );
 
-        Assert.Contains("S3HARP_" + missing, exception.Message, StringComparison.Ordinal);
+        Assert.Equal($"S3Harp cannot start: {missing} is required.", exception.Message);
     }
 
     [Theory]
-    [InlineData("65536")]
-    [InlineData("-1")]
-    [InlineData("many")]
-    public void RefusesAPortOutsideTheRange(string port)
+    [InlineData("65536", "port must be between 0 and 65535")]
+    [InlineData("-1", "port must be between 0 and 65535")]
+    [InlineData("many", "port must be a number")]
+    public void RefusesAPortOutsideTheRange(string port, string problem)
     {
         var exception = Assert.Throws<StartupException>(() =>
-            S3HarpOptions.Load(Configuration(Complete, ("PORT", port)))
+            S3HarpOptions.Load(Configuration(Complete, ("port", port)))
         );
 
-        Assert.Contains("S3HARP_PORT", exception.Message, StringComparison.Ordinal);
+        Assert.Equal($"S3Harp cannot start: {problem}.", exception.Message);
     }
 
     [Fact]
     public void PortZeroLetsTheSystemChoose() =>
-        Assert.Equal(0, S3HarpOptions.Load(Configuration(Complete, ("PORT", "0"))).Port);
+        Assert.Equal(0, S3HarpOptions.Load(Configuration(Complete, ("port", "0"))).Port);
 
     [Fact]
-    public void ReportsEveryProblemAtOnce()
+    public void ReportsEveryProblemAtOnceByTheSettingItConcerns()
     {
         var exception = Assert.Throws<StartupException>(() =>
-            S3HarpOptions.Load(Configuration(new Dictionary<string, string?>(), ("PORT", "70000")))
+            S3HarpOptions.Load(Configuration(new Dictionary<string, string?>(), ("port", "70000")))
         );
 
-        Assert.Contains("S3HARP_ACCESS_KEY_ID", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("S3HARP_DATA_DIR", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("S3HARP_PORT", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            "S3Harp cannot start: access_key_id is required; secret_access_key is required; "
+                + "data_dir is required; port must be between 0 and 65535.",
+            exception.Message
+        );
     }
 
     private static IConfiguration Configuration(
