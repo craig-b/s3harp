@@ -73,7 +73,18 @@ internal static partial class S3HarpApplication
         builder.Services.AddSingleton(
             new RootCredentials(options.AccessKeyId, options.SecretAccessKey)
         );
-        builder.Services.AddSingleton<ICredentialStore, RootCredentialStore>();
+        builder.Services.AddSingleton<ICredentialStore>(
+            new CredentialStore(
+                options
+                    .Keys.Select(key => (key.AccessKeyId, key.SecretAccessKey))
+                    .Prepend((options.AccessKeyId, options.SecretAccessKey))
+                    .ToDictionary(
+                        key => key.AccessKeyId,
+                        key => key.SecretAccessKey,
+                        StringComparer.Ordinal
+                    )
+            )
+        );
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<IMetadataIndex>(
             new SqliteMetadataIndex(Path.Combine(dataDirectory, "s3harp.db"))

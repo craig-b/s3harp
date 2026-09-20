@@ -521,7 +521,7 @@ public sealed class SigV4AuthenticationMiddlewareTests
                 called = true;
                 return Task.CompletedTask;
             },
-            new RootCredentialStore(new RootCredentials(AccessKeyId, SecretAccessKey)),
+            new CredentialStore(new Dictionary<string, string> { [AccessKeyId] = SecretAccessKey }),
             new FixedTimeProvider(Now)
         );
 

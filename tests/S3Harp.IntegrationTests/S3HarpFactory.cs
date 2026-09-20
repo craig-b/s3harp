@@ -19,6 +19,10 @@ public sealed class S3HarpFactory : IAsyncDisposable
     public const string AccessKeyId = "S3HARPTESTACCESSKEY";
     public const string SecretAccessKey = "s3harp-test-secret-access-key";
 
+    /// <summary>A second keypair every server this fixture starts also accepts.</summary>
+    public const string SecondAccessKeyId = "S3HARPSECONDACCESSKEY";
+    public const string SecondSecretAccessKey = "s3harp-second-secret-access-key";
+
     private readonly TempDirectory dataDirectory = new("integration");
 
     private WebApplication? app;
@@ -38,6 +42,8 @@ public sealed class S3HarpFactory : IAsyncDisposable
             ["access_key_id"] = AccessKeyId,
             ["secret_access_key"] = SecretAccessKey,
             ["data_dir"] = dataDirectory.Path,
+            ["keys:0:access_key_id"] = SecondAccessKeyId,
+            ["keys:0:secret_access_key"] = SecondSecretAccessKey,
         };
         if (tls)
         {

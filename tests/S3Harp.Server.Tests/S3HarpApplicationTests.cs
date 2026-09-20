@@ -65,6 +65,56 @@ public sealed class S3HarpApplicationTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadsTheExtraKeypairsFromTheTomlFile()
+    {
+        var file = Write(
+            "s3harp.toml",
+            $"""
+            access_key_id = "S3HARPFILEKEY"
+            secret_access_key = "file-secret"
+            data_dir = "{DataDirectory}"
+
+            [[keys]]
+            access_key_id = "S3HARPSECONDKEY"
+            secret_access_key = "second-secret"
+
+            [[keys]]
+            access_key_id = "S3HARPTHIRDKEY"
+            secret_access_key = "third-secret"
+            """
+        );
+
+        await using var app = S3HarpApplication.Build(Settings(("config", file)));
+
+        Assert.Equal(
+            [("S3HARPSECONDKEY", "second-secret"), ("S3HARPTHIRDKEY", "third-secret")],
+            app.Services.GetRequiredService<S3HarpOptions>()
+                .Keys.Select(key => (key.AccessKeyId, key.SecretAccessKey))
+        );
+    }
+
+    [Fact]
+    public async Task ReadsAnExtraKeypairFromTheEnvironment()
+    {
+        var file = Write("s3harp.json", Complete(port: 9010));
+
+        Environment.SetEnvironmentVariable("S3HARP_KEYS__0__ACCESS_KEY_ID", "S3HARPENVKEY");
+        Environment.SetEnvironmentVariable("S3HARP_KEYS__0__SECRET_ACCESS_KEY", "env-secret");
+        try
+        {
+            await using var app = S3HarpApplication.Build(Settings(("config", file)));
+
+            var key = Assert.Single(app.Services.GetRequiredService<S3HarpOptions>().Keys);
+            Assert.Equal(("S3HARPENVKEY", "env-secret"), (key.AccessKeyId, key.SecretAccessKey));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("S3HARP_KEYS__0__ACCESS_KEY_ID", null);
+            Environment.SetEnvironmentVariable("S3HARP_KEYS__0__SECRET_ACCESS_KEY", null);
+        }
+    }
+
+    [Fact]
     public async Task TheEnvironmentOverridesTheFile()
     {
         var file = Write("s3harp.json", Complete(port: 9010));

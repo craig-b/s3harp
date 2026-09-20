@@ -64,6 +64,70 @@ public sealed class S3HarpOptionsTests
     }
 
     [Fact]
+    public void ReadsTheExtraKeypairsListedUnderKeys()
+    {
+        var options = S3HarpOptions.Load(
+            Configuration(
+                Complete,
+                ("keys:0:access_key_id", "S3HARPSECONDKEY"),
+                ("keys:0:secret_access_key", "second-secret"),
+                ("keys:1:access_key_id", "S3HARPTHIRDKEY"),
+                ("keys:1:secret_access_key", "third-secret")
+            )
+        );
+
+        Assert.Equal(
+            [("S3HARPSECONDKEY", "second-secret"), ("S3HARPTHIRDKEY", "third-secret")],
+            options.Keys.Select(key => (key.AccessKeyId, key.SecretAccessKey))
+        );
+    }
+
+    [Fact]
+    public void HasNoExtraKeypairsUnlessListed() =>
+        Assert.Empty(S3HarpOptions.Load(Configuration(Complete)).Keys);
+
+    [Theory]
+    [InlineData("access_key_id")]
+    [InlineData("secret_access_key")]
+    public void RefusesAnExtraKeypairMissingItsIdOrSecret(string missing)
+    {
+        var exception = Assert.Throws<StartupException>(() =>
+            S3HarpOptions.Load(
+                Configuration(
+                    Complete,
+                    ("keys:0:access_key_id", "S3HARPSECONDKEY"),
+                    ("keys:0:secret_access_key", "second-secret"),
+                    ("keys:1:access_key_id", "S3HARPTHIRDKEY"),
+                    ("keys:1:secret_access_key", "third-secret"),
+                    ($"keys:1:{missing}", " ")
+                )
+            )
+        );
+
+        Assert.Equal($"S3Harp cannot start: keys[1].{missing} is required.", exception.Message);
+    }
+
+    [Theory]
+    [InlineData("S3HARPEXAMPLEKEY", "keys[0] repeats the access key id S3HARPEXAMPLEKEY")]
+    [InlineData("S3HARPTHIRDKEY", "keys[1] repeats the access key id S3HARPTHIRDKEY")]
+    public void RefusesAnAccessKeyIdListedTwice(string repeated, string problem)
+    {
+        var exception = Assert.Throws<StartupException>(() =>
+            S3HarpOptions.Load(
+                Configuration(
+                    Complete,
+                    ("keys:0:access_key_id", repeated),
+                    ("keys:0:secret_access_key", "second-secret"),
+                    ("keys:1:access_key_id", "S3HARPTHIRDKEY"),
+                    ("keys:1:secret_access_key", "third-secret")
+                )
+            )
+        );
+
+        Assert.Equal($"S3Harp cannot start: {problem}.", exception.Message);
+    }
+
+    [Fact]
     public void ListensOverTlsWhenACertificateAndKeyAreGiven()
     {
         var options = S3HarpOptions.Load(
