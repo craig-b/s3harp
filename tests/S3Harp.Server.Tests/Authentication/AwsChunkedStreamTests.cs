@@ -204,25 +204,45 @@ public sealed class AwsChunkedStreamTests
     }
 
     [Fact]
-    public async Task UnsignedWire_CarryingChunkSignatures_IsMalformed()
+    public async Task UnsignedWire_CarryingChunkSignatures_IsRejectedAsMalformed()
     {
         using var stream = CreateUnsignedStream(WireBody());
         using var decoded = new MemoryStream();
 
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
+        var exception = await Assert.ThrowsAsync<PayloadVerificationException>(() =>
             stream.CopyToAsync(decoded, TestContext.Current.CancellationToken)
         );
+
+        Assert.Equal(S3Errors.MalformedChunkedBody, exception.Error);
     }
 
     [Fact]
-    public async Task SignedWire_WithoutChunkSignatures_IsMalformed()
+    public async Task SignedWire_WithoutChunkSignatures_IsRejectedAsMalformed()
     {
         using var stream = CreateStream(UnsignedTrailerWireBody(PayloadCrc32));
         using var decoded = new MemoryStream();
 
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
+        var exception = await Assert.ThrowsAsync<PayloadVerificationException>(() =>
             stream.CopyToAsync(decoded, TestContext.Current.CancellationToken)
         );
+
+        Assert.Equal(S3Errors.MalformedChunkedBody, exception.Error);
+    }
+
+    [Theory]
+    [InlineData("7\r\nHel")]
+    [InlineData("7\r\nHello, \r\n7\r\nS3H")]
+    [InlineData("7\r\nHello, \r\n7\r\nS3Harp!\r\n0\r\nx-amz-checksum-crc32:Na")]
+    public async Task UnsignedWire_ThatEndsEarly_IsRejectedAsIncomplete(string truncated)
+    {
+        using var stream = CreateUnsignedStream(truncated);
+        using var decoded = new MemoryStream();
+
+        var exception = await Assert.ThrowsAsync<PayloadVerificationException>(() =>
+            stream.CopyToAsync(decoded, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Equal(S3Errors.IncompleteBody, exception.Error);
     }
 
     [Fact]

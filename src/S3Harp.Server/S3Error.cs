@@ -48,6 +48,13 @@ internal static class S3Errors
             "The chunked request body ended before it was complete."
         );
 
+    public static S3Error MalformedChunkedBody { get; } =
+        new(
+            "InvalidRequest",
+            StatusCodes.Status400BadRequest,
+            "The chunked request body is not framed as its payload declaration says."
+        );
+
     public static S3Error InvalidArgument { get; } =
         new("InvalidArgument", StatusCodes.Status400BadRequest, "Invalid Argument.");
 

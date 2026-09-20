@@ -13,6 +13,8 @@ namespace S3Harp.Server.Authentication;
 /// verified the same way. An unsigned body (<c>STREAMING-UNSIGNED-PAYLOAD-TRAILER</c>,
 /// what SDKs send over TLS) carries sizes alone. In either form the checksum the
 /// client announced in <c>x-amz-trailer</c> is verified against the decoded payload.
+/// A body that is framed wrongly or ends early fails verification like a bad
+/// signature does, with the S3 error that says which.
 /// </summary>
 internal sealed class AwsChunkedStream : Stream
 {
@@ -139,7 +141,7 @@ internal sealed class AwsChunkedStream : Stream
             || size is < 0 or > MaxChunkSize
         )
         {
-            throw new InvalidDataException("The chunk header is malformed.");
+            throw new PayloadVerificationException(S3Errors.MalformedChunkedBody);
         }
 
         var data = await ReadChunkDataAsync((int)size, cancellationToken).ConfigureAwait(false);
@@ -203,9 +205,20 @@ internal sealed class AwsChunkedStream : Stream
         var buffered = Math.Min(size, readAheadEnd - readAheadStart);
         readAhead.AsSpan(readAheadStart, buffered).CopyTo(chunk);
         readAheadStart += buffered;
-        await inner
-            .ReadExactlyAsync(chunk.AsMemory(buffered, size - buffered), cancellationToken)
+        var remaining = chunk.AsMemory(buffered, size - buffered);
+        var read = await inner
+            .ReadAtLeastAsync(
+                remaining,
+                remaining.Length,
+                throwOnEndOfStream: false,
+                cancellationToken
+            )
             .ConfigureAwait(false);
+        if (read < remaining.Length)
+        {
+            throw new PayloadVerificationException(S3Errors.IncompleteBody);
+        }
+
         return chunk.AsMemory(0, size);
     }
 
@@ -313,12 +326,12 @@ internal sealed class AwsChunkedStream : Stream
 
             if (buffered.Length > MaxHeaderLength)
             {
-                throw new InvalidDataException("The chunk header exceeds the supported length.");
+                throw new PayloadVerificationException(S3Errors.MalformedChunkedBody);
             }
 
             if (await FillReadAheadAsync(cancellationToken).ConfigureAwait(false) == 0)
             {
-                throw new InvalidDataException("The chunked body ended inside a chunk header.");
+                throw new PayloadVerificationException(S3Errors.IncompleteBody);
             }
         }
     }
@@ -329,13 +342,13 @@ internal sealed class AwsChunkedStream : Stream
         {
             if (await FillReadAheadAsync(cancellationToken).ConfigureAwait(false) == 0)
             {
-                throw new InvalidDataException("The chunked body ended inside a chunk.");
+                throw new PayloadVerificationException(S3Errors.IncompleteBody);
             }
         }
 
         if (!readAhead.AsSpan(readAheadStart, LineEnd.Length).SequenceEqual(LineEnd))
         {
-            throw new InvalidDataException("The chunk data is followed by a malformed delimiter.");
+            throw new PayloadVerificationException(S3Errors.MalformedChunkedBody);
         }
 
         readAheadStart += LineEnd.Length;
