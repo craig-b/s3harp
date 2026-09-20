@@ -11,6 +11,8 @@ public sealed class S3HarpCommandTests
         var parsed = S3HarpCommand
             .Create(_ => 0)
             .Parse([
+                "--config",
+                "/etc/s3harp/s3harp.json",
                 "--access-key-id",
                 "S3HARPEXAMPLEKEY",
                 "--secret-access-key",
@@ -29,6 +31,7 @@ public sealed class S3HarpCommandTests
         Assert.Equal(
             new Dictionary<string, string?>
             {
+                ["config"] = "/etc/s3harp/s3harp.json",
                 ["access_key_id"] = "S3HARPEXAMPLEKEY",
                 ["secret_access_key"] = "secret",
                 ["data_dir"] = "/tmp/data",
@@ -74,6 +77,7 @@ public sealed class S3HarpCommandTests
         foreach (
             var (flag, variable) in new[]
             {
+                ("--config", "S3HARP_CONFIG"),
                 ("--access-key-id", "S3HARP_ACCESS_KEY_ID"),
                 ("--secret-access-key", "S3HARP_SECRET_ACCESS_KEY"),
                 ("--data-dir", "S3HARP_DATA_DIR"),

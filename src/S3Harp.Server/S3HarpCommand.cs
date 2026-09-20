@@ -10,6 +10,12 @@ namespace S3Harp.Server;
 /// </summary>
 internal static class S3HarpCommand
 {
+    private static readonly Option<string> Config = Setting(
+        "--config",
+        SettingsFile.Key,
+        "A settings file to read, JSON by its extension; the environment and flags override it."
+    );
+
     private static readonly Option<string> AccessKeyId = Setting(
         "--access-key-id",
         "access_key_id",
@@ -48,6 +54,7 @@ internal static class S3HarpCommand
 
     private static readonly (Option Option, string Key)[] Settings_ =
     [
+        (Config, SettingsFile.Key),
         (AccessKeyId, "access_key_id"),
         (SecretAccessKey, "secret_access_key"),
         (DataDirectory, "data_dir"),

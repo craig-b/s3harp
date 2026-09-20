@@ -7,11 +7,13 @@ namespace S3Harp.Server;
 
 /// <summary>
 /// The composition root: builds a fully wired S3Harp server application. Settings
-/// come from the <c>S3HARP_</c> environment, overridden by any the caller passes,
-/// which is how the command line reaches them.
+/// come from the file the <c>config</c> setting names, overridden by the
+/// <c>S3HARP_</c> environment, overridden by any the caller passes, which is how
+/// the command line reaches them.
 /// </summary>
 internal static partial class S3HarpApplication
 {
+    private const string EnvironmentPrefix = "S3HARP_";
     private const string MetadataHeaderPrefix = "x-amz-meta-";
 
     /// <summary>The framework logs only warnings by default; S3Harp's own categories log information.</summary>
@@ -29,7 +31,12 @@ internal static partial class S3HarpApplication
             0,
             new MemoryConfigurationSource { InitialData = LoggingDefaults }
         );
-        builder.Configuration.AddEnvironmentVariables("S3HARP_");
+        if (SettingsFilePath(settings) is { } settingsFile)
+        {
+            SettingsFile.Insert(builder.Configuration, 1, settingsFile);
+        }
+
+        builder.Configuration.AddEnvironmentVariables(EnvironmentPrefix);
         builder.Configuration.AddInMemoryCollection(settings);
         builder.WebHost.ConfigureKestrel(kestrel =>
             // User metadata is UTF-8 on the wire, so those response headers
@@ -83,6 +90,13 @@ internal static partial class S3HarpApplication
 
         return app;
     }
+
+    /// <summary>The settings file the environment or the caller names, or null when neither does.</summary>
+    private static string? SettingsFilePath(IReadOnlyDictionary<string, string?> settings) =>
+        new ConfigurationBuilder()
+            .AddEnvironmentVariables(EnvironmentPrefix)
+            .AddInMemoryCollection(settings)
+            .Build()[SettingsFile.Key];
 
     private static partial class Log
     {
