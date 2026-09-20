@@ -13,7 +13,7 @@ internal static class S3HarpCommand
     private static readonly Option<string> Config = Setting(
         "--config",
         SettingsFile.Key,
-        "A settings file to read, JSON by its extension; the environment and flags override it."
+        "A settings file to read, JSON or TOML by its extension; the environment and flags override it."
     );
 
     private static readonly Option<string> AccessKeyId = Setting(

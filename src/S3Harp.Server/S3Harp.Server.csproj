@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="Tomlyn" />
   </ItemGroup>
 
   <!-- The server's types are internal; only its own test projects see them. -->

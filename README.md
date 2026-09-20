@@ -70,22 +70,20 @@ Every setting has one name, such as `data_dir`. That name is the key in a settin
 | `bind`              | The address to listen on; defaults to `127.0.0.1`, so set `0.0.0.0` to serve other machines |
 | `port`              | The port to listen on; defaults to `9000`, the port local S3 tooling expects                |
 | `domain`            | The domain buckets are addressed under in virtual-hosted style; defaults to `localhost`     |
-| `config`            | A settings file to read, in the format its extension names: `.json`                         |
+| `config`            | A settings file to read, in the format its extension names: `.toml` or `.json`              |
 
-A settings file is read only when `config` names it, and naming a file that does not exist or cannot be parsed stops the server. JSON files may contain comments:
+A settings file is read only when `config` names it, and naming a file that does not exist or cannot be parsed stops the server. JSON files may contain comments.
 
-```json
-{
-  // The settings s3harp starts with; S3HARP_ variables and flags override these.
-  "access_key_id": "S3HARPEXAMPLEKEY",
-  "secret_access_key": "example-secret",
-  "data_dir": "/var/lib/s3harp",
-  "bind": "0.0.0.0"
-}
+```toml
+# The settings s3harp starts with; S3HARP_ variables and flags override these.
+access_key_id = "S3HARPEXAMPLEKEY"
+secret_access_key = "example-secret"
+data_dir = "/var/lib/s3harp"
+bind = "0.0.0.0"
 ```
 
 ```sh
-s3harp --config /etc/s3harp/s3harp.json
+s3harp --config /etc/s3harp/s3harp.toml
 ```
 
 Buckets are reachable in both of S3's addressing styles: path style (`http://localhost:9000/my-bucket/key`) and virtual-hosted style (`http://my-bucket.localhost:9000/key`), which SDKs use unless told otherwise. Every `*.localhost` name resolves to the loopback address, so the default domain works without DNS setup; set `domain` when serving under another name.

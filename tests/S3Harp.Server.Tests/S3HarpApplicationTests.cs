@@ -38,6 +38,33 @@ public sealed class S3HarpApplicationTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadsTheSettingsFromTheTomlFileTheConfigSettingNames()
+    {
+        var file = Write(
+            "s3harp.toml",
+            $"""
+            # A comment is fine.
+            access_key_id = "S3HARPFILEKEY"
+            secret_access_key = "file-secret"
+            data_dir = "{DataDirectory}"
+            bind = "0.0.0.0"
+            port = 9010
+            domain = "s3.test"
+            """
+        );
+
+        await using var app = S3HarpApplication.Build(Settings(("config", file)));
+
+        var options = app.Services.GetRequiredService<S3HarpOptions>();
+        Assert.Equal("S3HARPFILEKEY", options.AccessKeyId);
+        Assert.Equal("file-secret", options.SecretAccessKey);
+        Assert.Equal(DataDirectory, options.DataDirectory);
+        Assert.Equal("0.0.0.0", options.Bind);
+        Assert.Equal(9010, options.Port);
+        Assert.Equal("s3.test", options.Domain);
+    }
+
+    [Fact]
     public async Task TheEnvironmentOverridesTheFile()
     {
         var file = Write("s3harp.json", Complete(port: 9010));
@@ -90,7 +117,7 @@ public sealed class S3HarpApplicationTests : IDisposable
         );
 
         Assert.Equal(
-            $"S3Harp cannot start: config must name a .json file, not {file}.",
+            $"S3Harp cannot start: config must name a .json or .toml file, not {file}.",
             exception.Message
         );
     }
@@ -106,6 +133,22 @@ public sealed class S3HarpApplicationTests : IDisposable
 
         Assert.StartsWith(
             $"S3Harp cannot start: {file} is not valid JSON: ",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public void RefusesAFileThatIsNotValidToml()
+    {
+        var file = Write("s3harp.toml", "port = 9010\nname = \n");
+
+        var exception = Assert.Throws<StartupException>(() =>
+            S3HarpApplication.Build(Settings(("config", file)))
+        );
+
+        Assert.StartsWith(
+            $"S3Harp cannot start: {file} is not valid TOML: (2,",
             exception.Message,
             StringComparison.Ordinal
         );

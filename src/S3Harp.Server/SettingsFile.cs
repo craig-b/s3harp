@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration.Json;
+using S3Harp.Server.Configuration;
 
 namespace S3Harp.Server;
 
@@ -30,8 +31,9 @@ internal static class SettingsFile
         var (source, format) = Path.GetExtension(fullPath).ToUpperInvariant() switch
         {
             ".JSON" => (Json(fullPath), "JSON"),
+            ".TOML" => (Toml(fullPath), "TOML"),
             _ => throw new StartupException(
-                $"S3Harp cannot start: {Key} must name a .json file, not {fullPath}."
+                $"S3Harp cannot start: {Key} must name a .json or .toml file, not {fullPath}."
             ),
         };
 
@@ -41,18 +43,25 @@ internal static class SettingsFile
         }
         catch (InvalidDataException exception)
         {
-            // The provider wraps the parser's message, which says where the file went wrong.
-            var detail = exception.InnerException?.Message ?? exception.Message;
             throw new StartupException(
-                $"S3Harp cannot start: {fullPath} is not valid {format}: {detail}",
+                $"S3Harp cannot start: {fullPath} is not valid {format}: {Innermost(exception).Message}",
                 exception
             );
         }
     }
 
-    private static JsonConfigurationSource Json(string fullPath)
+    /// <summary>The parser's own exception, which says where the file went wrong, under the provider's wrapping.</summary>
+    private static Exception Innermost(Exception exception) =>
+        exception.InnerException is { } inner ? Innermost(inner) : exception;
+
+    private static FileConfigurationSource Json(string fullPath) =>
+        Resolved(new JsonConfigurationSource { Path = fullPath });
+
+    private static FileConfigurationSource Toml(string fullPath) =>
+        Resolved(new TomlConfigurationSource { Path = fullPath });
+
+    private static FileConfigurationSource Resolved(FileConfigurationSource source)
     {
-        var source = new JsonConfigurationSource { Path = fullPath };
         source.ResolveFileProvider();
         return source;
     }
