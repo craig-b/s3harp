@@ -31,6 +31,8 @@ public sealed class BlobStore
     private readonly string blobsDirectory;
     private readonly string uploadsDirectory;
 
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
     public BlobStore(string rootDirectory)
     {
         blobsDirectory = Path.Combine(rootDirectory, "blobs");
@@ -40,6 +42,8 @@ public sealed class BlobStore
     }
 
     /// <summary>Writes the content as a new blob, computing the requested checksum as it streams.</summary>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
     public async Task<BlobWriteResult> WriteAsync(
         Stream content,
         ChecksumAlgorithm checksum,
@@ -77,6 +81,8 @@ public sealed class BlobStore
         }
     }
 
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
     private async Task<BlobWriteResult> WriteCoreAsync(
         Stream content,
         string blobId,
@@ -134,6 +140,8 @@ public sealed class BlobStore
     }
 
     /// <summary>The base64 checksum of a stored blob's content.</summary>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
     public async Task<string> ComputeChecksumAsync(
         string blobId,
         ChecksumAlgorithm algorithm,
@@ -149,6 +157,8 @@ public sealed class BlobStore
     /// Copies a byte range of a blob into a new blob, sharing blocks where the
     /// filesystem allows, and reports the copy's MD5 and requested checksum.
     /// </summary>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
     public async Task<BlobWriteResult> CopyRangeAsync(
         string sourceBlobId,
         ByteRange range,
@@ -193,6 +203,8 @@ public sealed class BlobStore
     }
 
     /// <summary>A stored blob's MD5 and its base64 checksum in the algorithm, in one pass.</summary>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
     private async Task<(string Md5Hex, string Checksum)> DigestAsync(
         string blobId,
         ChecksumAlgorithm algorithm,
@@ -232,6 +244,8 @@ public sealed class BlobStore
         );
     }
 
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
     private void Publish(string blobId, string uploadPath)
     {
         var shard = ShardFor(blobId);
@@ -247,6 +261,8 @@ public sealed class BlobStore
     /// Assembles the blobs, in order, into a new blob. On reflink-capable
     /// filesystems the parts' blocks are shared rather than rewritten.
     /// </summary>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
     public Task<BlobConcatResult> ConcatenateAsync(
         IReadOnlyList<string> blobIds,
         CancellationToken cancellationToken
@@ -256,6 +272,8 @@ public sealed class BlobStore
         return Task.Run(() => Concatenate(blobIds, cancellationToken), cancellationToken);
     }
 
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
     private BlobConcatResult Concatenate(
         IReadOnlyList<string> blobIds,
         CancellationToken cancellationToken
@@ -304,6 +322,8 @@ public sealed class BlobStore
     /// Copies a blob under a new id. The runtime's file copy uses block cloning
     /// where the filesystem offers it.
     /// </summary>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
     public async Task<string> CopyAsync(string blobId, CancellationToken cancellationToken)
     {
         var newBlobId = Guid.NewGuid().ToString("N");
@@ -333,6 +353,8 @@ public sealed class BlobStore
         }
     }
 
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
     public Stream OpenRead(string blobId) =>
         new FileStream(
             PathFor(blobId),
@@ -343,6 +365,8 @@ public sealed class BlobStore
             useAsync: true
         );
 
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
     public void Delete(string blobId) => File.Delete(PathFor(blobId));
 
     /// <summary>The directory holding a blob: blobs fan out by the first two characters of their id.</summary>

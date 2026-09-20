@@ -11,6 +11,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
 
     private readonly string connectionString;
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     public SqliteMetadataIndex(string databasePath)
     {
         connectionString = new SqliteConnectionStringBuilder
@@ -81,6 +82,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         EnsureColumn(connection, "parts", "checksum", "TEXT");
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     private static void EnsureColumn(
         SqliteConnection connection,
         string table,
@@ -102,6 +104,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     /// Databases that recorded only part sizes carry them into the parts column,
     /// each part without a checksum.
     /// </summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     private static void CarryPartSizesIntoParts(SqliteConnection connection)
     {
         if (!ColumnExists(connection, "objects", "part_sizes"))
@@ -118,6 +121,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         migrate.ExecuteNonQuery();
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     private static bool ColumnExists(SqliteConnection connection, string table, string column)
     {
         using var probe = connection.CreateCommand();
@@ -127,6 +131,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         return probe.ExecuteScalar() is long count && count > 0;
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     public async Task<bool> TryCreateBucketAsync(
         string name,
         DateTimeOffset createdAt,
@@ -146,6 +151,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     public async Task<bool> BucketExistsAsync(string name, CancellationToken cancellationToken)
     {
         var connection = OpenConnection();
@@ -159,6 +165,10 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<IReadOnlyList<BucketInfo>> ListBucketsAsync(
         CancellationToken cancellationToken
     )
@@ -184,6 +194,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     public async Task<DeleteBucketOutcome> DeleteBucketAsync(
         string name,
         CancellationToken cancellationToken
@@ -242,6 +253,10 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<PutObjectResult> PutObjectAsync(
         string bucket,
         ObjectRecord record,
@@ -296,6 +311,10 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<ObjectRecord?> FindObjectAsync(
         string bucket,
         string key,
@@ -316,6 +335,10 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     private static async Task<ObjectRecord?> FindObjectAsync(
         SqliteConnection connection,
         SqliteTransaction? transaction,
@@ -342,6 +365,10 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<IReadOnlyList<ObjectRecord>> ScanObjectsAsync(
         string bucket,
         string prefix,
@@ -382,6 +409,10 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<DeleteObjectResult> DeleteObjectAsync(
         string bucket,
         string key,
@@ -425,6 +456,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     public async Task<bool> TryCreateUploadAsync(
         string bucket,
         MultipartUpload upload,
@@ -476,6 +508,10 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<MultipartUpload?> FindUploadAsync(
         string bucket,
         string key,
@@ -506,6 +542,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     public async Task<PutPartResult> PutPartAsync(
         string bucket,
         string key,
@@ -571,6 +608,10 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<IReadOnlyList<PartRecord>> ListPartsAsync(
         string bucket,
         string key,
@@ -615,6 +656,10 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<IReadOnlyList<MultipartUpload>> ListUploadsAsync(
         string bucket,
         CancellationToken cancellationToken
@@ -656,6 +701,10 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<CompleteUploadResult> CompleteUploadAsync(
         string bucket,
         string uploadId,
@@ -723,6 +772,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         }
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     public async Task<IReadOnlyList<string>?> DeleteUploadAsync(
         string bucket,
         string key,
@@ -790,6 +840,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         return command;
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     private static async Task<bool> UploadExistsAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -810,6 +861,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
             is not null;
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     private static async Task UpsertObjectAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -869,6 +921,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         await upsert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     private static async Task<IReadOnlyList<string>> DeleteUploadRowsAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -893,6 +946,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     }
 
     /// <summary>Runs the command and collects the first column of every row.</summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     private static async Task<IReadOnlyList<string>> ReadStringsAsync(
         SqliteCommand command,
         CancellationToken cancellationToken
@@ -911,6 +965,9 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         return values;
     }
 
+    /// <exception cref="JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     private static ObjectRecord ReadObjectRecord(SqliteDataReader reader) =>
         new(
             reader.GetString(0),
@@ -932,14 +989,20 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
         );
 
     /// <summary>A stored column's JSON, which is always an object; anything else means the row is damaged.</summary>
+    /// <exception cref="JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
     private static IReadOnlyDictionary<string, string> ReadMetadata(string json) =>
         JsonSerializer.Deserialize(json, IndexJsonContext.Default.IReadOnlyDictionaryStringString)
         ?? throw Damaged("metadata");
 
+    /// <exception cref="JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
     private static IReadOnlyList<CompletedPart> ReadParts(string json) =>
         JsonSerializer.Deserialize(json, IndexJsonContext.Default.IReadOnlyListCompletedPart)
         ?? throw Damaged("parts");
 
+    /// <exception cref="JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
     private static Checksum ReadChecksum(string json) =>
         JsonSerializer.Deserialize(json, ChecksumJsonContext.Default.Checksum)
         ?? throw Damaged("checksum");
@@ -947,6 +1010,7 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     private static string WriteContentHeaders(ContentHeaders headers) =>
         JsonSerializer.Serialize(headers, IndexJsonContext.Default.ContentHeaders);
 
+    /// <exception cref="JsonException">A stored record is not valid JSON.</exception>
     private static ContentHeaders ReadContentHeaders(string json) =>
         JsonSerializer.Deserialize(json, IndexJsonContext.Default.ContentHeaders)
         ?? ContentHeaders.None;
@@ -962,9 +1026,11 @@ public sealed class SqliteMetadataIndex : IMetadataIndex, IDisposable
     private static string FormatTimestamp(DateTimeOffset timestamp) =>
         timestamp.ToString("O", CultureInfo.InvariantCulture);
 
+    /// <exception cref="FormatException">A stored timestamp is malformed.</exception>
     private static DateTimeOffset ParseTimestamp(string value) =>
         DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     private SqliteConnection OpenConnection()
     {
         var connection = new SqliteConnection(connectionString);

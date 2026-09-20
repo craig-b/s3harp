@@ -12,3 +12,11 @@ dotnet_diagnostic.CA2007.severity = none
 dotnet_diagnostic.CA1308.severity = none
 # Random fills fixture payloads.
 dotnet_diagnostic.CA5394.severity = none
+# Tests let assertions and the exceptions under test escape by design.
+dotnet_diagnostic.Ex0100.severity = none
+dotnet_diagnostic.Ex0101.severity = none
+dotnet_diagnostic.Ex0103.severity = none
+dotnet_diagnostic.Ex0104.severity = none
+dotnet_diagnostic.Ex0105.severity = none
+dotnet_diagnostic.Ex0200.severity = none
+dotnet_diagnostic.Ex0201.severity = none

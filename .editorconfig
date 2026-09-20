@@ -428,3 +428,16 @@ dotnet_diagnostic.CA2000.severity = none
 dotnet_diagnostic.CA2007.severity = error
 # Public entry points reject null arguments up front rather than failing somewhere inside.
 dotnet_diagnostic.CA1062.severity = error
+
+# Exception analyzers: what can escape a member is declared on it; nothing is caught to quiet a rule.
+[*.cs]
+dotnet_ignored_exceptions = System.NullReferenceException, System.StackOverflowException, System.Diagnostics.UnreachableException, System.OperationCanceledException, System.Threading.Tasks.TaskCanceledException, System.OutOfMemoryException, System.ArrayTypeMismatchException, System.Security.SecurityException
+dotnet_intransitive_exceptions = System.ArgumentException, System.ArgumentNullException, System.ArgumentOutOfRangeException, System.DivideByZeroException, System.IndexOutOfRangeException, System.InvalidCastException, System.InvalidOperationException, System.NotSupportedException, System.ObjectDisposedException, System.Collections.Generic.KeyNotFoundException
+[src/**.cs]
+dotnet_diagnostic.Ex0100.severity = error
+dotnet_diagnostic.Ex0101.severity = error
+dotnet_diagnostic.Ex0103.severity = error
+dotnet_diagnostic.Ex0104.severity = error
+dotnet_diagnostic.Ex0105.severity = error
+dotnet_diagnostic.Ex0200.severity = error
+dotnet_diagnostic.Ex0201.severity = error

@@ -12,6 +12,7 @@ internal sealed class S3XmlResult(int statusCode, XDocument document) : IResult
         : this(statusCode, new XDocument(new XDeclaration("1.0", "UTF-8", standalone: null), root))
     { }
 
+    /// <exception cref="IOException">The response could not be written.</exception>
     public async Task ExecuteAsync(HttpContext httpContext)
     {
         ArgumentNullException.ThrowIfNull(httpContext);

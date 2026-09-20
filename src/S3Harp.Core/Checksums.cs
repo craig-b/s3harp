@@ -63,6 +63,7 @@ public static class ChecksumAlgorithms
     /// S3's composite checksum of a multipart object: the checksum of the parts'
     /// checksum bytes in order, suffixed with the part count.
     /// </summary>
+    /// <exception cref="FormatException">A part checksum is not valid base64.</exception>
     public static string Composite(ChecksumAlgorithm algorithm, IEnumerable<string> partChecksums)
     {
         ArgumentNullException.ThrowIfNull(partChecksums);
@@ -94,6 +95,7 @@ public static class ChecksumAlgorithms
             _ => throw new UnreachableException(),
         };
 
+    /// <exception cref="ArgumentOutOfRangeException">The algorithm is not one the enum defines.</exception>
     public static IncrementalChecksum Create(ChecksumAlgorithm algorithm) =>
         algorithm switch
         {

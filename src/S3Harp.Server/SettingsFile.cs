@@ -16,6 +16,7 @@ internal static class SettingsFile
     /// Reads the file into the configuration at <paramref name="index"/>, below
     /// every source that follows, so each of those overrides it.
     /// </summary>
+    /// <exception cref="StartupException">The settings are unusable; the message names the problem.</exception>
     public static void Insert(IConfigurationBuilder configuration, int index, string path)
     {
         ArgumentNullException.ThrowIfNull(configuration);

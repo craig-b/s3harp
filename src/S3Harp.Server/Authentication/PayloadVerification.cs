@@ -23,14 +23,18 @@ internal abstract class PayloadVerifyingStream(Stream inner) : Stream
 
     public override bool CanWrite => false;
 
+    /// <exception cref="NotSupportedException">The stream is read-only and forward-only.</exception>
     public override long Length => throw new NotSupportedException();
 
+    /// <exception cref="NotSupportedException">The stream is read-only and forward-only.</exception>
     public override long Position
     {
         get => throw new NotSupportedException();
         set => throw new NotSupportedException();
     }
 
+    /// <exception cref="IOException">The wire ended early or could not be read.</exception>
+    /// <exception cref="PayloadVerificationException">The body failed verification; the S3 error says how.</exception>
     public override async ValueTask<int> ReadAsync(
         Memory<byte> buffer,
         CancellationToken cancellationToken = default
@@ -52,21 +56,27 @@ internal abstract class PayloadVerifyingStream(Stream inner) : Stream
         return 0;
     }
 
+    /// <exception cref="IOException">The wire ended early or could not be read.</exception>
+    /// <exception cref="PayloadVerificationException">The body failed verification; the S3 error says how.</exception>
     public override int Read(byte[] buffer, int offset, int count) =>
         ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
 
     public override void Flush() { }
 
+    /// <exception cref="NotSupportedException">The stream is read-only and forward-only.</exception>
     public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
 
+    /// <exception cref="NotSupportedException">The stream is read-only and forward-only.</exception>
     public override void SetLength(long value) => throw new NotSupportedException();
 
+    /// <exception cref="NotSupportedException">The stream is read-only and forward-only.</exception>
     public override void Write(byte[] buffer, int offset, int count) =>
         throw new NotSupportedException();
 
     protected abstract void Observe(ReadOnlySpan<byte> data);
 
     /// <summary>Throws a <see cref="PayloadVerificationException"/> when the content fails.</summary>
+    /// <exception cref="PayloadVerificationException">The body failed verification; the S3 error says how.</exception>
     protected abstract void VerifyContent();
 }
 
@@ -81,6 +91,7 @@ internal sealed class Sha256VerifyingStream(Stream inner, string declaredSha256H
 
     protected override void Observe(ReadOnlySpan<byte> data) => hash.AppendData(data);
 
+    /// <exception cref="PayloadVerificationException">The body failed verification; the S3 error says how.</exception>
     protected override void VerifyContent()
     {
         var computed = Convert.ToHexStringLower(hash.GetHashAndReset());
@@ -113,6 +124,7 @@ internal sealed class ChecksumVerifyingStream(
 {
     protected override void Observe(ReadOnlySpan<byte> data) => checksum.Append(data);
 
+    /// <exception cref="PayloadVerificationException">The body failed verification; the S3 error says how.</exception>
     protected override void VerifyContent()
     {
         if (!checksum.Matches(declaredBase64))

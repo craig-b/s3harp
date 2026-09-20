@@ -5,6 +5,7 @@ namespace S3Harp.Server;
 /// <summary>Writes an <see cref="S3Error"/> as an S3-style XML error response.</summary>
 internal sealed class S3ErrorResult(S3Error error) : IResult
 {
+    /// <exception cref="IOException">The response could not be written.</exception>
     public async Task ExecuteAsync(HttpContext httpContext)
     {
         ArgumentNullException.ThrowIfNull(httpContext);

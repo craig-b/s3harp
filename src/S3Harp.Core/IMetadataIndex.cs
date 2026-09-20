@@ -109,6 +109,7 @@ public sealed record PutObjectResult(PutObjectStatus Status, string? ReplacedBlo
     public static PutObjectResult BucketMissing { get; } = new(PutObjectStatus.BucketMissing, null);
 
     /// <summary>The refusal a failed write condition maps to.</summary>
+    /// <exception cref="ArgumentOutOfRangeException">The condition is not one the enum defines.</exception>
     public static PutObjectResult Refused(WriteConditionResult condition) =>
         condition switch
         {
@@ -239,6 +240,7 @@ public sealed record CompleteUploadResult(
         new(CompleteUploadStatus.NoSuchUpload, null, []);
 
     /// <summary>The refusal a failed write condition maps to.</summary>
+    /// <exception cref="ArgumentOutOfRangeException">The condition is not one the enum defines.</exception>
     public static CompleteUploadResult Refused(WriteConditionResult condition) =>
         condition switch
         {
@@ -264,21 +266,28 @@ public sealed record CompleteUploadResult(
 public interface IMetadataIndex
 {
     /// <summary>Creates the bucket; reports false when the name is already taken.</summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     Task<bool> TryCreateBucketAsync(
         string name,
         DateTimeOffset createdAt,
         CancellationToken cancellationToken
     );
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     Task<bool> BucketExistsAsync(string name, CancellationToken cancellationToken);
 
     /// <summary>All buckets, ordered by name (ordinal).</summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     Task<IReadOnlyList<BucketInfo>> ListBucketsAsync(CancellationToken cancellationToken);
 
     /// <summary>
     /// Deletes the bucket when it exists and holds zero objects, aborting any
     /// in-progress uploads atomically with the deletion.
     /// </summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     Task<DeleteBucketOutcome> DeleteBucketAsync(string name, CancellationToken cancellationToken);
 
     /// <summary>
@@ -286,6 +295,10 @@ public interface IMetadataIndex
     /// condition, if any, holds against that record. The result carries the
     /// replaced record's blob id so its file can be reclaimed.
     /// </summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     Task<PutObjectResult> PutObjectAsync(
         string bucket,
         ObjectRecord record,
@@ -293,6 +306,10 @@ public interface IMetadataIndex
         CancellationToken cancellationToken
     );
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     Task<ObjectRecord?> FindObjectAsync(
         string bucket,
         string key,
@@ -303,6 +320,10 @@ public interface IMetadataIndex
     /// Up to <paramref name="limit"/> records whose keys start with the prefix and
     /// order at or above <paramref name="fromKey"/>, in ordinal key order.
     /// </summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     Task<IReadOnlyList<ObjectRecord>> ScanObjectsAsync(
         string bucket,
         string prefix,
@@ -315,6 +336,10 @@ public interface IMetadataIndex
     /// Removes the record atomically when the condition, if any, holds against it,
     /// returning its blob id so its file can be reclaimed.
     /// </summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     Task<DeleteObjectResult> DeleteObjectAsync(
         string bucket,
         string key,
@@ -323,12 +348,17 @@ public interface IMetadataIndex
     );
 
     /// <summary>Registers the upload; reports false when the bucket is unknown.</summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     Task<bool> TryCreateUploadAsync(
         string bucket,
         MultipartUpload upload,
         CancellationToken cancellationToken
     );
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     Task<MultipartUpload?> FindUploadAsync(
         string bucket,
         string key,
@@ -337,6 +367,7 @@ public interface IMetadataIndex
     );
 
     /// <summary>Stores the part atomically, replacing any part with the same number.</summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     Task<PutPartResult> PutPartAsync(
         string bucket,
         string key,
@@ -346,6 +377,10 @@ public interface IMetadataIndex
     );
 
     /// <summary>The upload's parts, ordered by part number.</summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     Task<IReadOnlyList<PartRecord>> ListPartsAsync(
         string bucket,
         string key,
@@ -354,6 +389,10 @@ public interface IMetadataIndex
     );
 
     /// <summary>The bucket's in-progress uploads, ordered by key then upload id.</summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     Task<IReadOnlyList<MultipartUpload>> ListUploadsAsync(
         string bucket,
         CancellationToken cancellationToken
@@ -364,6 +403,10 @@ public interface IMetadataIndex
     /// parts, when the condition, if any, holds against the record already at the key.
     /// A refused completion leaves the upload and its parts in place.
     /// </summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     Task<CompleteUploadResult> CompleteUploadAsync(
         string bucket,
         string uploadId,
@@ -376,6 +419,10 @@ public interface IMetadataIndex
     /// Removes the upload and its parts, returning the part blob ids; null when the
     /// upload is unknown.
     /// </summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     Task<IReadOnlyList<string>?> DeleteUploadAsync(
         string bucket,
         string key,

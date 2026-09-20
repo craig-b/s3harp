@@ -18,6 +18,7 @@ internal sealed class SigV4AuthenticationMiddleware(
     private static readonly string[] HttpDateFormats = ["R", "ddd, dd MMM yyyy HH:mm:ss zzz"];
     private static readonly TimeSpan MaxClockSkew = TimeSpan.FromMinutes(15);
 
+    /// <exception cref="IOException">The response could not be written.</exception>
     public async Task InvokeAsync(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -188,6 +189,7 @@ internal sealed class SigV4AuthenticationMiddleware(
         return false;
     }
 
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task AuthenticatePresignedAsync(HttpContext context)
     {
         const long maxExpirySeconds = 604_800;
@@ -262,6 +264,7 @@ internal sealed class SigV4AuthenticationMiddleware(
         await next(context).ConfigureAwait(false);
     }
 
+    /// <exception cref="IOException">The response could not be written.</exception>
     private static Task Reject(HttpContext context, S3Error error) =>
         new S3ErrorResult(error).ExecuteAsync(context);
 }

@@ -87,14 +87,18 @@ internal sealed class AwsChunkedStream : Stream
 
     public override bool CanWrite => false;
 
+    /// <exception cref="NotSupportedException">The stream is read-only and forward-only.</exception>
     public override long Length => throw new NotSupportedException();
 
+    /// <exception cref="NotSupportedException">The stream is read-only and forward-only.</exception>
     public override long Position
     {
         get => throw new NotSupportedException();
         set => throw new NotSupportedException();
     }
 
+    /// <exception cref="IOException">The wire ended early or could not be read.</exception>
+    /// <exception cref="PayloadVerificationException">The body failed verification; the S3 error says how.</exception>
     public override async ValueTask<int> ReadAsync(
         Memory<byte> buffer,
         CancellationToken cancellationToken = default
@@ -116,18 +120,25 @@ internal sealed class AwsChunkedStream : Stream
         return count;
     }
 
+    /// <exception cref="IOException">The wire ended early or could not be read.</exception>
+    /// <exception cref="PayloadVerificationException">The body failed verification; the S3 error says how.</exception>
     public override int Read(byte[] buffer, int offset, int count) =>
         ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
 
     public override void Flush() { }
 
+    /// <exception cref="NotSupportedException">The stream is read-only and forward-only.</exception>
     public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
 
+    /// <exception cref="NotSupportedException">The stream is read-only and forward-only.</exception>
     public override void SetLength(long value) => throw new NotSupportedException();
 
+    /// <exception cref="NotSupportedException">The stream is read-only and forward-only.</exception>
     public override void Write(byte[] buffer, int offset, int count) =>
         throw new NotSupportedException();
 
+    /// <exception cref="IOException">The wire ended early or could not be read.</exception>
+    /// <exception cref="PayloadVerificationException">The body failed verification; the S3 error says how.</exception>
     private async Task LoadNextChunkAsync(CancellationToken cancellationToken)
     {
         ReturnChunk();
@@ -170,6 +181,7 @@ internal sealed class AwsChunkedStream : Stream
         positionInChunk = 0;
     }
 
+    /// <exception cref="PayloadVerificationException">The body failed verification; the S3 error says how.</exception>
     private void VerifyChunkSignature(
         ReadOnlySpan<byte> presented,
         ReadOnlySpan<byte> data,
@@ -195,6 +207,7 @@ internal sealed class AwsChunkedStream : Stream
     }
 
     /// <summary>Fills a pooled buffer with the chunk's bytes: what was read ahead first, the rest from the wire.</summary>
+    /// <exception cref="IOException">The wire ended early or could not be read.</exception>
     private async ValueTask<ReadOnlyMemory<byte>> ReadChunkDataAsync(
         int size,
         CancellationToken cancellationToken
@@ -222,6 +235,8 @@ internal sealed class AwsChunkedStream : Stream
         return chunk.AsMemory(0, size);
     }
 
+    /// <exception cref="IOException">The wire ended early or could not be read.</exception>
+    /// <exception cref="PayloadVerificationException">The body failed verification; the S3 error says how.</exception>
     private async Task VerifyTrailerAsync(CancellationToken cancellationToken)
     {
         var canonicalTrailer = new StringBuilder();
@@ -278,6 +293,7 @@ internal sealed class AwsChunkedStream : Stream
         }
     }
 
+    /// <exception cref="PayloadVerificationException">The body failed verification; the S3 error says how.</exception>
     private void VerifyTrailerSignature(
         string? presented,
         string canonicalTrailer,
@@ -312,6 +328,7 @@ internal sealed class AwsChunkedStream : Stream
     /// The next CRLF-terminated line of the wire, without its terminator. The memory
     /// points into the read-ahead buffer and is valid until the next read from the wire.
     /// </summary>
+    /// <exception cref="IOException">The wire ended early or could not be read.</exception>
     private async ValueTask<ReadOnlyMemory<byte>> ReadLineAsync(CancellationToken cancellationToken)
     {
         while (true)
@@ -336,6 +353,7 @@ internal sealed class AwsChunkedStream : Stream
         }
     }
 
+    /// <exception cref="IOException">The wire ended early or could not be read.</exception>
     private async Task ConsumeChunkDelimiterAsync(CancellationToken cancellationToken)
     {
         while (readAheadEnd - readAheadStart < LineEnd.Length)
@@ -355,6 +373,7 @@ internal sealed class AwsChunkedStream : Stream
     }
 
     /// <summary>Reads more of the wire into the read-ahead buffer, compacting it first; 0 means the wire ended.</summary>
+    /// <exception cref="IOException">The wire ended early or could not be read.</exception>
     private async ValueTask<int> FillReadAheadAsync(CancellationToken cancellationToken)
     {
         if (readAheadStart > 0)

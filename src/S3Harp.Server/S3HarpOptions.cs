@@ -63,6 +63,7 @@ internal sealed class S3HarpOptions
     /// Binds the settings from configuration and validates them, reporting every
     /// problem at once by the setting it concerns.
     /// </summary>
+    /// <exception cref="StartupException">The settings are unusable; the message names the problem.</exception>
     public static S3HarpOptions Load(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);

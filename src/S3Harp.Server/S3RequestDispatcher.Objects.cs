@@ -9,6 +9,13 @@ namespace S3Harp.Server;
 /// <summary>The object operations: put, get, head, delete, batch delete, copy and attributes.</summary>
 internal sealed partial class S3RequestDispatcher
 {
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> PutObjectAsync(
         HttpContext context,
         string bucket,
@@ -58,6 +65,13 @@ internal sealed partial class S3RequestDispatcher
         };
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> GetObjectAsync(
         HttpContext context,
         string bucket,
@@ -121,6 +135,13 @@ internal sealed partial class S3RequestDispatcher
             }
             : null;
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> DeleteObjectAsync(
         HttpContext context,
         string bucket,
@@ -146,6 +167,13 @@ internal sealed partial class S3RequestDispatcher
             : new S3StatusResult(StatusCodes.Status204NoContent);
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> DeleteObjectsAsync(
         HttpContext context,
         string bucket,
@@ -251,6 +279,13 @@ internal sealed partial class S3RequestDispatcher
         return requested.Count == 0 ? null : requested;
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> GetObjectAttributesAsync(
         HttpContext context,
         string bucket,
@@ -351,6 +386,13 @@ internal sealed partial class S3RequestDispatcher
         return true;
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> CopyObjectAsync(
         HttpContext context,
         string bucket,

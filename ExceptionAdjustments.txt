@@ -1,0 +1,41 @@
+# Corrections to what referenced members are documented as throwing, read by the exception analyzers.
+# Syntax: <memberId> (-/+)<exceptionTypeId>
+
+# Guard helpers throw only for a caller's mistake, which is never declared.
+M:System.ArgumentNullException.ThrowIfNull(System.Object,System.String) -T:System.ArgumentNullException
+M:System.ArgumentNullException.ThrowIfNull(System.Void*,System.String) -T:System.ArgumentNullException
+
+# Microsoft.Data.Sqlite documents none of its exceptions; every command can fail with one.
+# (The asynchronous members it inherits from DbCommand already document DbException.)
+M:Microsoft.Data.Sqlite.SqliteCommand.ExecuteReaderAsync(System.Threading.CancellationToken) +T:Microsoft.Data.Sqlite.SqliteException
+M:Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery +T:Microsoft.Data.Sqlite.SqliteException
+M:Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader +T:Microsoft.Data.Sqlite.SqliteException
+M:Microsoft.Data.Sqlite.SqliteCommand.ExecuteScalar +T:Microsoft.Data.Sqlite.SqliteException
+M:Microsoft.Data.Sqlite.SqliteConnection.Open +T:Microsoft.Data.Sqlite.SqliteException
+M:Microsoft.Data.Sqlite.SqliteConnection.BeginTransaction +T:Microsoft.Data.Sqlite.SqliteException
+M:Microsoft.Data.Sqlite.SqliteConnection.BeginTransaction(System.Data.IsolationLevel) +T:Microsoft.Data.Sqlite.SqliteException
+
+# A constant, valid format string cannot fail.
+M:System.Guid.ToString(System.String) -T:System.FormatException
+M:System.DateTimeOffset.ToString(System.String,System.IFormatProvider) -T:System.FormatException
+
+# MD5 and SHA-256 exist on every supported platform.
+M:System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName) -T:System.Security.Cryptography.CryptographicException
+
+# A single-dimensional array's length always fits an int.
+P:System.Array.Length -T:System.OverflowException
+
+# Awaiting a task rethrows whatever the task failed with; the awaiting member declares that itself.
+M:System.Runtime.CompilerServices.TaskAwaiter.GetResult -T:System.Exception
+M:System.Runtime.CompilerServices.TaskAwaiter`1.GetResult -T:System.Exception
+
+# Reinterpreting a span of chars as bytes cannot overflow a length that already fit.
+M:System.Runtime.InteropServices.MemoryMarshal.AsBytes``1(System.ReadOnlySpan{``0}) -T:System.OverflowException
+M:System.Runtime.InteropServices.MemoryMarshal.AsBytes``1(System.Span{``0}) -T:System.OverflowException
+
+# Only TimeSpan.MinValue has no absolute value; a clock difference never is one.
+M:System.TimeSpan.Duration -T:System.OverflowException
+M:System.DateTime.ToString(System.String,System.IFormatProvider) -T:System.FormatException
+
+# .NET has no fixed maximum path length; GetFullPath does not throw this any more.
+M:System.IO.Path.GetFullPath(System.String) -T:System.IO.PathTooLongException

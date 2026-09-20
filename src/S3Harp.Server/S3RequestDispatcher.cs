@@ -67,6 +67,13 @@ internal sealed partial class S3RequestDispatcher(
         StringComparer.OrdinalIgnoreCase
     );
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     public async Task<IResult> DispatchAsync(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);

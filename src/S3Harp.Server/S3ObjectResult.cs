@@ -23,6 +23,7 @@ internal sealed class S3ObjectResult(
 {
     private const int BufferSize = 64 * 1024;
 
+    /// <exception cref="IOException">The response could not be written.</exception>
     public async Task ExecuteAsync(HttpContext httpContext)
     {
         ArgumentNullException.ThrowIfNull(httpContext);
@@ -116,6 +117,7 @@ internal sealed class S3ObjectResult(
         }
     }
 
+    /// <exception cref="IOException">The response could not be written.</exception>
     private static async Task CopySliceAsync(
         Stream source,
         Stream destination,

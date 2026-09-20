@@ -14,6 +14,8 @@ internal static partial class FileRange
 {
     private const int BufferSize = 256 * 1024;
 
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
     public static void Copy(
         SafeFileHandle source,
         long sourceOffset,
@@ -46,6 +48,8 @@ internal static partial class FileRange
         }
     }
 
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
     private static void CopyBuffered(
         SafeFileHandle source,
         long sourceOffset,

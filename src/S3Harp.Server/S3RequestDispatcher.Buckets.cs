@@ -6,6 +6,13 @@ namespace S3Harp.Server;
 /// <summary>The bucket operations: list, create, head and delete.</summary>
 internal sealed partial class S3RequestDispatcher
 {
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> ListBucketsAsync(CancellationToken cancellationToken)
     {
         var buckets = await index.ListBucketsAsync(cancellationToken).ConfigureAwait(false);
@@ -30,6 +37,13 @@ internal sealed partial class S3RequestDispatcher
         return new S3XmlResult(StatusCodes.Status200OK, document);
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> CreateBucketAsync(
         HttpContext context,
         string bucket,
@@ -53,6 +67,13 @@ internal sealed partial class S3RequestDispatcher
         return new S3StatusResult(StatusCodes.Status200OK);
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> HeadBucketAsync(
         string bucket,
         CancellationToken cancellationToken
@@ -61,6 +82,13 @@ internal sealed partial class S3RequestDispatcher
             ? new S3StatusResult(StatusCodes.Status200OK)
             : new S3ErrorResult(S3Errors.NoSuchBucket);
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> DeleteBucketAsync(
         string bucket,
         CancellationToken cancellationToken

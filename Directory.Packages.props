@@ -10,6 +10,7 @@
     <PackageVersion Include="System.CommandLine" Version="2.0.12" />
     <PackageVersion Include="System.IO.Hashing" Version="11.0.0-rc.1.26425.128" />
     <PackageVersion Include="Tomlyn" Version="2.10.1" />
+    <PackageVersion Include="Tetractic.CodeAnalysis.ExceptionAnalyzers" Version="1.4.9" />
     <PackageVersion Include="Microsoft.Testing.Extensions.GitHubActionsReport" Version="2.4.0" />
     <PackageVersion Include="xunit.v3" Version="4.0.1" />
     <PackageVersion Include="xunit.v3.assert" Version="4.0.1" />

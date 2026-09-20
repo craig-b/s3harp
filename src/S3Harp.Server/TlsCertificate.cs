@@ -16,6 +16,7 @@ internal sealed class TlsCertificate(X509Certificate2 leaf, X509Certificate2Coll
 
     public X509Certificate2Collection Chain { get; } = chain;
 
+    /// <exception cref="StartupException">The settings are unusable; the message names the problem.</exception>
     public static TlsCertificate Load(string certPath, string keyPath)
     {
         ArgumentNullException.ThrowIfNull(certPath);
@@ -60,6 +61,7 @@ internal sealed class TlsCertificate(X509Certificate2 leaf, X509Certificate2Coll
         }
     }
 
+    /// <exception cref="StartupException">The file does not exist.</exception>
     private static string Existing(string setting, string path)
     {
         var fullPath = Path.GetFullPath(path);

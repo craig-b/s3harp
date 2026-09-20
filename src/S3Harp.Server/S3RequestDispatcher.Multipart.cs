@@ -8,6 +8,13 @@ namespace S3Harp.Server;
 /// <summary>The multipart upload operations: initiate, upload and copy parts, list, complete and abort.</summary>
 internal sealed partial class S3RequestDispatcher
 {
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> ListPartsAsync(
         HttpContext context,
         string bucket,
@@ -101,6 +108,13 @@ internal sealed partial class S3RequestDispatcher
         return (page, truncated);
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> ListMultipartUploadsAsync(
         string bucket,
         CancellationToken cancellationToken
@@ -134,6 +148,13 @@ internal sealed partial class S3RequestDispatcher
         );
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> InitiateUploadAsync(
         HttpContext context,
         string bucket,
@@ -186,6 +207,13 @@ internal sealed partial class S3RequestDispatcher
         );
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> UploadPartAsync(
         HttpContext context,
         string bucket,
@@ -246,6 +274,13 @@ internal sealed partial class S3RequestDispatcher
         return new S3StatusResult(StatusCodes.Status200OK);
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> UploadPartCopyAsync(
         HttpContext context,
         string bucket,
@@ -328,6 +363,13 @@ internal sealed partial class S3RequestDispatcher
         };
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> CompleteUploadAsync(
         HttpContext context,
         string bucket,
@@ -428,6 +470,13 @@ internal sealed partial class S3RequestDispatcher
         return null;
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> AbortUploadAsync(
         string bucket,
         string key,

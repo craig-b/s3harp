@@ -26,5 +26,8 @@
     <!-- Overloads that read the current culture or accept signs and whitespace are banned; see BannedSymbols.txt. -->
     <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
     <AdditionalFiles Include="$(MSBuildThisFileDirectory)BannedSymbols.txt" />
+    <!-- Every exception that can escape a member is declared on it with an <exception> element; see ExceptionAdjustments.txt. -->
+    <PackageReference Include="Tetractic.CodeAnalysis.ExceptionAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)ExceptionAdjustments.txt" />
   </ItemGroup>
 </Project>

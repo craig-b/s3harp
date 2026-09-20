@@ -25,6 +25,10 @@ internal static partial class S3HarpApplication
         ["Logging:LogLevel:S3Harp"] = "Information",
     };
 
+    /// <exception cref="StartupException">The settings are unusable; the message names the problem.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
     public static WebApplication Build(IReadOnlyDictionary<string, string?> settings)
     {
         ArgumentNullException.ThrowIfNull(settings);

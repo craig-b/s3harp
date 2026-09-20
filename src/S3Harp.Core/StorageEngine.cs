@@ -90,6 +90,12 @@ public sealed class StorageEngine(
 )
 {
     /// <summary>Stores the content as an object, with a full-object checksum of the given algorithm.</summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<PutObjectOutcome> PutObjectAsync(
         string bucket,
         string key,
@@ -135,6 +141,12 @@ public sealed class StorageEngine(
         return new PutObjectOutcome.Stored(write.ContentMd5Hex, checksum);
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<ObjectDownload?> GetObjectAsync(
         string bucket,
         string key,
@@ -164,6 +176,12 @@ public sealed class StorageEngine(
         }
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<ObjectListing> ListObjectsAsync(
         string bucket,
         string prefix,
@@ -240,6 +258,12 @@ public sealed class StorageEngine(
     /// Deletes an empty bucket. In-progress uploads never hold a bucket open:
     /// they are aborted with it and their parts reclaimed, matching S3.
     /// </summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<DeleteBucketResult> DeleteBucketAsync(
         string bucket,
         CancellationToken cancellationToken
@@ -257,6 +281,12 @@ public sealed class StorageEngine(
     }
 
     /// <summary>Deletes the object when the condition, if any, holds against it.</summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<DeleteObjectStatus> DeleteObjectAsync(
         string bucket,
         string key,
@@ -275,6 +305,12 @@ public sealed class StorageEngine(
         return deleted.Status;
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<string?> InitiateUploadAsync(
         string bucket,
         string key,
@@ -303,6 +339,12 @@ public sealed class StorageEngine(
             : null;
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<UploadPartOutcome> UploadPartAsync(
         string bucket,
         string key,
@@ -361,6 +403,12 @@ public sealed class StorageEngine(
     /// Fills a part with a byte range of another object, or the whole of it when no
     /// range is given. The range must lie within the source.
     /// </summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<UploadPartCopyOutcome> UploadPartCopyAsync(
         string bucket,
         string key,
@@ -447,6 +495,12 @@ public sealed class StorageEngine(
     /// with must be the one recorded for it, and the checksum the client expects of
     /// the object, if any, must be the one computed for it.
     /// </summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<CompleteUploadOutcome> CompleteUploadAsync(
         string bucket,
         string key,
@@ -578,6 +632,11 @@ public sealed class StorageEngine(
     /// upload, else composed from the parts' checksums. Parts recorded before
     /// checksums were kept leave a composite undefined.
     /// </summary>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
     private async Task<Checksum?> ObjectChecksumAsync(
         MultipartUpload upload,
         List<PartRecord> parts,
@@ -611,6 +670,12 @@ public sealed class StorageEngine(
         );
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<bool> AbortUploadAsync(
         string bucket,
         string key,
@@ -639,6 +704,12 @@ public sealed class StorageEngine(
     /// same, unless a different algorithm is asked for, in which case a full-object
     /// checksum of the copy is computed.
     /// </summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     public async Task<CopyObjectOutcome?> CopyObjectAsync(
         string sourceBucket,
         string sourceKey,
@@ -700,6 +771,10 @@ public sealed class StorageEngine(
     /// the key is the one those exact parts produced: a retried completion is
     /// idempotent, as it is on S3.
     /// </summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
     private async Task<CompleteUploadOutcome> RepeatedCompletionAsync(
         string bucket,
         string key,
@@ -724,6 +799,7 @@ public sealed class StorageEngine(
     }
 
     /// <summary>The multipart ETag of stored parts, whose ETags are always MD5s.</summary>
+    /// <exception cref="InvalidDataException">A part has no ETag to assemble.</exception>
     private static string MultipartETag(List<PartRecord> parts) =>
         MultipartETag(parts.Select(part => part.ETag))
         ?? throw new InvalidDataException("A stored part's ETag is not an MD5.");

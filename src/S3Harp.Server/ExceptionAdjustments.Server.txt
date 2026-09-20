@@ -1,0 +1,5 @@
+# Corrections for the framework members the server implements, read by the exception analyzers
+# alongside the repository's ExceptionAdjustments.txt. An implementation may raise these.
+M:Microsoft.Extensions.Configuration.FileConfigurationProvider.Load(System.IO.Stream) +T:System.IO.IOException
+M:Microsoft.Extensions.Configuration.FileConfigurationProvider.Load(System.IO.Stream) +T:System.IO.InvalidDataException
+M:Microsoft.AspNetCore.Http.IResult.ExecuteAsync(Microsoft.AspNetCore.Http.HttpContext) +T:System.IO.IOException

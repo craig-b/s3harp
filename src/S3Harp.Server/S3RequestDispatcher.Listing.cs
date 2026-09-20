@@ -6,6 +6,13 @@ namespace S3Harp.Server;
 /// <summary>The listing operations: ListObjects (V1 and V2) and ListObjectVersions, with their shared paging.</summary>
 internal sealed partial class S3RequestDispatcher
 {
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> ListObjectsAsync(
         HttpContext context,
         string bucket,
@@ -56,6 +63,13 @@ internal sealed partial class S3RequestDispatcher
         return new S3XmlResult(StatusCodes.Status200OK, root);
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> ListObjectsV2Async(
         HttpContext context,
         string bucket,
@@ -140,6 +154,13 @@ internal sealed partial class S3RequestDispatcher
         return new S3XmlResult(StatusCodes.Status200OK, root);
     }
 
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private Task<ObjectListing> ListAsync(
         string bucket,
         ListingQuery query,
@@ -201,6 +222,13 @@ internal sealed partial class S3RequestDispatcher
     /// Every object is its own single, current version: S3Harp buckets are
     /// unversioned, which S3 reports as the "null" version.
     /// </summary>
+    /// <exception cref="System.Data.Common.DbException">The index's database failed the operation.</exception>
+    /// <exception cref="IOException">The file system refused or failed the operation.</exception>
+    /// <exception cref="UnauthorizedAccessException">The process may not access the path.</exception>
+    /// <exception cref="System.Text.Json.JsonException">A stored record is not valid JSON.</exception>
+    /// <exception cref="InvalidDataException">A stored record is malformed.</exception>
+    /// <exception cref="FormatException">A stored value is malformed.</exception>
+    /// <exception cref="IOException">The response could not be written.</exception>
     private async Task<IResult> ListObjectVersionsAsync(
         HttpContext context,
         string bucket,

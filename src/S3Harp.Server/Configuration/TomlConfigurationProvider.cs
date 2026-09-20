@@ -15,6 +15,8 @@ namespace S3Harp.Server.Configuration;
 internal sealed class TomlConfigurationProvider(TomlConfigurationSource source)
     : FileConfigurationProvider(source)
 {
+    /// <exception cref="IOException">The file could not be read.</exception>
+    /// <exception cref="InvalidDataException">The file is not valid TOML.</exception>
     public override void Load(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
