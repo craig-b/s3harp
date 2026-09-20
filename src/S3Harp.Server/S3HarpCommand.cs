@@ -52,6 +52,18 @@ internal static class S3HarpCommand
         "The domain buckets are addressed under in virtual-hosted style; localhost unless given."
     );
 
+    private static readonly Option<string> TlsCert = Setting(
+        "--tls-cert",
+        "tls_cert",
+        "The PEM file holding the server certificate and its chain; with --tls-key, the server listens over TLS."
+    );
+
+    private static readonly Option<string> TlsKey = Setting(
+        "--tls-key",
+        "tls_key",
+        "The PEM file holding the certificate's private key."
+    );
+
     private static readonly (Option Option, string Key)[] Settings_ =
     [
         (Config, SettingsFile.Key),
@@ -61,6 +73,8 @@ internal static class S3HarpCommand
         (Bind, "bind"),
         (Port, "port"),
         (Domain, "domain"),
+        (TlsCert, "tls_cert"),
+        (TlsKey, "tls_key"),
     ];
 
     /// <summary>The root command, whose action starts the server with the settings the flags give.</summary>

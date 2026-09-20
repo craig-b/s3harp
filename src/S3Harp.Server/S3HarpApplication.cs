@@ -52,6 +52,19 @@ internal static partial class S3HarpApplication
 
         var options = S3HarpOptions.Load(builder.Configuration);
         builder.WebHost.UseUrls(options.ListenUrl);
+        if (options.UsesTls)
+        {
+            var certificate = TlsCertificate.Load(options.TlsCert, options.TlsKey);
+            builder.Services.AddSingleton(certificate);
+            builder.WebHost.ConfigureKestrel(kestrel =>
+                kestrel.ConfigureHttpsDefaults(https =>
+                {
+                    https.ServerCertificate = certificate.Leaf;
+                    https.ServerCertificateChain = certificate.Chain;
+                })
+            );
+        }
+
         var dataDirectory = options.DataDirectory;
         Directory.CreateDirectory(dataDirectory);
 

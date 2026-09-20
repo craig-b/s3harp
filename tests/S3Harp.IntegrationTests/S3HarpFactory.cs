@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Security.Cryptography.X509Certificates;
 using Amazon.Runtime;
 using Amazon.S3;
 using Microsoft.AspNetCore.Builder;
@@ -20,20 +22,31 @@ public sealed class S3HarpFactory : IAsyncDisposable
     private readonly TempDirectory dataDirectory = new("integration");
 
     private WebApplication? app;
+    private X509Certificate2? certificate;
 
-    /// <summary>Starts the server on a free loopback port.</summary>
-    public async ValueTask StartAsync()
+    /// <summary>
+    /// Starts the server on a free loopback port; with <paramref name="tls"/>, behind a
+    /// self-signed certificate written to the data directory, which the clients this
+    /// fixture creates trust and nothing else does.
+    /// </summary>
+    public async ValueTask StartAsync(bool tls = false)
     {
-        app = S3HarpApplication.Build(
-            new Dictionary<string, string?>
-            {
-                ["bind"] = "127.0.0.1",
-                ["port"] = "0",
-                ["access_key_id"] = AccessKeyId,
-                ["secret_access_key"] = SecretAccessKey,
-                ["data_dir"] = dataDirectory.Path,
-            }
-        );
+        var settings = new Dictionary<string, string?>
+        {
+            ["bind"] = "127.0.0.1",
+            ["port"] = "0",
+            ["access_key_id"] = AccessKeyId,
+            ["secret_access_key"] = SecretAccessKey,
+            ["data_dir"] = dataDirectory.Path,
+        };
+        if (tls)
+        {
+            certificate = TestCertificates.Server();
+            settings["tls_cert"] = Write("cert.pem", certificate.ExportCertificatePem());
+            settings["tls_key"] = Write("key.pem", TestCertificates.KeyPem(certificate));
+        }
+
+        app = S3HarpApplication.Build(settings);
         await app.StartAsync();
     }
 
@@ -63,8 +76,17 @@ public sealed class S3HarpFactory : IAsyncDisposable
             ForcePathStyle = !virtualHosted,
             MaxErrorRetry = 0,
         };
+        if (certificate is { } trusted)
+        {
+            config.HttpClientFactory = new TrustingHttpClientFactory(trusted);
+        }
+
         return new AmazonS3Client(new BasicAWSCredentials(accessKeyId, secretAccessKey), config);
     }
+
+    /// <summary>A plain HTTP client that trusts the server's certificate when it has one.</summary>
+    public HttpClient CreateHttpClient() =>
+        certificate is { } trusted ? Trusting(trusted) : new HttpClient();
 
     public async ValueTask DisposeAsync()
     {
@@ -74,9 +96,40 @@ public sealed class S3HarpFactory : IAsyncDisposable
             await app.DisposeAsync();
         }
 
+        certificate?.Dispose();
         dataDirectory.Dispose();
     }
 
     private WebApplication Started() =>
         app ?? throw new InvalidOperationException("The server has not been started.");
+
+    private string Write(string name, string content)
+    {
+        var path = Path.Combine(dataDirectory.Path, name);
+        File.WriteAllText(path, content);
+        return path;
+    }
+
+    /// <summary>A client that accepts exactly the fixture's certificate, whatever the system trusts.</summary>
+    [SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "The client owns the handler and disposes it with itself."
+    )]
+    private static HttpClient Trusting(X509Certificate2 trusted) =>
+        new(
+            new HttpClientHandler
+            {
+                CheckCertificateRevocationList = true,
+                ServerCertificateCustomValidationCallback = (_, presented, _, _) =>
+                    presented is not null && presented.Thumbprint == trusted.Thumbprint,
+            },
+            disposeHandler: true
+        );
+
+    private sealed class TrustingHttpClientFactory(X509Certificate2 trusted) : HttpClientFactory
+    {
+        public override HttpClient CreateHttpClient(IClientConfig clientConfig) =>
+            Trusting(trusted);
+    }
 }

@@ -33,11 +33,27 @@ internal sealed class S3HarpOptions
     [ConfigurationKeyName(Keys.Port)]
     public int Port { get; set; } = DefaultPort;
 
+    /// <summary>The PEM file holding the server certificate, followed by its chain when there is one.</summary>
+    [ConfigurationKeyName(Keys.TlsCert)]
+    public string TlsCert { get; set; } = "";
+
+    /// <summary>The PEM file holding the certificate's private key.</summary>
+    [ConfigurationKeyName(Keys.TlsKey)]
+    public string TlsKey { get; set; } = "";
+
+    /// <summary>Whether the server listens over TLS, which a certificate and key turn on.</summary>
+    public bool UsesTls => !string.IsNullOrWhiteSpace(TlsCert);
+
     /// <summary>The URL Kestrel listens on, with an IPv6 bind address bracketed.</summary>
-    public string ListenUrl =>
-        Bind.Contains(':', StringComparison.Ordinal)
-            ? $"http://[{Bind}]:{Port.ToString(CultureInfo.InvariantCulture)}"
-            : $"http://{Bind}:{Port.ToString(CultureInfo.InvariantCulture)}";
+    public string ListenUrl
+    {
+        get
+        {
+            var scheme = UsesTls ? "https" : "http";
+            var host = Bind.Contains(':', StringComparison.Ordinal) ? $"[{Bind}]" : Bind;
+            return $"{scheme}://{host}:{Port.ToString(CultureInfo.InvariantCulture)}";
+        }
+    }
 
     /// <summary>
     /// Binds the settings from configuration and validates them, reporting every
@@ -69,6 +85,11 @@ internal sealed class S3HarpOptions
         if (options.Port is < 0 or > 65535)
         {
             problems.Add($"{Keys.Port} must be between 0 and 65535");
+        }
+
+        if (string.IsNullOrWhiteSpace(options.TlsCert) != string.IsNullOrWhiteSpace(options.TlsKey))
+        {
+            problems.Add($"{Keys.TlsCert} and {Keys.TlsKey} must be given together");
         }
 
         return problems.Count == 0
@@ -108,6 +129,8 @@ internal sealed class S3HarpOptions
         public const string Domain = "domain";
         public const string Bind = "bind";
         public const string Port = "port";
+        public const string TlsCert = "tls_cert";
+        public const string TlsKey = "tls_key";
 
         public static readonly string[] All =
         [
@@ -117,6 +140,8 @@ internal sealed class S3HarpOptions
             Domain,
             Bind,
             Port,
+            TlsCert,
+            TlsKey,
         ];
     }
 }

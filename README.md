@@ -62,15 +62,17 @@ S3Harp itself is the storage backend: objects are stored as plain files on the l
 
 Every setting has one name, such as `data_dir`. That name is the key in a settings file, the suffix of the `S3HARP_DATA_DIR` environment variable and the `--data-dir` flag; `s3harp --help` lists them all. A later source overrides an earlier one: the settings file, then the environment, then the flags. Only variables with the `S3HARP_` prefix are settings; a bare `PORT` in the environment is left alone. The server authenticates every request with AWS Signature Version 4 against its root keypair, which it requires at startup. A setting that is missing or invalid stops the server with a message naming it.
 
-| Setting             | Purpose                                                                                     |
-| ------------------- | ------------------------------------------------------------------------------------------- |
-| `access_key_id`     | Required. The access key id clients sign requests with                                      |
-| `secret_access_key` | Required. The matching secret key                                                           |
-| `data_dir`          | Required. The directory holding all stored data, including the metadata index               |
-| `bind`              | The address to listen on; defaults to `127.0.0.1`, so set `0.0.0.0` to serve other machines |
-| `port`              | The port to listen on; defaults to `9000`, the port local S3 tooling expects                |
-| `domain`            | The domain buckets are addressed under in virtual-hosted style; defaults to `localhost`     |
-| `config`            | A settings file to read, in the format its extension names: `.toml` or `.json`              |
+| Setting             | Purpose                                                                                        |
+| ------------------- | ---------------------------------------------------------------------------------------------- |
+| `access_key_id`     | Required. The access key id clients sign requests with                                         |
+| `secret_access_key` | Required. The matching secret key                                                              |
+| `data_dir`          | Required. The directory holding all stored data, including the metadata index                  |
+| `bind`              | The address to listen on; defaults to `127.0.0.1`, so set `0.0.0.0` to serve other machines    |
+| `port`              | The port to listen on; defaults to `9000`, the port local S3 tooling expects                   |
+| `domain`            | The domain buckets are addressed under in virtual-hosted style; defaults to `localhost`        |
+| `config`            | A settings file to read, in the format its extension names: `.toml` or `.json`                 |
+| `tls_cert`          | A PEM file holding the server certificate, and after it the chain; turns on TLS with `tls_key` |
+| `tls_key`           | The PEM file holding the certificate's private key                                             |
 
 A settings file is read only when `config` names it, and naming a file that does not exist or cannot be parsed stops the server. JSON files may contain comments.
 
@@ -85,6 +87,8 @@ bind = "0.0.0.0"
 ```sh
 s3harp --config /etc/s3harp/s3harp.toml
 ```
+
+With `tls_cert` and `tls_key` the server listens over HTTPS only, presenting that certificate and any chain certificates that follow it in the file, which is the shape `fullchain.pem` and `privkey.pem` from certbot or acme.sh already have. Both settings are given together or not at all, and a file that is missing or is not a PEM certificate with its matching key stops the server. Some clients, boto3 among them, stop signing upload payloads over TLS and send the unsigned chunked form instead; the server verifies it by its trailing checksum.
 
 Buckets are reachable in both of S3's addressing styles: path style (`http://localhost:9000/my-bucket/key`) and virtual-hosted style (`http://my-bucket.localhost:9000/key`), which SDKs use unless told otherwise. Every `*.localhost` name resolves to the loopback address, so the default domain works without DNS setup; set `domain` when serving under another name.
 

@@ -63,6 +63,47 @@ public sealed class S3HarpOptionsTests
         Assert.Equal($"S3Harp cannot start: {missing} is required.", exception.Message);
     }
 
+    [Fact]
+    public void ListensOverTlsWhenACertificateAndKeyAreGiven()
+    {
+        var options = S3HarpOptions.Load(
+            Configuration(
+                Complete,
+                ("tls_cert", "/etc/s3harp/fullchain.pem"),
+                ("tls_key", "/etc/s3harp/privkey.pem")
+            )
+        );
+
+        Assert.Equal("/etc/s3harp/fullchain.pem", options.TlsCert);
+        Assert.Equal("/etc/s3harp/privkey.pem", options.TlsKey);
+        Assert.True(options.UsesTls);
+        Assert.Equal("https://127.0.0.1:9000", options.ListenUrl);
+    }
+
+    [Fact]
+    public void ListensOverPlainHttpWithoutThem()
+    {
+        var options = S3HarpOptions.Load(Configuration(Complete));
+
+        Assert.False(options.UsesTls);
+        Assert.Equal("http://127.0.0.1:9000", options.ListenUrl);
+    }
+
+    [Theory]
+    [InlineData("tls_cert")]
+    [InlineData("tls_key")]
+    public void RefusesACertificateOrKeyWithoutTheOther(string given)
+    {
+        var exception = Assert.Throws<StartupException>(() =>
+            S3HarpOptions.Load(Configuration(Complete, (given, "/etc/s3harp/one.pem")))
+        );
+
+        Assert.Equal(
+            "S3Harp cannot start: tls_cert and tls_key must be given together.",
+            exception.Message
+        );
+    }
+
     [Theory]
     [InlineData("65536", "port must be between 0 and 65535")]
     [InlineData("-1", "port must be between 0 and 65535")]

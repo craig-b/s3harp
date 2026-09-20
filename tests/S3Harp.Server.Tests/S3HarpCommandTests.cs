@@ -25,6 +25,10 @@ public sealed class S3HarpCommandTests
                 "9010",
                 "--domain",
                 "s3.test",
+                "--tls-cert",
+                "/etc/s3harp/fullchain.pem",
+                "--tls-key",
+                "/etc/s3harp/privkey.pem",
             ]);
 
         Assert.Empty(parsed.Errors);
@@ -38,6 +42,8 @@ public sealed class S3HarpCommandTests
                 ["bind"] = "0.0.0.0",
                 ["port"] = "9010",
                 ["domain"] = "s3.test",
+                ["tls_cert"] = "/etc/s3harp/fullchain.pem",
+                ["tls_key"] = "/etc/s3harp/privkey.pem",
             },
             S3HarpCommand.Settings(parsed)
         );
@@ -84,6 +90,8 @@ public sealed class S3HarpCommandTests
                 ("--bind", "S3HARP_BIND"),
                 ("--port", "S3HARP_PORT"),
                 ("--domain", "S3HARP_DOMAIN"),
+                ("--tls-cert", "S3HARP_TLS_CERT"),
+                ("--tls-key", "S3HARP_TLS_KEY"),
             }
         )
         {
