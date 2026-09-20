@@ -1,4 +1,5 @@
 using System.Text;
+using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Microsoft.Extensions.Configuration.Memory;
 using S3Harp.Core;
 using S3Harp.Server.Authentication;
@@ -9,7 +10,8 @@ namespace S3Harp.Server;
 /// The composition root: builds a fully wired S3Harp server application. Settings
 /// come from the file the <c>config</c> setting names, overridden by the
 /// <c>S3HARP_</c> environment, overridden by any the caller passes, which is how
-/// the command line reaches them.
+/// the command line reaches them. Only those sources name settings: an
+/// environment variable without the prefix is not one.
 /// </summary>
 internal static partial class S3HarpApplication
 {
@@ -27,6 +29,7 @@ internal static partial class S3HarpApplication
     {
         ArgumentNullException.ThrowIfNull(settings);
         var builder = WebApplication.CreateBuilder();
+        RemoveUnprefixedEnvironment(builder.Configuration.Sources);
         builder.Configuration.Sources.Insert(
             0,
             new MemoryConfigurationSource { InitialData = LoggingDefaults }
@@ -89,6 +92,21 @@ internal static partial class S3HarpApplication
         });
 
         return app;
+    }
+
+    /// <summary>
+    /// The framework reads every environment variable into configuration; S3Harp
+    /// reads only those with its prefix, so a stray <c>PORT</c> is not a setting.
+    /// </summary>
+    private static void RemoveUnprefixedEnvironment(IList<IConfigurationSource> sources)
+    {
+        for (var i = sources.Count - 1; i >= 0; i--)
+        {
+            if (sources[i] is EnvironmentVariablesConfigurationSource { Prefix: null or "" })
+            {
+                sources.RemoveAt(i);
+            }
+        }
     }
 
     /// <summary>The settings file the environment or the caller names, or null when neither does.</summary>

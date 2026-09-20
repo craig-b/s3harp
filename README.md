@@ -60,7 +60,7 @@ S3Harp itself is the storage backend: objects are stored as plain files on the l
 
 ## Configuration
 
-Every setting has one name, such as `data_dir`. That name is the key in a settings file, the suffix of the `S3HARP_DATA_DIR` environment variable and the `--data-dir` flag; `s3harp --help` lists them all. A later source overrides an earlier one: the settings file, then the environment, then the flags. The server authenticates every request with AWS Signature Version 4 against its root keypair, which it requires at startup. A setting that is missing or invalid stops the server with a message naming it.
+Every setting has one name, such as `data_dir`. That name is the key in a settings file, the suffix of the `S3HARP_DATA_DIR` environment variable and the `--data-dir` flag; `s3harp --help` lists them all. A later source overrides an earlier one: the settings file, then the environment, then the flags. Only variables with the `S3HARP_` prefix are settings; a bare `PORT` in the environment is left alone. The server authenticates every request with AWS Signature Version 4 against its root keypair, which it requires at startup. A setting that is missing or invalid stops the server with a message naming it.
 
 | Setting             | Purpose                                                                                     |
 | ------------------- | ------------------------------------------------------------------------------------------- |

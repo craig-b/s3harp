@@ -83,6 +83,24 @@ public sealed class S3HarpApplicationTests : IDisposable
     }
 
     [Fact]
+    public async Task OnlyAPrefixedEnvironmentVariableIsASetting()
+    {
+        var file = Write("s3harp.json", Complete(port: 9010));
+
+        Environment.SetEnvironmentVariable("PORT", "1234");
+        try
+        {
+            await using var app = S3HarpApplication.Build(Settings(("config", file)));
+
+            Assert.Equal(9010, app.Services.GetRequiredService<S3HarpOptions>().Port);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PORT", null);
+        }
+    }
+
+    [Fact]
     public async Task AFlagOverridesTheFile()
     {
         var file = Write("s3harp.json", Complete(port: 9010));
