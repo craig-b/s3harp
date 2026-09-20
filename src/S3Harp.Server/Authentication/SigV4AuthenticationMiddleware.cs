@@ -94,23 +94,22 @@ internal sealed class SigV4AuthenticationMiddleware(
             return;
         }
 
+        var chunkSigning = new ChunkSigning(signingKey, header.Scope, timestamp, header.Signature);
         request.Body = payloadHash switch
         {
             "UNSIGNED-PAYLOAD" => request.Body,
-            "STREAMING-AWS4-HMAC-SHA256-PAYLOAD" => new SigV4ChunkedStream(
+            "STREAMING-AWS4-HMAC-SHA256-PAYLOAD" => AwsChunkedStream.Signed(
                 request.Body,
-                signingKey,
-                header.Scope,
-                timestamp,
-                header.Signature
+                chunkSigning
             ),
-            "STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER" => new SigV4ChunkedStream(
+            "STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER" => AwsChunkedStream.Signed(
                 request.Body,
-                signingKey,
-                header.Scope,
-                timestamp,
-                header.Signature,
+                chunkSigning,
                 signedTrailer: true,
+                AnnouncedTrailerChecksum(request.Headers)
+            ),
+            "STREAMING-UNSIGNED-PAYLOAD-TRAILER" => AwsChunkedStream.Unsigned(
+                request.Body,
                 AnnouncedTrailerChecksum(request.Headers)
             ),
             _ => new Sha256VerifyingStream(request.Body, payloadHash),

@@ -9,7 +9,7 @@ namespace S3Harp.Server.Tests.Authentication;
 /// Wire bodies and chunk signatures generated with an independent SigV4
 /// implementation over the chain seed → "Hello, " → "S3Harp!" → final.
 /// </summary>
-public sealed class SigV4ChunkedStreamTests
+public sealed class AwsChunkedStreamTests
 {
     private const string SecretAccessKey = "s3harp-example-secret";
     private const string Timestamp = "20260916T120000Z";
@@ -167,9 +167,68 @@ public sealed class SigV4ChunkedStreamTests
     }
 
     [Fact]
+    public async Task UnsignedWire_DecodesTheOriginalPayloadAndVerifiesItsTrailerChecksum()
+    {
+        using var stream = CreateUnsignedStream(UnsignedTrailerWireBody(PayloadCrc32));
+        using var decoded = new MemoryStream();
+
+        await stream.CopyToAsync(decoded, TestContext.Current.CancellationToken);
+
+        Assert.Equal("Hello, S3Harp!", Encoding.UTF8.GetString(decoded.ToArray()));
+    }
+
+    [Fact]
+    public async Task UnsignedWire_WithATrailerChecksumDifferingFromThePayload_IsRejectedAsBadDigest()
+    {
+        using var stream = CreateUnsignedStream(UnsignedTrailerWireBody("AAAAAA=="));
+        using var decoded = new MemoryStream();
+
+        var exception = await Assert.ThrowsAsync<PayloadVerificationException>(() =>
+            stream.CopyToAsync(decoded, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Equal(S3Errors.BadDigest, exception.Error);
+    }
+
+    [Fact]
+    public async Task UnsignedWire_WithoutTheAnnouncedTrailer_IsRejectedAsIncomplete()
+    {
+        using var stream = CreateUnsignedStream("7\r\nHello, \r\n7\r\nS3Harp!\r\n0\r\n\r\n");
+        using var decoded = new MemoryStream();
+
+        var exception = await Assert.ThrowsAsync<PayloadVerificationException>(() =>
+            stream.CopyToAsync(decoded, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Equal(S3Errors.IncompleteBody, exception.Error);
+    }
+
+    [Fact]
+    public async Task UnsignedWire_CarryingChunkSignatures_IsMalformed()
+    {
+        using var stream = CreateUnsignedStream(WireBody());
+        using var decoded = new MemoryStream();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            stream.CopyToAsync(decoded, TestContext.Current.CancellationToken)
+        );
+    }
+
+    [Fact]
+    public async Task SignedWire_WithoutChunkSignatures_IsMalformed()
+    {
+        using var stream = CreateStream(UnsignedTrailerWireBody(PayloadCrc32));
+        using var decoded = new MemoryStream();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            stream.CopyToAsync(decoded, TestContext.Current.CancellationToken)
+        );
+    }
+
+    [Fact]
     public async Task ReadsTheWireInBlocks_NotOneByteAtATime()
     {
-        var inner = new CountingStream(new MemoryStream(Encoding.UTF8.GetBytes(WireBody())));
+        using var inner = new CountingStream(new MemoryStream(Encoding.UTF8.GetBytes(WireBody())));
         using var stream = CreateStream(inner);
         using var decoded = new MemoryStream();
 
@@ -199,7 +258,7 @@ public sealed class SigV4ChunkedStreamTests
     public async Task FragmentedInnerReads_ReassembleThePayload(int fragment)
     {
         var payload = "Hello, S3Harp!"u8.ToArray();
-        var inner = new FragmentingStream(
+        using var inner = new FragmentingStream(
             new MemoryStream(SignedWireBody(payload, chunkSize: 5)),
             fragment
         );
@@ -336,7 +395,17 @@ public sealed class SigV4ChunkedStreamTests
         + $"x-amz-trailer-signature:{trailerSignature}\r\n"
         + "\r\n";
 
-    private static SigV4ChunkedStream CreateStream(
+    /// <summary>The framing SDKs send over TLS: sizes without signatures, then an unsigned trailer.</summary>
+    private static string UnsignedTrailerWireBody(string crc32) =>
+        $"7\r\nHello, \r\n7\r\nS3Harp!\r\n0\r\nx-amz-checksum-crc32:{crc32}\r\n\r\n";
+
+    private static AwsChunkedStream CreateUnsignedStream(string wireBody) =>
+        AwsChunkedStream.Unsigned(
+            new MemoryStream(Encoding.UTF8.GetBytes(wireBody)),
+            ChecksumAlgorithm.Crc32
+        );
+
+    private static AwsChunkedStream CreateStream(
         string wireBody,
         string seedSignature = SeedSignature,
         bool signedTrailer = false,
@@ -349,18 +418,20 @@ public sealed class SigV4ChunkedStreamTests
             trailerChecksum
         );
 
-    private static SigV4ChunkedStream CreateStream(
+    private static AwsChunkedStream CreateStream(
         Stream wire,
         string seedSignature = SeedSignature,
         bool signedTrailer = false,
         ChecksumAlgorithm? trailerChecksum = null
     ) =>
-        new(
+        AwsChunkedStream.Signed(
             wire,
-            SigV4Signer.DeriveSigningKey(SecretAccessKey, Scope),
-            Scope,
-            Timestamp,
-            seedSignature,
+            new ChunkSigning(
+                SigV4Signer.DeriveSigningKey(SecretAccessKey, Scope),
+                Scope,
+                Timestamp,
+                seedSignature
+            ),
             signedTrailer,
             trailerChecksum
         );

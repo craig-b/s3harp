@@ -271,6 +271,47 @@ public sealed class SigV4AuthenticationMiddlewareTests
         }
     }
 
+    [Theory]
+    [InlineData("NadAdg==", true)]
+    [InlineData("AAAAAA==", false)]
+    public async Task StreamingUnsignedTrailerChecksum_IsVerifiedAgainstTheDecodedPayload(
+        string declaredCrc32,
+        bool matches
+    )
+    {
+        var context = CreateSignedContext(
+            AccessKeyId,
+            SecretAccessKey,
+            payloadHash: "STREAMING-UNSIGNED-PAYLOAD-TRAILER"
+        );
+        context.Request.Headers["x-amz-trailer"] = "x-amz-checksum-crc32";
+        context.Request.Body = new MemoryStream(
+            BuildUnsignedChunkedWire(
+                ["Hello, ", "S3Harp!"],
+                trailer: ("x-amz-checksum-crc32", declaredCrc32)
+            )
+        );
+
+        (context, var nextCalled) = await RunMiddleware(context);
+
+        Assert.True(nextCalled());
+        using var decoded = new MemoryStream();
+        // Both branches await the copy before the stream is disposed.
+#pragma warning disable CA2025
+        var copy = context.Request.Body.CopyToAsync(decoded, TestContext.Current.CancellationToken);
+#pragma warning restore CA2025
+        if (matches)
+        {
+            await copy;
+            Assert.Equal("Hello, S3Harp!", Encoding.UTF8.GetString(decoded.ToArray()));
+        }
+        else
+        {
+            var exception = await Assert.ThrowsAsync<PayloadVerificationException>(() => copy);
+            Assert.Equal(S3Errors.BadDigest, exception.Error);
+        }
+    }
+
     [Fact]
     public async Task ValidPresignedRequest_ReachesTheNextMiddleware()
     {
@@ -446,6 +487,26 @@ public sealed class SigV4AuthenticationMiddlewareTests
                 .Append("\r\n");
         }
 
+        return Encoding.UTF8.GetBytes(wire.ToString());
+    }
+
+    /// <summary>The aws-chunked framing SDKs send over TLS: sizes without signatures, then the trailer.</summary>
+    private static byte[] BuildUnsignedChunkedWire(
+        string[] chunks,
+        (string Name, string Value) trailer
+    )
+    {
+        var wire = new StringBuilder();
+        foreach (var chunk in chunks)
+        {
+            wire.Append(CultureInfo.InvariantCulture, $"{Encoding.UTF8.GetByteCount(chunk):x}\r\n")
+                .Append(chunk)
+                .Append("\r\n");
+        }
+
+        wire.Append("0\r\n")
+            .Append(CultureInfo.InvariantCulture, $"{trailer.Name}:{trailer.Value}\r\n")
+            .Append("\r\n");
         return Encoding.UTF8.GetBytes(wire.ToString());
     }
 

@@ -1,25 +1,20 @@
 using System.Buffers;
 using System.Buffers.Text;
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using S3Harp.Core;
 
 namespace S3Harp.Server.Authentication;
 
 /// <summary>
-/// Decodes an <c>aws-chunked</c> request body (<c>STREAMING-AWS4-HMAC-SHA256-PAYLOAD</c>),
-/// verifying each chunk's signature against the SigV4 chain before its bytes become
-/// readable. With a signed trailer, the checksum the client announced in
-/// <c>x-amz-trailer</c> is verified against the decoded payload as well.
+/// Decodes an <c>aws-chunked</c> request body. A signed body
+/// (<c>STREAMING-AWS4-HMAC-SHA256-PAYLOAD</c>) has each chunk's signature verified
+/// against the SigV4 chain before its bytes become readable, and a signed trailer
+/// verified the same way. An unsigned body (<c>STREAMING-UNSIGNED-PAYLOAD-TRAILER</c>,
+/// what SDKs send over TLS) carries sizes alone. In either form the checksum the
+/// client announced in <c>x-amz-trailer</c> is verified against the decoded payload.
 /// </summary>
-internal sealed class SigV4ChunkedStream(
-    Stream inner,
-    byte[] signingKey,
-    CredentialScope scope,
-    string timestamp,
-    string seedSignature,
-    bool signedTrailer = false,
-    ChecksumAlgorithm? trailerChecksum = null
-) : Stream
+internal sealed class AwsChunkedStream : Stream
 {
     private const int MaxHeaderLength = 1024;
     private const int MaxChunkSize = 16 * 1024 * 1024;
@@ -31,24 +26,58 @@ internal sealed class SigV4ChunkedStream(
 
     private static ReadOnlySpan<byte> LineEnd => "\r\n"u8;
 
-    private readonly IncrementalChecksum? checksum = trailerChecksum is { } algorithm
-        ? ChecksumAlgorithms.Create(algorithm)
-        : null;
-
-    private readonly string? checksumTrailer = trailerChecksum is { } named
-        ? ChecksumHeaders.HeaderName(named)
-        : null;
+    // The request body belongs to the server, which disposes it with the request.
+    [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed")]
+    private readonly Stream inner;
+    private readonly ChunkSigning? signing;
+    private readonly bool signedTrailer;
+    private readonly IncrementalChecksum? checksum;
+    private readonly string? checksumTrailer;
 
     /// <summary>Wire bytes read ahead of the decoder; the unconsumed part is [start, end).</summary>
     private readonly byte[] readAhead = ArrayPool<byte>.Shared.Rent(ReadAheadSize);
     private int readAheadStart;
     private int readAheadEnd;
 
-    private string previousSignature = seedSignature;
+    private string previousSignature;
     private byte[]? chunk;
     private int chunkLength;
     private int positionInChunk;
     private bool finished;
+
+    private AwsChunkedStream(
+        Stream inner,
+        ChunkSigning? signing,
+        bool signedTrailer,
+        ChecksumAlgorithm? trailerChecksum
+    )
+    {
+        this.inner = inner;
+        this.signing = signing;
+        this.signedTrailer = signedTrailer;
+        previousSignature = signing?.SeedSignature ?? "";
+        if (trailerChecksum is { } algorithm)
+        {
+            checksum = ChecksumAlgorithms.Create(algorithm);
+            checksumTrailer = ChecksumHeaders.HeaderName(algorithm);
+        }
+    }
+
+    /// <summary>A body whose chunks, and trailer when <paramref name="signedTrailer"/>, carry SigV4 signatures.</summary>
+    public static AwsChunkedStream Signed(
+        Stream inner,
+        ChunkSigning signing,
+        bool signedTrailer = false,
+        ChecksumAlgorithm? trailerChecksum = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(signing);
+        return new(inner, signing, signedTrailer, trailerChecksum);
+    }
+
+    /// <summary>A body whose chunks carry sizes alone, ending in a trailer that is checked only for its checksum.</summary>
+    public static AwsChunkedStream Unsigned(Stream inner, ChecksumAlgorithm? trailerChecksum) =>
+        new(inner, signing: null, signedTrailer: true, trailerChecksum);
 
     public override bool CanRead => true;
 
@@ -102,37 +131,27 @@ internal sealed class SigV4ChunkedStream(
         ReturnChunk();
         var header = await ReadLineAsync(cancellationToken).ConfigureAwait(false);
         var separator = header.Span.IndexOf(SignaturePrefix);
+        var sizeLength = separator < 0 ? header.Length : separator;
         if (
-            separator <= 0
-            || !Utf8Parser.TryParse(header.Span[..separator], out long size, out var digits, 'x')
-            || digits != separator
+            (signing is null) != (separator < 0)
+            || !Utf8Parser.TryParse(header.Span[..sizeLength], out long size, out var digits, 'x')
+            || digits != sizeLength
             || size is < 0 or > MaxChunkSize
         )
         {
             throw new InvalidDataException("The chunk header is malformed.");
         }
 
-        var presentedSignature = Encoding.ASCII.GetString(
-            header.Span[(separator + SignaturePrefix.Length)..]
-        );
         var data = await ReadChunkDataAsync((int)size, cancellationToken).ConfigureAwait(false);
-
-        var stringToSign = string.Join(
-            '\n',
-            "AWS4-HMAC-SHA256-PAYLOAD",
-            timestamp,
-            scope.ToString(),
-            previousSignature,
-            EmptyHash,
-            SigV4Signer.Sha256Hex(data.Span)
-        );
-        var expectedSignature = SigV4Signer.Sign(signingKey, stringToSign);
-        if (!SigV4Signer.SignaturesEqual(expectedSignature, presentedSignature))
+        if (signing is not null)
         {
-            throw new PayloadVerificationException(S3Errors.SignatureDoesNotMatch);
+            VerifyChunkSignature(
+                header.Span[(separator + SignaturePrefix.Length)..],
+                data.Span,
+                signing
+            );
         }
 
-        previousSignature = expectedSignature;
         checksum?.Append(data.Span);
         if (size == 0)
         {
@@ -147,6 +166,30 @@ internal sealed class SigV4ChunkedStream(
 
         await ConsumeChunkDelimiterAsync(cancellationToken).ConfigureAwait(false);
         positionInChunk = 0;
+    }
+
+    private void VerifyChunkSignature(
+        ReadOnlySpan<byte> presented,
+        ReadOnlySpan<byte> data,
+        ChunkSigning chain
+    )
+    {
+        var stringToSign = string.Join(
+            '\n',
+            "AWS4-HMAC-SHA256-PAYLOAD",
+            chain.Timestamp,
+            chain.Scope.ToString(),
+            previousSignature,
+            EmptyHash,
+            SigV4Signer.Sha256Hex(data)
+        );
+        var expectedSignature = SigV4Signer.Sign(chain.SigningKey, stringToSign);
+        if (!SigV4Signer.SignaturesEqual(expectedSignature, Encoding.ASCII.GetString(presented)))
+        {
+            throw new PayloadVerificationException(S3Errors.SignatureDoesNotMatch);
+        }
+
+        previousSignature = expectedSignature;
     }
 
     /// <summary>Fills a pooled buffer with the chunk's bytes: what was read ahead first, the rest from the wire.</summary>
@@ -198,27 +241,9 @@ internal sealed class SigV4ChunkedStream(
             }
         }
 
-        if (presentedSignature is null)
+        if (signing is not null)
         {
-            throw new PayloadVerificationException(S3Errors.SignatureDoesNotMatch);
-        }
-
-        var stringToSign = string.Join(
-            '\n',
-            "AWS4-HMAC-SHA256-TRAILER",
-            timestamp,
-            scope.ToString(),
-            previousSignature,
-            SigV4Signer.Sha256Hex(Encoding.UTF8.GetBytes(canonicalTrailer.ToString()))
-        );
-        if (
-            !SigV4Signer.SignaturesEqual(
-                SigV4Signer.Sign(signingKey, stringToSign),
-                presentedSignature
-            )
-        )
-        {
-            throw new PayloadVerificationException(S3Errors.SignatureDoesNotMatch);
+            VerifyTrailerSignature(presentedSignature, canonicalTrailer.ToString(), signing);
         }
 
         if (checksum is null)
@@ -237,6 +262,36 @@ internal sealed class SigV4ChunkedStream(
         if (!checksum.Matches(declaredValue))
         {
             throw new PayloadVerificationException(S3Errors.BadDigest);
+        }
+    }
+
+    private void VerifyTrailerSignature(
+        string? presented,
+        string canonicalTrailer,
+        ChunkSigning chain
+    )
+    {
+        if (presented is null)
+        {
+            throw new PayloadVerificationException(S3Errors.SignatureDoesNotMatch);
+        }
+
+        var stringToSign = string.Join(
+            '\n',
+            "AWS4-HMAC-SHA256-TRAILER",
+            chain.Timestamp,
+            chain.Scope.ToString(),
+            previousSignature,
+            SigV4Signer.Sha256Hex(Encoding.UTF8.GetBytes(canonicalTrailer))
+        );
+        if (
+            !SigV4Signer.SignaturesEqual(
+                SigV4Signer.Sign(chain.SigningKey, stringToSign),
+                presented
+            )
+        )
+        {
+            throw new PayloadVerificationException(S3Errors.SignatureDoesNotMatch);
         }
     }
 
